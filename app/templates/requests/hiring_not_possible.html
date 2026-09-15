@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Hiring Not Possible — Request #{{ req.id }}{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">
+    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </a>
+  <span class="bc-sep" aria-hidden="true">/</span>
+  <span class="bc-item bc-current">Request #{{ req.id }} — Hiring Not Possible</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:820px;">
+
+  <!-- Big notice -->
+  <div style="display:flex;align-items:flex-start;gap:20px;padding:28px 32px;border-radius:14px;
+              background:rgba(220,38,38,0.08);border:2px solid var(--c-danger);margin-bottom:24px;">
+    <div style="flex-shrink:0;width:52px;height:52px;border-radius:50%;background:var(--c-danger);
+                display:flex;align-items:center;justify-content:center;">
+      <svg width="28" height="28" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
+      </svg>
+    </div>
+    <div>
+      <h1 style="font-size:24px;font-weight:800;color:var(--c-danger);margin:0 0 8px;">Hiring Not Possible Here</h1>
+      <p style="font-size:15px;color:var(--c-text-1);line-height:1.6;margin:0 0 10px;">
+        {{ req.designation or 'This role' }} is already full at
+        {{ (req.plant_location | plant_name) if req.plant_location else 'this location' }}
+        ({{ (check.cluster_name if check else None) or '—' }}) — hiring cannot proceed here.
+      </p>
+      <p style="font-size:13.5px;color:var(--c-text-3);line-height:1.6;margin:0;">
+        In case you need extra manpower, please obtain <strong>SPECIAL approval</strong> from the Head Office
+        through your Business Head, providing detailed justification. If you choose to proceed, this request will
+        require justification and approval from every step of the Business Head → Head HR → Dr. Bhoon chain.
+      </p>
+    </div>
+  </div>
+
+  <!-- Request summary -->
+  <div class="card" style="padding:24px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;">
+      <div style="width:6px;height:18px;border-radius:3px;background:var(--c-primary);"></div>
+      <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0;">Request Summary</h3>
+    </div>
+    <dl style="display:grid;grid-template-columns:1fr 1fr;column-gap:24px;row-gap:0;">
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Candidate</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">{{ req.candidate_name or '—' }}</dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Designation</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">{{ req.designation or '—' }}</dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Plant</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">{{ (req.plant_location | plant_name) if req.plant_location else '—' }}</dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Cluster</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">{{ (check.cluster_name if check else None) or '—' }}</dd>
+      </div>
+    </dl>
+  </div>
+
+  {% if check %}
+  {% set d = detail %}
+  <!-- Norm detail -->
+  <div class="card" style="padding:24px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;">
+      <div style="width:6px;height:18px;border-radius:3px;background:var(--c-danger);"></div>
+      <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0;">Why This Was Blocked</h3>
+    </div>
+    <dl style="display:grid;grid-template-columns:1fr 1fr;column-gap:24px;row-gap:0;">
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Role Bucket</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">{{ d.get('norm_role_category_name', '—') }}</dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Tier Basis</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">
+          {{ check.tier_label or '—' }}
+          {% if check.volume_used is not none %}
+            {% if d.get('scope') == 'PLANT' or d.get('requirement_type') == 'RATE_PER_VOLUME' %}
+             — {{ "%.1f"|format(check.volume_used) }} m³
+            {% else %}
+             — {{ "%.0f"|format(check.volume_used) }} confirmed plant(s)
+            {% endif %}
+          {% endif %}
+        </dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Current Headcount</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">
+          {{ check.current_headcount if check.current_headcount is not none else '—' }}
+          {% if d.get('zinghr_count') is not none or d.get('truein_count') is not none %}
+          <span style="font-size:12px;color:var(--c-text-4);">(ZingHR: {{ d.get('zinghr_count', 0) }} · Truein: {{ d.get('truein_count', 0) }})</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Allowed Under Norm</dt>
+        <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;">{{ check.allowed_headcount if check.allowed_headcount is not none else '—' }}</dd>
+      </div>
+      <div style="padding:10px 0;border-bottom:1px solid var(--c-border);grid-column:span 2;">
+        <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">Would-Be Count After This Hire</dt>
+        <dd style="font-size:14px;color:var(--c-danger);font-weight:700;margin:0;">{{ d.get('would_be_headcount', '—') }}</dd>
+      </div>
+    </dl>
+    <p style="font-size:12px;color:var(--c-text-4);margin:14px 0 0;">
+      {% if check.snapshot_computed_at %}
+      Headcount as of {{ check.snapshot_computed_at | ist }} — refreshed every 2 hours.
+      {% else %}
+      Headcount snapshot timing unavailable.
+      {% endif %}
+    </p>
+  </div>
+  {% endif %}
+
+  <div style="display:flex;gap:10px;">
+    <a href="{{ url_for('requests_bp.new_request', step=2, token=req.public_token) }}" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel — Choose a Different Plant</a>
+    <form method="POST" action="{{ url_for('requests_bp.submit_as_special_case', token=req.public_token) }}" style="flex:1;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">OK, Proceed as Special Case</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

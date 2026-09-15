@@ -1,0 +1,648 @@
+{% from '_macros.html' import render_pagination %}
+{% extends "base.html" %}
+{% block title %}Notifications — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;">
+
+  {# ── Page header ───────────────────────────────────────────────────────────── #}
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px;flex-wrap:wrap;">
+    <div>
+      <h1 class="page-title">Notifications</h1>
+      <p class="page-sub">
+        {% if unread_total > 0 %}
+          <span style="display:inline-flex;align-items:center;gap:5px;">
+            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c-primary);flex-shrink:0;"></span>
+            <strong style="color:var(--c-primary);">{{ unread_total }}</strong> unread of {{ total_count }} notification{{ 's' if total_count != 1 else '' }}
+          </span>
+        {% else %}
+          {{ total_count }} notification{{ 's' if total_count != 1 else '' }} &mdash; all caught up
+        {% endif %}
+      </p>
+    </div>
+    {% if unread_total > 0 %}
+    <form method="POST" action="{{ url_for('main.mark_all_read') }}" style="flex-shrink:0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-secondary btn-sm" style="white-space:nowrap;">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+        </svg>
+        Mark all read
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  {# ── Filter tabs ───────────────────────────────────────────────────────────── #}
+  <div class="notif-tabs" role="tablist" aria-label="Filter notifications">
+    <a href="{{ url_for('main.notifications', filter='all') }}"
+       class="notif-tab{% if filter_type == 'all' %} notif-tab-active{% endif %}"
+       role="tab" aria-selected="{{ 'true' if filter_type == 'all' else 'false' }}">
+      All
+      <span class="notif-tab-badge">{{ total_count }}</span>
+    </a>
+    <a href="{{ url_for('main.notifications', filter='unread') }}"
+       class="notif-tab{% if filter_type == 'unread' %} notif-tab-active{% endif %}"
+       role="tab" aria-selected="{{ 'true' if filter_type == 'unread' else 'false' }}">
+      Unread
+      {% if unread_total > 0 %}
+      <span class="notif-tab-badge notif-tab-badge-unread">{{ unread_total }}</span>
+      {% else %}
+      <span class="notif-tab-badge">0</span>
+      {% endif %}
+    </a>
+    <a href="{{ url_for('main.notifications', filter='read') }}"
+       class="notif-tab{% if filter_type == 'read' %} notif-tab-active{% endif %}"
+       role="tab" aria-selected="{{ 'true' if filter_type == 'read' else 'false' }}">
+      Read
+      <span class="notif-tab-badge">{{ read_total }}</span>
+    </a>
+  </div>
+
+  {# ── Bulk action form wrapping all cards ──────────────────────────────────── #}
+  <form id="notif-bulk-form" method="POST" action="{{ url_for('main.notifications_bulk') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <input type="hidden" name="action" id="bulk-action-val" value="read"/>
+
+    {# ── Bulk toolbar (hidden until checkboxes selected) ── #}
+    <div id="bulk-toolbar" class="notif-bulk-bar" style="display:none;" aria-live="polite">
+      <label class="notif-check-wrap" title="Select all on page" style="margin-right:4px;">
+        <input type="checkbox" id="select-all-cb" class="notif-cb" aria-label="Select all notifications">
+        <span class="notif-check-box"></span>
+      </label>
+      <span id="bulk-count-label" style="font-size:13px;font-weight:600;color:var(--c-text-2);margin-right:8px;">0 selected</span>
+      <button type="button" class="btn btn-secondary btn-sm" id="bulk-read-btn" data-bulk-action="read">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+        Mark read
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm" id="bulk-unread-btn" data-bulk-action="unread">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        Mark unread
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" id="bulk-deselect-btn"
+              style="color:var(--c-text-4);margin-left:auto;">
+        Deselect all
+      </button>
+    </div>
+
+    {# ── Notification cards ───────────────────────────────────────────────── #}
+    {% if notifications %}
+    <div class="notif-list" id="notif-list">
+      {% for notif in notifications %}
+      <div class="notif-card{% if not notif.is_read %} notif-unread{% endif %}"
+           id="notif-card-{{ notif.id }}"
+           data-id="{{ notif.id }}"
+           style="animation:fadeUp var(--dur-3) {{ loop.index0 * 0.04 }}s both var(--ease);">
+
+        {# Checkbox #}
+        <label class="notif-check-wrap" title="Select this notification">
+          <input type="checkbox" name="ids" value="{{ notif.id }}" class="notif-cb notif-item-cb"
+                 aria-label="Select notification: {{ notif.subject }}">
+          <span class="notif-check-box"></span>
+        </label>
+
+        {# Unread dot #}
+        <div class="notif-dot-wrap">
+          <span class="notif-dot{% if notif.is_read %} notif-dot-read{% endif %}"
+                id="notif-dot-{{ notif.id }}"
+                title="{{ 'Unread' if not notif.is_read else 'Read' }}"></span>
+        </div>
+
+        {# Icon #}
+        <div class="notif-icon{% if not notif.is_read %} notif-icon-unread{% endif %}" id="notif-icon-{{ notif.id }}">
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+          </svg>
+        </div>
+
+        {# Content #}
+        <div class="notif-body">
+          <div class="notif-subject{% if not notif.is_read %} notif-subject-unread{% endif %}"
+               id="notif-subj-{{ notif.id }}">{{ notif.subject }}</div>
+          <div class="notif-text">{{ notif.body }}</div>
+          <div class="notif-meta">
+            <span class="notif-time">
+              <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="flex-shrink:0;opacity:0.6;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              {{ notif.sent_at | ist }}
+            </span>
+            {% if notif.request %}
+            <a href="{{ url_for('requests_bp.view_request', token=notif.request.public_token) }}"
+               class="notif-view-link">
+              View Request
+              <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+              </svg>
+            </a>
+            {% endif %}
+          </div>
+        </div>
+
+        {# Individual toggle button #}
+        <button type="button"
+                class="notif-toggle-btn"
+                id="notif-toggle-{{ notif.id }}"
+                data-id="{{ notif.id }}"
+                data-read="{{ 'true' if notif.is_read else 'false' }}"
+                title="{{ 'Mark as unread' if notif.is_read else 'Mark as read' }}"
+                aria-label="{{ 'Mark as unread' if notif.is_read else 'Mark as read' }}">
+          {% if notif.is_read %}
+          {# Eye-off: already read → click to mark unread #}
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" class="notif-eye-off">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+          </svg>
+          {% else %}
+          {# Checkmark: unread → click to mark read #}
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" class="notif-eye-on">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+          </svg>
+          {% endif %}
+        </button>
+
+      </div>
+      {% endfor %}
+    </div>
+
+    {# ── Pagination ────────────────────────────────────────────────────────── #}
+    {{ render_pagination(pagination, pg_base) }}
+
+    {% else %}
+    {# ── Empty state ──────────────────────────────────────────────────────── #}
+    <div class="card" style="padding:72px 24px;text-align:center;margin-top:4px;">
+      <div style="width:52px;height:52px;background:var(--c-bg);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;border:1px solid var(--c-border);">
+        {% if filter_type == 'unread' %}
+        <svg width="24" height="24" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        {% elif filter_type == 'read' %}
+        <svg width="24" height="24" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        {% else %}
+        <svg width="24" height="24" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+        </svg>
+        {% endif %}
+      </div>
+      {% if filter_type == 'unread' %}
+      <p style="font-size:15px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">All caught up!</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0;">No unread notifications right now.</p>
+      {% elif filter_type == 'read' %}
+      <p style="font-size:15px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No read notifications</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0;">Notifications you've read will appear here.</p>
+      {% else %}
+      <p style="font-size:15px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No notifications yet</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0;">You'll see updates here when requests move through the workflow.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </form>{# end bulk form #}
+
+</div>
+
+{# ── Notification styles ──────────────────────────────────────────────────────── #}
+<style>
+/* ── Filter tabs ── */
+.notif-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 3px;
+  margin-bottom: 16px;
+  width: fit-content;
+}
+.notif-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 16px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-text-3);
+  text-decoration: none;
+  transition: background var(--dur-2) var(--ease), color var(--dur-2) var(--ease),
+              box-shadow var(--dur-2) var(--ease);
+  white-space: nowrap;
+}
+.notif-tab:hover {
+  background: var(--c-surface);
+  color: var(--c-text-1);
+}
+.notif-tab-active {
+  background: var(--c-surface);
+  color: var(--c-text-1);
+  font-weight: 600;
+  box-shadow: var(--sh-1);
+}
+.notif-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--c-bg-2);
+  color: var(--c-text-4);
+  transition: background var(--dur-2), color var(--dur-2);
+}
+.notif-tab-active .notif-tab-badge {
+  background: var(--c-border);
+  color: var(--c-text-3);
+}
+.notif-tab-badge-unread {
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+}
+.notif-tab-active .notif-tab-badge-unread {
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+}
+
+/* ── Bulk toolbar ── */
+.notif-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  box-shadow: var(--sh-1);
+  animation: fadeUp var(--dur-2) var(--ease) both;
+}
+
+/* ── Notification list ── */
+.notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Notification card ── */
+.notif-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 14px 14px 14px 12px;
+  position: relative;
+  transition: border-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease),
+              background var(--dur-2) var(--ease);
+  overflow: hidden;
+}
+.notif-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: background var(--dur-2) var(--ease);
+  border-radius: 10px 0 0 10px;
+}
+.notif-card:hover {
+  border-color: var(--c-border-h);
+  box-shadow: var(--sh-1);
+}
+.notif-card.notif-unread {
+  background: var(--c-primary-soft);
+  border-color: rgba(239,131,84,0.22);
+}
+.notif-card.notif-unread::before {
+  background: var(--c-primary);
+}
+.notif-card.notif-selected {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 2px var(--c-primary-glow);
+}
+
+/* ── Checkbox ── */
+.notif-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.notif-check-wrap input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+.notif-check-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--c-border-h);
+  background: var(--c-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--dur-1), background var(--dur-1), box-shadow var(--dur-1);
+  flex-shrink: 0;
+}
+.notif-check-wrap:hover .notif-check-box {
+  border-color: var(--c-primary);
+}
+.notif-check-wrap input:checked + .notif-check-box {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  box-shadow: 0 1px 4px var(--c-primary-glow);
+}
+.notif-check-wrap input:checked + .notif-check-box::after {
+  content: '';
+  display: block;
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) translate(0.5px, -1px);
+}
+
+/* ── Unread dot ── */
+.notif-dot-wrap {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 6px;
+  flex-shrink: 0;
+}
+.notif-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-primary);
+  display: block;
+  transition: background var(--dur-2), transform var(--dur-2);
+  box-shadow: 0 0 0 2px var(--c-primary-glow);
+}
+.notif-dot.notif-dot-read {
+  background: var(--c-border-h);
+  box-shadow: none;
+}
+
+/* ── Icon ── */
+.notif-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--c-info-soft);
+  border: 1px solid var(--c-info-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--c-info);
+  transition: background var(--dur-2), border-color var(--dur-2), color var(--dur-2);
+}
+.notif-icon.notif-icon-unread {
+  background: var(--c-primary-soft);
+  border-color: rgba(239,131,84,0.28);
+  color: var(--c-primary);
+}
+
+/* ── Content ── */
+.notif-body {
+  flex: 1;
+  min-width: 0;
+}
+.notif-subject {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--c-text-2);
+  margin-bottom: 4px;
+  line-height: 1.4;
+  transition: color var(--dur-2), font-weight var(--dur-2);
+}
+.notif-subject.notif-subject-unread {
+  font-weight: 700;
+  color: var(--c-text-1);
+}
+.notif-text {
+  font-size: 13px;
+  color: var(--c-text-3);
+  line-height: 1.55;
+  margin-bottom: 9px;
+  white-space: pre-line;
+}
+.notif-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.notif-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--c-text-5);
+}
+.notif-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-primary);
+  text-decoration: none;
+  transition: opacity var(--dur-1);
+}
+.notif-view-link:hover { opacity: 0.72; }
+
+/* ── Toggle button ── */
+.notif-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--c-text-5);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: -2px;
+  transition: background var(--dur-1), border-color var(--dur-1), color var(--dur-1),
+              transform var(--dur-1) var(--ease);
+}
+.notif-toggle-btn:hover {
+  background: var(--c-bg);
+  border-color: var(--c-border);
+  color: var(--c-text-2);
+  transform: scale(1.08);
+}
+.notif-toggle-btn:active {
+  transform: scale(0.94);
+}
+.notif-toggle-btn.notif-toggle-spinning {
+  opacity: 0.5;
+  pointer-events: none;
+}
+</style>
+
+{# ── JS ──────────────────────────────────────────────────────────────────────── #}
+<script>
+(function () {
+  var CSRF = document.querySelector('input[name="csrf_token"]') ?
+    document.querySelector('input[name="csrf_token"]').value : '';
+
+  /* ── Per-card toggle (AJAX) ── */
+  window.notifToggle = function (btn) {
+    var id      = btn.dataset.id;
+    var isRead  = btn.dataset.read === 'true';
+    var action  = isRead ? 'unread' : 'read';
+    var url     = '/notifications/' + id + '/' + action;
+
+    btn.classList.add('notif-toggle-spinning');
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': CSRF,
+        'Content-Type': 'application/json'
+      }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) { btn.classList.remove('notif-toggle-spinning'); return; }
+
+      var newIsRead = data.is_read;
+      var card      = document.getElementById('notif-card-' + id);
+      var dot       = document.getElementById('notif-dot-' + id);
+      var subj      = document.getElementById('notif-subj-' + id);
+      var icon      = document.getElementById('notif-icon-' + id);
+
+      // Update card classes
+      card.classList.toggle('notif-unread', !newIsRead);
+
+      // Update dot
+      dot.classList.toggle('notif-dot-read', newIsRead);
+
+      // Update subject weight
+      subj.classList.toggle('notif-subject-unread', !newIsRead);
+
+      // Update icon
+      icon.classList.toggle('notif-icon-unread', !newIsRead);
+
+      // Update button icon
+      btn.dataset.read = newIsRead ? 'true' : 'false';
+      btn.title        = newIsRead ? 'Mark as unread' : 'Mark as read';
+      btn.setAttribute('aria-label', btn.title);
+      if (newIsRead) {
+        btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" class="notif-eye-off"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>';
+      } else {
+        btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" class="notif-eye-on"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+      }
+
+      btn.classList.remove('notif-toggle-spinning');
+    })
+    .catch(function () {
+      btn.classList.remove('notif-toggle-spinning');
+    });
+  };
+
+  /* ── Checkbox change ── */
+  window.notifCheckChange = function () {
+    var cbs      = document.querySelectorAll('.notif-item-cb');
+    var checked  = document.querySelectorAll('.notif-item-cb:checked');
+    var toolbar  = document.getElementById('bulk-toolbar');
+    var label    = document.getElementById('bulk-count-label');
+    var selectAll = document.getElementById('select-all-cb');
+
+    // Update selected class on cards
+    cbs.forEach(function (cb) {
+      var card = cb.closest('.notif-card');
+      if (card) card.classList.toggle('notif-selected', cb.checked);
+    });
+
+    // Show / hide toolbar
+    if (checked.length > 0) {
+      toolbar.style.display = 'flex';
+    } else {
+      toolbar.style.display = 'none';
+    }
+
+    label.textContent = checked.length + ' selected';
+
+    // Update select-all state
+    if (selectAll) {
+      selectAll.indeterminate = checked.length > 0 && checked.length < cbs.length;
+      selectAll.checked = checked.length === cbs.length && cbs.length > 0;
+    }
+  };
+
+  /* ── Select all ── */
+  var selectAllCb = document.getElementById('select-all-cb');
+  if (selectAllCb) {
+    selectAllCb.addEventListener('change', function () {
+      var state = this.checked;
+      document.querySelectorAll('.notif-item-cb').forEach(function (cb) {
+        cb.checked = state;
+      });
+      notifCheckChange();
+    });
+  }
+
+  /* ── Deselect all ── */
+  window.notifDeselectAll = function () {
+    document.querySelectorAll('.notif-item-cb').forEach(function (cb) {
+      cb.checked = false;
+    });
+    var sa = document.getElementById('select-all-cb');
+    if (sa) { sa.checked = false; sa.indeterminate = false; }
+    document.getElementById('bulk-toolbar').style.display = 'none';
+  };
+
+  /* ── Bulk submit ── */
+  window.notifBulkAction = function (action) {
+    var checked = document.querySelectorAll('.notif-item-cb:checked');
+    if (checked.length === 0) return;
+    document.getElementById('bulk-action-val').value = action;
+    document.getElementById('notif-bulk-form').submit();
+  };
+
+  /* ── DOMContentLoaded wiring ── */
+  document.addEventListener('DOMContentLoaded', function () {
+    // Bulk action buttons (data-bulk-action)
+    document.querySelectorAll('[data-bulk-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        notifBulkAction(this.dataset.bulkAction);
+      });
+    });
+
+    // Deselect all button
+    var deselectBtn = document.getElementById('bulk-deselect-btn');
+    if (deselectBtn) deselectBtn.addEventListener('click', notifDeselectAll);
+
+    // Per-card toggle buttons (event delegation on document)
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.notif-toggle-btn');
+      if (btn) notifToggle(btn);
+    });
+
+    // Per-card checkbox change (event delegation)
+    document.addEventListener('change', function (e) {
+      if (e.target.classList.contains('notif-item-cb')) {
+        notifCheckChange();
+      }
+    });
+  });
+})();
+</script>
+
+{% endblock %}

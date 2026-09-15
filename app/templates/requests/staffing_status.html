@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Staffing Status — TeamLease{% endblock %}
+{% block content %}
+<div style="max-width:1100px;">
+  <div style="margin-bottom:20px;">
+    <h1 class="page-title">Staffing Status</h1>
+    <p class="page-sub">Current headcount, managed separately per company. Refreshed every 2 hours — never a live lookup.</p>
+  </div>
+
+  {# Company tabs (added 2026-09-15, multi-company support) — same
+     client-side tab pattern used everywhere else in this app (Active/
+     Disabled on the admin list pages). RDC keeps its full region/plant
+     drill-down and production-volume gating below, unchanged; Ultrafine/
+     ROBO are flat plant lists with simple headcount only — see
+     staffing_status_company_plant.html for their plant-level detail. #}
+  <div class="card" style="overflow:hidden;margin-bottom:20px;">
+    <div style="display:flex;border-bottom:2px solid var(--c-border);padding:0 4px;">
+      <button id="ctab-btn-rdc" onclick="switchCTab('rdc')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">RDC</button>
+      <button id="ctab-btn-ultrafine" onclick="switchCTab('ultrafine')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">Ultrafine</button>
+      <button id="ctab-btn-robo" onclick="switchCTab('robo')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">ROBO</button>
+    </div>
+  </div>
+
+  <div id="ctab-panel-rdc">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
+    <div>
+      <h2 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0;">RDC — by Region</h2>
+      <p class="page-sub" style="margin-top:4px;">Click a region to see its plants, then click a plant for role-by-role detail.</p>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <a href="{{ url_for('requests_bp.staffing_status_download') }}" class="btn btn-secondary btn-sm">⬇ Download Report</a>
+      <a href="{{ url_for('requests_bp.staffing_status_employees') }}" class="btn btn-secondary btn-sm">All Employees →</a>
+    </div>
+  </div>
+
+  {% if not has_snapshot %}
+  <div class="card" style="padding:40px;text-align:center;color:var(--c-text-4);">
+    No snapshot data yet — the background refresh job hasn't completed its first run.
+  </div>
+  {% else %}
+
+  <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Regions</h3>
+  <div class="card" style="overflow:hidden;margin-bottom:28px;">
+    {% if not regions %}
+    <div style="padding:32px;text-align:center;color:var(--c-text-4);">No regions set up yet — check <a href="{{ url_for('admin.cluster_mappings_list') }}">Admin → Cluster Mappings</a>.</div>
+    {% else %}
+    <table class="tbl">
+      <thead><tr><th>Region</th><th>Plants</th><th>Hiring</th></tr></thead>
+      <tbody>
+        {% for r in regions %}
+        <tr>
+          <td><a href="{{ url_for('requests_bp.staffing_status_cluster', cluster_name=r.cluster.canonical_cluster_name) }}" style="font-weight:600;">{{ r.cluster.canonical_cluster_name }} →</a></td>
+          <td style="font-size:13px;color:var(--c-text-3);">{{ r.plant_count }}</td>
+          <td style="font-size:12px;">
+            {% if r.hiring.can_hire_roles > 0 %}
+            <span class="mono" style="font-weight:700;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;border-radius:20px;padding:1px 8px;">🟢 {{ r.hiring.can_hire_roles }} role(s) open</span>
+            {% elif r.hiring.at_capacity_roles > 0 %}
+            <span class="mono" style="font-weight:700;background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5;border-radius:20px;padding:1px 8px;">🔴 Full</span>
+            {% else %}
+            <span class="mono" style="font-weight:700;background:#F3F4F6;color:#374151;border:1px solid #D1D5DB;border-radius:20px;padding:1px 8px;">⚪ Unknown</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  {% if unmapped_plants %}
+  <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px;">Plants Not Yet Assigned to a Region</h3>
+  <p style="font-size:12.5px;color:var(--c-text-4);margin:0 0 10px;">
+    These have real headcount or a known hiring limit but aren't mapped to a region yet — assign them at <a href="{{ url_for('admin.plant_mappings_list') }}">Admin → Plant Mappings</a> so they show up under a region above.
+  </p>
+  <div class="card" style="overflow:hidden;margin-bottom:28px;">
+    <table class="tbl">
+      <thead><tr><th>Plant</th><th>Hiring</th></tr></thead>
+      <tbody>
+        {% for p in unmapped_plants %}
+        {% set h = hiring_by_plant.get(p.plant_location_name, {'can_hire_roles': 0, 'at_capacity_roles': 0}) %}
+        <tr>
+          <td><a href="{{ url_for('requests_bp.staffing_status_plant', plant_name=p.plant_location_name) }}" style="font-weight:500;">{{ p.display_name }} →</a></td>
+          <td style="font-size:12px;">
+            {% if h.can_hire_roles > 0 %}
+            <span class="mono" style="font-weight:700;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;border-radius:20px;padding:1px 8px;">🟢 {{ h.can_hire_roles }} role(s) open</span>
+            {% elif h.at_capacity_roles > 0 %}
+            <span class="mono" style="font-weight:700;background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5;border-radius:20px;padding:1px 8px;">🔴 Full</span>
+            {% else %}
+            <span class="mono" style="font-weight:700;background:#F3F4F6;color:#374151;border:1px solid #D1D5DB;border-radius:20px;padding:1px 8px;">⚪ Unknown</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% endif %}
+  </div>
+
+  {% macro _other_company_panel(company, summary, unresolved) %}
+  <div style="margin-bottom:20px;">
+    <h2 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0;">{{ company }} — by Plant</h2>
+    <p class="page-sub" style="margin-top:4px;">Simple headcount only — no production-volume restriction applies to {{ company }}.</p>
+  </div>
+  <div class="card" style="overflow:hidden;margin-bottom:16px;">
+    {% if not summary %}
+    <div style="padding:32px;text-align:center;color:var(--c-text-4);">No {{ company }} plants set up yet — add one at <a href="{{ url_for('admin.plants_list', company=company) }}">Admin → Plant Locations</a>.</div>
+    {% else %}
+    <table class="tbl">
+      <thead><tr><th>Plant</th><th>Headcount</th></tr></thead>
+      <tbody>
+        {% for row in summary %}
+        <tr>
+          <td><a href="{{ url_for('requests_bp.staffing_status_company_plant', company=company, plant_name=row.plant.name) }}" style="font-weight:600;">{{ row.plant.name }} →</a></td>
+          <td class="mono" style="font-size:13px;color:var(--c-text-2);">{{ row.headcount }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  {% if unresolved %}
+  <p style="font-size:12.5px;color:var(--c-text-4);">+ {{ unresolved }} {{ company }} employee(s) whose location didn't match a known plant.</p>
+  {% endif %}
+  {% endmacro %}
+
+  <div id="ctab-panel-ultrafine" style="display:none;">
+    {{ _other_company_panel('Ultrafine', other_company_summaries.get('Ultrafine', []), other_company_unresolved.get('Ultrafine', 0)) }}
+  </div>
+  <div id="ctab-panel-robo" style="display:none;">
+    {{ _other_company_panel('ROBO', other_company_summaries.get('ROBO', []), other_company_unresolved.get('ROBO', 0)) }}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchCTab(tab) {
+  ['rdc','ultrafine','robo'].forEach(function(t) {
+    var btn   = document.getElementById('ctab-btn-' + t);
+    var panel = document.getElementById('ctab-panel-' + t);
+    if (!btn) return;
+    var on = (t === tab);
+    if (panel) panel.style.display = on ? 'block' : 'none';
+    btn.style.color = on ? 'var(--c-primary)' : 'var(--c-text-3)';
+    btn.style.borderBottomColor = on ? 'var(--c-primary)' : 'transparent';
+  });
+}
+switchCTab('rdc');
+</script>
+{% endblock %}

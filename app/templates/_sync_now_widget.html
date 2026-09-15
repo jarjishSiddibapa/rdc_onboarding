@@ -1,0 +1,93 @@
+<!--
+  RDC staffing-data "Sync Now" widget — non-blocking manual trigger for the
+  ZingHR/Truein/DVT headcount snapshot (also refreshes automatically every
+  30 minutes in the background). If a sync is already running anywhere
+  (the automatic thread or another user's manual trigger), clicking this
+  never starts a second one — it just shows the live in-progress status.
+  Include this partial on any page rendered for a role in
+  requests_bp._SYNC_ROLES (HR Manager, Head HR, Dr. Bhoon, Business Head,
+  Super Admin).
+-->
+<div id="sync-now-widget" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+  <button type="button" id="sync-now-btn" class="btn btn-secondary btn-sm">
+    <svg id="sync-now-icon" width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+    <span class="sync-now-label">Sync Now</span>
+  </button>
+  <span id="sync-now-status" style="font-size:12px;color:var(--c-text-4);"></span>
+</div>
+
+<script>
+(function() {
+  var btn      = document.getElementById('sync-now-btn');
+  var icon     = document.getElementById('sync-now-icon');
+  var label    = btn.querySelector('.sync-now-label');
+  var statusEl = document.getElementById('sync-now-status');
+  var pollTimer = null;
+  var STATUS_URL  = "{{ url_for('requests_bp.staffing_sync_status') }}";
+  var TRIGGER_URL = "{{ url_for('requests_bp.staffing_sync_now') }}";
+  var CSRF_TOKEN  = "{{ csrf_token() }}";
+
+  function fmtAgo(iso) {
+    if (!iso) return 'never synced yet';
+    var d = new Date(iso.indexOf('Z') === -1 ? iso + 'Z' : iso);
+    var diffMin = Math.round((Date.now() - d.getTime()) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return diffMin + ' min ago';
+    var h = Math.floor(diffMin / 60);
+    var m = diffMin % 60;
+    return h + 'h' + (m ? ' ' + m + 'm' : '') + ' ago';
+  }
+
+  function setSyncing(syncing) {
+    btn.disabled = syncing;
+    btn.style.opacity = syncing ? '0.6' : '';
+    btn.style.cursor = syncing ? 'not-allowed' : '';
+    label.textContent = syncing ? 'Syncing…' : 'Sync Now';
+    icon.style.animation = syncing ? 'spin 1s linear infinite' : '';
+  }
+
+  function checkStatus(justTriggered) {
+    fetch(STATUS_URL)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.ok) return;
+        setSyncing(d.in_progress);
+        if (d.in_progress) {
+          statusEl.textContent = 'Sync in progress — data will refresh automatically…';
+          if (!pollTimer) pollTimer = setInterval(function() { checkStatus(false); }, 8000);
+        } else {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+          statusEl.textContent = (justTriggered ? 'Synced! ' : '') + 'Last synced: ' + fmtAgo(d.last_synced_at);
+        }
+      })
+      .catch(function() { /* transient — next poll or manual click will retry */ });
+  }
+
+  btn.addEventListener('click', function() {
+    setSyncing(true);
+    statusEl.textContent = 'Starting sync…';
+    fetch(TRIGGER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'csrf_token=' + encodeURIComponent(CSRF_TOKEN)
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.status === 'already_in_progress') {
+          statusEl.textContent = 'A sync is already running — tracking it now.';
+        }
+        checkStatus(d.status === 'started');
+      })
+      .catch(function() {
+        setSyncing(false);
+        statusEl.textContent = 'Could not reach the server — try again.';
+      });
+  });
+
+  checkStatus(false);
+})();
+</script>
+<style>
+#sync-now-widget { animation: none; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+</style>

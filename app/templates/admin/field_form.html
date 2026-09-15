@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Field' if field else 'New Field' }} — TeamLease Admin{% endblock %}
+
+{% block content %}
+<div style="max-width:660px;">
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('admin.form_fields_list') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="page-title">{{ 'Edit Field' if field else 'Add Form Field' }}</h1>
+      <p class="page-sub">{{ 'Update field configuration' if field else 'Define a new field for the onboarding form' }}</p>
+    </div>
+  </div>
+
+  <div class="card" style="padding:32px;">
+    <form method="POST" id="field-form" style="display:flex;flex-direction:column;gap:22px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+      {% if not field %}
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">
+          Field Key <span style="color:var(--c-danger);">*</span>
+        </label>
+        <input class="inp mono" type="text" name="field_key" required placeholder="e.g. employee_code"/>
+        <p style="font-size:12px;color:var(--c-text-4);margin-top:6px;">Unique identifier — lowercase, underscores only. Cannot be changed later.</p>
+      </div>
+      {% endif %}
+
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">
+          Field Label <span style="color:var(--c-danger);">*</span>
+        </label>
+        <input class="inp" type="text" name="field_label" required value="{{ field.field_label if field else '' }}" placeholder="e.g. Employee Code"/>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Field Type <span style="color:var(--c-danger);">*</span></label>
+          <select class="inp inp-select" name="field_type" id="field-type">
+            {% for ft in FieldType %}
+            <option value="{{ ft.value }}" {% if field and field.field_type == ft %}selected{% endif %}>
+              {{ ft.value.title() }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Form Step <span style="color:var(--c-danger);">*</span></label>
+          <select class="inp inp-select" name="step">
+            <option value="1" {% if not field or field.step == 1 %}selected{% endif %}>Step 1 — Personal Info</option>
+            <option value="2" {% if field and field.step == 2 %}selected{% endif %}>Step 2 — Employment Details</option>
+            <option value="3" {% if field and field.step == 3 %}selected{% endif %}>Step 3 — Bank & Documents</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Placeholder</label>
+          <input class="inp" type="text" name="placeholder" value="{{ field.placeholder or '' if field else '' }}" placeholder="Hint text..."/>
+        </div>
+        <div>
+          <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Help Text</label>
+          <input class="inp" type="text" name="help_text" value="{{ field.help_text or '' if field else '' }}" placeholder="Shown below the field"/>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" name="is_required" style="width:15px;height:15px;accent-color:var(--c-primary);"
+            {% if not field or field.is_required %}checked{% endif %}/>
+          <span style="font-size:13.5px;color:var(--c-text-2);font-weight:500;">Required field</span>
+        </label>
+        <label id="allow-other-wrapper" style="display:{% if not field or field.field_type.value == 'dropdown' %}flex{% else %}none{% endif %};align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" name="allow_other" style="width:15px;height:15px;accent-color:var(--c-primary);"
+            {% if field and field.allow_other %}checked{% endif %}/>
+          <span style="font-size:13.5px;color:var(--c-text-2);font-weight:500;">Allow "Other" option</span>
+        </label>
+      </div>
+
+      <!-- Input Constraints (text / textarea only) -->
+      <div id="constraints-section">
+        <hr class="divider" style="margin:4px 0 20px;"/>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+          <svg width="13" height="13" fill="none" stroke="var(--c-primary)" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          <span style="font-size:12.5px;font-weight:700;color:var(--c-text-2);text-transform:uppercase;letter-spacing:0.06em;">Input Constraints</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+
+          <div>
+            <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Allowed Characters</label>
+            <select class="inp inp-select" name="input_pattern" id="input-pattern">
+              <option value="" {% if not field or not field.input_pattern %}selected{% endif %}>Any characters</option>
+              <option value="alpha"        {% if field and field.input_pattern == 'alpha' %}selected{% endif %}>Letters only (A–Z)</option>
+              <option value="alphanumeric" {% if field and field.input_pattern == 'alphanumeric' %}selected{% endif %}>Alphanumeric (A–Z, 0–9)</option>
+              <option value="numeric"      {% if field and field.input_pattern == 'numeric' %}selected{% endif %}>Digits only (0–9)</option>
+            </select>
+            <p style="font-size:11px;color:var(--c-text-4);margin-top:5px;">Spaces always allowed.</p>
+          </div>
+
+          <div>
+            <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Min Length</label>
+            <input class="inp" type="number" name="min_length" min="1" max="9999"
+              value="{{ field.min_length if field and field.min_length else '' }}"
+              placeholder="e.g. 2"/>
+            <p style="font-size:11px;color:var(--c-text-4);margin-top:5px;">Leave blank for no minimum.</p>
+          </div>
+
+          <div>
+            <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Max Length</label>
+            <input class="inp" type="number" name="max_length" min="1" max="9999"
+              value="{{ field.max_length if field and field.max_length else '' }}"
+              placeholder="e.g. 100"/>
+            <p style="font-size:11px;color:var(--c-text-4);margin-top:5px;">Leave blank for no maximum.</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Options section (dropdown / radio) -->
+      <div id="options-section">
+        <hr class="divider" style="margin:4px 0 20px;"/>
+
+        <div id="source-section" style="margin-bottom:18px;">
+          <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Options Source</label>
+          <select class="inp inp-select" name="options_source" id="options-source">
+            {% for os in OptionsSource %}
+            <option value="{{ os.value }}" {% if field and field.options_source == os %}selected{% endif %}>
+              {% if os.value == 'inline' %}Inline (manage below)
+              {% elif os.value == 'designation' %}Designations table (auto)
+              {% else %}Plant Locations table (auto)
+              {% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div id="inline-options">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <label style="font-size:12.5px;font-weight:600;color:var(--c-text-2);">Options</label>
+            <button type="button" id="add-option-btn" class="btn btn-secondary btn-sm">
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+              Add option
+            </button>
+          </div>
+          <div id="options-list" style="display:flex;flex-direction:column;gap:8px;">
+            {% if field and field.active_options %}
+              {% for opt in field.active_options %}
+              <div style="display:flex;gap:8px;align-items:center;" class="option-row">
+                <input type="text" name="opt_label" value="{{ opt.option_label }}" placeholder="Option name" class="inp" style="flex:1;"/>
+                <input type="hidden" name="opt_value" value=""/>
+                <button type="button" class="opt-remove-btn" style="background:none;border:none;cursor:pointer;color:var(--c-danger);font-size:20px;line-height:1;padding:0 4px;flex-shrink:0;" aria-label="Remove option">&times;</button>
+              </div>
+              {% endfor %}
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider" style="margin:4px 0;"/>
+
+      <div style="display:flex;gap:10px;">
+        <a href="{{ url_for('admin.form_fields_list') }}" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</a>
+        <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center;">
+          {{ 'Save Changes' if field else 'Create Field' }}
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function updateOptionsSection() {
+    var type = document.getElementById('field-type').value;
+    var needsOpts        = ['dropdown', 'radio'].indexOf(type) !== -1;
+    var needsConstraints = ['text', 'textarea', 'tel'].indexOf(type) !== -1;
+    document.getElementById('options-section').style.display      = needsOpts ? '' : 'none';
+    document.getElementById('allow-other-wrapper').style.display  = type === 'dropdown' ? 'flex' : 'none';
+    document.getElementById('constraints-section').style.display  = needsConstraints ? '' : 'none';
+    if (type === 'tel') {
+      var pat = document.getElementById('input-pattern');
+      if (pat && !pat.value) pat.value = 'numeric';
+    }
+  }
+
+  function updateSourceSection() {
+    var src = document.getElementById('options-source').value;
+    document.getElementById('inline-options').style.display = src === 'inline' ? '' : 'none';
+  }
+
+  function addOption() {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;';
+    row.className = 'option-row';
+    row.innerHTML =
+      '<input type="text" name="opt_label" placeholder="Option name" class="inp" style="flex:1;"/>' +
+      '<input type="hidden" name="opt_value" value=""/>' +
+      '<button type="button" class="opt-remove-btn" style="background:none;border:none;cursor:pointer;color:var(--c-danger);font-size:20px;line-height:1;padding:0 4px;flex-shrink:0;" aria-label="Remove option">&times;</button>';
+    document.getElementById('options-list').appendChild(row);
+    row.querySelector('input[type=text]').focus();
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    // Field type change
+    var fieldType = document.getElementById('field-type');
+    if (fieldType) fieldType.addEventListener('change', updateOptionsSection);
+
+    // Options source change
+    var optSrc = document.getElementById('options-source');
+    if (optSrc) optSrc.addEventListener('change', updateSourceSection);
+
+    // Add option button
+    var addBtn = document.getElementById('add-option-btn');
+    if (addBtn) addBtn.addEventListener('click', addOption);
+
+    // Remove option — event delegation on list (covers both static & dynamic rows)
+    var optList = document.getElementById('options-list');
+    if (optList) {
+      optList.addEventListener('click', function (e) {
+        var btn = e.target.closest('.opt-remove-btn');
+        if (btn) btn.parentElement.remove();
+      });
+    }
+
+    // Initial visibility
+    updateOptionsSection();
+    updateSourceSection();
+  });
+})();
+</script>
+{% endblock %}

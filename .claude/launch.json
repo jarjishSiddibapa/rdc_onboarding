@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "palette-compare",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "7788", "--directory", "."],
+      "port": 7788
+    },
+    {
+      "name": "onboarding-app",
+      "runtimeExecutable": "venv/Scripts/python.exe",
+      "runtimeArgs": ["run.py"],
+      "port": 5000
+    }
+  ]
+}

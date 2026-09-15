@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Palette Comparison — RDC Teamlease</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:#e8eaed;padding:24px;min-height:100vh}
+
+.page-header{text-align:center;margin-bottom:28px}
+.page-header h1{font-size:22px;font-weight:800;color:#1a1a2e;margin-bottom:6px}
+.page-header p{font-size:13px;color:#666}
+
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;max-width:1440px;margin:0 auto}
+
+/* ── Palette card wrapper ── */
+.palette-card{border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.14);background:#fff}
+.palette-label{padding:14px 16px;text-align:center;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+.current-tag{background:rgba(255,255,255,0.25);border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;letter-spacing:0.05em}
+
+/* ── Mini app shell ── */
+.mock-app{display:flex;height:480px;overflow:hidden}
+
+.mock-sidebar{width:130px;flex-shrink:0;display:flex;flex-direction:column}
+.mock-logo-row{padding:14px 10px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,0.07)}
+.mock-logo-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.mock-logo-text{font-size:9px;font-weight:700;color:#f0f2f7;line-height:1.3}
+.mock-logo-sub{font-size:8px;color:rgba(255,255,255,0.4);margin-top:1px}
+
+.mock-nav{padding:8px 6px;flex:1}
+.mock-section{font-size:7.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;padding:10px 6px 4px;color:rgba(255,255,255,0.35)}
+.mock-nav-item{display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:7px;font-size:9.5px;font-weight:500;color:rgba(255,255,255,0.45);margin-bottom:1px}
+.mock-nav-item.active{color:#fff}
+.mock-nav-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:0.7;flex-shrink:0}
+
+.mock-user-footer{padding:8px 6px;border-top:1px solid rgba(255,255,255,0.07)}
+.mock-user-row{display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:7px}
+.mock-avatar{width:24px;height:24px;border-radius:50%;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.mock-username{font-size:9px;font-weight:600;color:#d2d7e4}
+.mock-role{font-size:7.5px;color:rgba(255,255,255,0.35);margin-top:1px}
+
+.mock-main{flex:1;display:flex;flex-direction:column;min-width:0}
+
+/* Topbar */
+.mock-topbar{height:38px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;flex-shrink:0;border-bottom:1px solid var(--t-border)}
+.mock-topbar-info{display:flex;align-items:center;gap:5px;font-size:9px;font-weight:600;color:var(--t-text-4)}
+.mock-theme-switcher{display:flex;align-items:center;border:1px solid var(--t-border);border-radius:7px;padding:2px;gap:1px;background:var(--t-surface-3)}
+.mock-theme-btn{padding:3px 9px;border-radius:5px;font-size:8px;font-weight:600;color:var(--t-text-4);background:transparent;cursor:pointer}
+.mock-theme-btn.active{background:var(--t-surface);color:var(--t-text-1);box-shadow:0 1px 3px rgba(0,0,0,0.1)}
+
+/* Content area */
+.mock-content{flex:1;overflow:hidden;padding:12px;background:var(--t-bg)}
+
+.mock-page-title{font-size:14px;font-weight:800;color:var(--t-text-1);margin-bottom:12px}
+
+/* Stat cards */
+.mock-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}
+.mock-stat{background:var(--t-surface);border:1px solid var(--t-border);border-radius:9px;padding:10px 10px 8px}
+.mock-stat-label{font-size:7px;font-weight:700;color:var(--t-text-5);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:5px}
+.mock-stat-value{font-size:22px;font-weight:700;line-height:1}
+.mock-stat-pulse{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+
+/* Table */
+.mock-table{background:var(--t-surface);border:1px solid var(--t-border);border-radius:9px;overflow:hidden}
+.mock-table-header{display:flex;padding:7px 10px;background:var(--t-surface-2);border-bottom:1px solid var(--t-border);gap:6px}
+.mock-table-header span{font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--t-text-5)}
+.mock-table-row{display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid var(--t-border);gap:6px}
+.mock-table-row:last-child{border-bottom:none}
+.mock-table-row:hover{background:var(--t-surface-2)}
+.mock-col-id{font-size:8px;color:var(--t-text-4);font-family:monospace;width:22px}
+.mock-col-name{font-size:9px;font-weight:600;color:var(--t-text-1);flex:1}
+.mock-col-co{font-size:8.5px;color:var(--t-text-3);flex:1}
+.mock-badge{padding:2px 8px;border-radius:999px;font-size:7.5px;font-weight:700}
+.badge-pending{background:var(--t-info-soft);color:var(--t-info);border:1px solid var(--t-info-border)}
+.badge-approved{background:var(--t-success-soft);color:var(--t-success);border:1px solid var(--t-success-border)}
+.badge-rejected{background:var(--t-danger-soft);color:var(--t-danger);border:1px solid var(--t-danger-border)}
+
+.mock-btn-row{display:flex;gap:6px;padding:8px 10px 0}
+.mock-btn{padding:5px 13px;border-radius:6px;font-size:8.5px;font-weight:700;border:none;cursor:pointer}
+.mock-btn-primary{color:#fff}
+.mock-btn-secondary{border:1.5px solid var(--t-border);background:var(--t-surface);color:var(--t-text-2)}
+.mock-btn-success{background:linear-gradient(135deg,#09825D,#065C45);color:#fff}
+
+/* ══════════════════════════════
+   PALETTE 1 — Minimalist Elegance (CURRENT)
+══════════════════════════════ */
+.p1{
+  --t-primary:#ef8354; --t-primary-d:#c86030;
+  --t-success:#09825D; --t-success-soft:#ECFDF3; --t-success-border:#A7F3D0;
+  --t-danger:#DC2626;  --t-danger-soft:#FEF2F2;  --t-danger-border:#FECACA;
+  --t-info:#4f5d75;    --t-info-soft:rgba(79,93,117,0.09); --t-info-border:rgba(79,93,117,0.25);
+  --t-text-1:#2d3142; --t-text-2:#3d4357; --t-text-3:#5a6278;
+  --t-text-4:#7d8699; --t-text-5:#a8adb8;
+  --t-border:#e2e5ec; --t-bg:#f5f6fa;
+  --t-surface:#fff; --t-surface-2:#f8f9fc; --t-surface-3:#f0f2f7;
+  --sb:#2d3142; --sb2:#252839; --sb-active:rgba(239,131,84,0.20);
+}
+.p1 .palette-label{background:linear-gradient(135deg,#2d3142,#3d4357);color:#fff}
+.p1 .mock-sidebar{background:linear-gradient(180deg,#2d3142,#252839)}
+.p1 .mock-logo-icon{background:linear-gradient(135deg,#ef8354,#c86030);box-shadow:0 2px 10px rgba(239,131,84,0.45)}
+.p1 .mock-nav-item.active{background:rgba(239,131,84,0.20)}
+.p1 .mock-stat-value{color:#ef8354}
+.p1 .mock-stat-value.total{color:#2d3142}
+.p1 .mock-stat-value.active{color:#09825D}
+.p1 .mock-btn-primary{background:linear-gradient(135deg,#ef8354,#c86030);box-shadow:0 3px 12px rgba(239,131,84,0.38)}
+.p1 .mock-stat-pulse{background:#ef8354}
+.p1 .mock-section{color:rgba(191,192,192,0.5)}
+.p1 .mock-logo-sub{color:#bfc0c0}
+
+/* ══════════════════════════════
+   PALETTE 2 — Ocean Blue Serenity
+══════════════════════════════ */
+.p2{
+  --t-primary:#1565C0; --t-primary-d:#0D47A1;
+  --t-success:#09825D; --t-success-soft:#ECFDF3; --t-success-border:#A7F3D0;
+  --t-danger:#DC2626;  --t-danger-soft:#FEF2F2;  --t-danger-border:#FECACA;
+  --t-info:#0288D1;    --t-info-soft:rgba(2,136,209,0.09); --t-info-border:rgba(2,136,209,0.28);
+  --t-text-1:#0c1e38; --t-text-2:#1a3550; --t-text-3:#406080;
+  --t-text-4:#6890b0; --t-text-5:#a0b8cc;
+  --t-border:#c8daea; --t-bg:#eef5fb;
+  --t-surface:#fff; --t-surface-2:#f4f9fd; --t-surface-3:#e8f3fb;
+  --sb:#0c1e38; --sb2:#0a1828; --sb-active:rgba(21,101,192,0.22);
+}
+.p2 .palette-label{background:linear-gradient(135deg,#0c1e38,#1565C0);color:#fff}
+.p2 .mock-sidebar{background:linear-gradient(180deg,#0c1e38,#0a1828)}
+.p2 .mock-logo-icon{background:linear-gradient(135deg,#1976D2,#0D47A1);box-shadow:0 2px 10px rgba(21,101,192,0.45)}
+.p2 .mock-nav-item.active{background:rgba(21,101,192,0.22)}
+.p2 .mock-stat-value{color:#1565C0}
+.p2 .mock-stat-value.total{color:#0c1e38}
+.p2 .mock-stat-value.active{color:#09825D}
+.p2 .mock-btn-primary{background:linear-gradient(135deg,#1976D2,#0D47A1);box-shadow:0 3px 12px rgba(21,101,192,0.38)}
+.p2 .mock-stat-pulse{background:#1565C0}
+.p2 .mock-section{color:rgba(160,184,204,0.55)}
+.p2 .mock-logo-sub{color:#90b4cc}
+
+/* ══════════════════════════════
+   PALETTE 3 — Deep Blue Sea
+══════════════════════════════ */
+.p3{
+  --t-primary:#2874A6; --t-primary-d:#1A5276;
+  --t-success:#09825D; --t-success-soft:#ECFDF3; --t-success-border:#A7F3D0;
+  --t-danger:#DC2626;  --t-danger-soft:#FEF2F2;  --t-danger-border:#FECACA;
+  --t-info:#2E86C1;    --t-info-soft:rgba(46,134,193,0.09); --t-info-border:rgba(46,134,193,0.28);
+  --t-text-1:#0d2137; --t-text-2:#1a3a5c; --t-text-3:#3d6080;
+  --t-text-4:#6888a8; --t-text-5:#9ab0c8;
+  --t-border:#c8d8e8; --t-bg:#edf4fa;
+  --t-surface:#fff; --t-surface-2:#f2f8fd; --t-surface-3:#e5f0f8;
+  --sb:#0d2137; --sb2:#0a1929; --sb-active:rgba(40,116,166,0.22);
+}
+.p3 .palette-label{background:linear-gradient(135deg,#0d2137,#2874A6);color:#fff}
+.p3 .mock-sidebar{background:linear-gradient(180deg,#0d2137,#0a1929)}
+.p3 .mock-logo-icon{background:linear-gradient(135deg,#2E86C1,#1A5276);box-shadow:0 2px 10px rgba(40,116,166,0.45)}
+.p3 .mock-nav-item.active{background:rgba(40,116,166,0.22)}
+.p3 .mock-stat-value{color:#2874A6}
+.p3 .mock-stat-value.total{color:#0d2137}
+.p3 .mock-stat-value.active{color:#09825D}
+.p3 .mock-btn-primary{background:linear-gradient(135deg,#2E86C1,#1A5276);box-shadow:0 3px 12px rgba(40,116,166,0.38)}
+.p3 .mock-stat-pulse{background:#2874A6}
+.p3 .mock-section{color:rgba(154,176,200,0.55)}
+.p3 .mock-logo-sub{color:#88a8c4}
+
+/* ══════════════════════════════
+   PALETTE 4 — Earthy Forest Hues
+══════════════════════════════ */
+.p4{
+  --t-primary:#3D6B4F; --t-primary-d:#2D5239;
+  --t-success:#09825D; --t-success-soft:#ECFDF3; --t-success-border:#A7F3D0;
+  --t-danger:#DC2626;  --t-danger-soft:#FEF2F2;  --t-danger-border:#FECACA;
+  --t-info:#4A7C59;    --t-info-soft:rgba(74,124,89,0.09); --t-info-border:rgba(74,124,89,0.28);
+  --t-text-1:#1e3326; --t-text-2:#2d4a35; --t-text-3:#4a7060;
+  --t-text-4:#6b9278; --t-text-5:#9ab8a4;
+  --t-border:#c5d8c8; --t-bg:#f0f5f1;
+  --t-surface:#fff; --t-surface-2:#f5faf6; --t-surface-3:#e8f2ea;
+  --sb:#1e3326; --sb2:#18281f; --sb-active:rgba(61,107,79,0.22);
+}
+.p4 .palette-label{background:linear-gradient(135deg,#1e3326,#3D6B4F);color:#fff}
+.p4 .mock-sidebar{background:linear-gradient(180deg,#1e3326,#18281f)}
+.p4 .mock-logo-icon{background:linear-gradient(135deg,#3D6B4F,#2D5239);box-shadow:0 2px 10px rgba(61,107,79,0.45)}
+.p4 .mock-nav-item.active{background:rgba(61,107,79,0.22)}
+.p4 .mock-stat-value{color:#3D6B4F}
+.p4 .mock-stat-value.total{color:#1e3326}
+.p4 .mock-stat-value.active{color:#09825D}
+.p4 .mock-btn-primary{background:linear-gradient(135deg,#3D6B4F,#2D5239);box-shadow:0 3px 12px rgba(61,107,79,0.38)}
+.p4 .mock-stat-pulse{background:#3D6B4F}
+.p4 .mock-section{color:rgba(154,184,164,0.55)}
+.p4 .mock-logo-sub{color:#8ab49a}
+
+/* colour swatches strip */
+.swatch-row{display:flex;height:10px}
+.swatch-row div{flex:1}
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>🎨 Palette Comparison — RDC Teamlease Employee Onboarding Portal</h1>
+  <p>All four options applied to the actual app UI — sidebar, topbar, cards, table, badges, buttons</p>
+</div>
+
+<div class="grid">
+
+  <!-- ── PALETTE 1: Minimalist Elegance (CURRENT) ── -->
+  <div class="palette-card p1">
+    <div class="palette-label">
+      ✦ Minimalist Elegance
+      <span class="current-tag" style="background:rgba(239,131,84,0.25);color:#ef8354;">CURRENT</span>
+    </div>
+    <div class="swatch-row">
+      <div style="background:#2d3142"></div>
+      <div style="background:#bfc0c0"></div>
+      <div style="background:#ffffff"></div>
+      <div style="background:#ef8354"></div>
+      <div style="background:#4f5d75"></div>
+    </div>
+    <div class="mock-app">
+      <!-- Sidebar -->
+      <div class="mock-sidebar">
+        <div class="mock-logo-row">
+          <div class="mock-logo-icon">
+            <svg width="14" height="14" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.5"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div><div class="mock-logo-text">RDC Teamlease</div><div class="mock-logo-sub">HR Portal</div></div>
+        </div>
+        <div class="mock-nav">
+          <div class="mock-section">My Work</div>
+          <div class="mock-nav-item active" style="background:rgba(239,131,84,0.20)"><div class="mock-nav-dot"></div>My Requests</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>New Request</div>
+          <div class="mock-section">General</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>Notifications</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>My Profile</div>
+        </div>
+        <div class="mock-user-footer">
+          <div class="mock-user-row">
+            <div class="mock-avatar" style="background:rgba(239,131,84,0.35)">J</div>
+            <div><div class="mock-username">Jarjish</div><div class="mock-role">Initiator</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- Main -->
+      <div class="mock-main">
+        <div class="mock-topbar">
+          <div class="mock-topbar-info">
+            <span>Initiator</span>
+            <span style="color:var(--t-text-5)">›</span>
+            <span style="color:var(--t-text-2);font-weight:700">Jarjish</span>
+          </div>
+          <div class="mock-theme-switcher">
+            <div class="mock-theme-btn active">☀ Light</div>
+            <div class="mock-theme-btn">🌙 Dark</div>
+          </div>
+        </div>
+        <div class="mock-content">
+          <div class="mock-page-title">My Requests</div>
+          <div class="mock-stats">
+            <div class="mock-stat" style="border-top:2.5px solid var(--t-text-1)">
+              <div class="mock-stat-label">Total</div>
+              <div class="mock-stat-value total">12</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #ef8354">
+              <div class="mock-stat-label">Pending</div>
+              <div class="mock-stat-value" style="color:#ef8354"><span class="mock-stat-pulse" style="background:#ef8354"></span>4</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #09825D">
+              <div class="mock-stat-label">Approved</div>
+              <div class="mock-stat-value active">7</div>
+            </div>
+          </div>
+          <div class="mock-table">
+            <div class="mock-table-header">
+              <span style="width:22px">ID</span><span style="flex:1">Candidate</span><span style="flex:1">Company</span><span>Status</span>
+            </div>
+            <div class="mock-table-row">
+              <span class="mock-col-id">#14</span>
+              <span class="mock-col-name">Arjun Mehta</span>
+              <span class="mock-col-co">RDC Pune</span>
+              <span class="mock-badge badge-pending">Pend. BH</span>
+            </div>
+            <div class="mock-table-row">
+              <span class="mock-col-id">#13</span>
+              <span class="mock-col-name">Priya Sharma</span>
+              <span class="mock-col-co">RDC Mumbai</span>
+              <span class="mock-badge badge-approved">Approved</span>
+            </div>
+            <div class="mock-table-row">
+              <span class="mock-col-id">#11</span>
+              <span class="mock-col-name">Vikram Rao</span>
+              <span class="mock-col-co">RDC Delhi</span>
+              <span class="mock-badge badge-rejected">Rejected</span>
+            </div>
+          </div>
+          <div class="mock-btn-row">
+            <div class="mock-btn mock-btn-primary" style="background:linear-gradient(135deg,#ef8354,#c86030);box-shadow:0 2px 8px rgba(239,131,84,0.38);color:#fff">+ New Request</div>
+            <div class="mock-btn mock-btn-secondary">Export</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PALETTE 2: Ocean Blue Serenity ── -->
+  <div class="palette-card p2">
+    <div class="palette-label" style="background:linear-gradient(135deg,#0c1e38,#1565C0);color:#fff">
+      Ocean Blue Serenity
+    </div>
+    <div class="swatch-row">
+      <div style="background:#0c1e38"></div>
+      <div style="background:#1565C0"></div>
+      <div style="background:#1976D2"></div>
+      <div style="background:#29B6F6"></div>
+      <div style="background:#B3E5FC"></div>
+    </div>
+    <div class="mock-app">
+      <div class="mock-sidebar">
+        <div class="mock-logo-row">
+          <div class="mock-logo-icon">
+            <svg width="14" height="14" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.5"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div><div class="mock-logo-text">RDC Teamlease</div><div class="mock-logo-sub">HR Portal</div></div>
+        </div>
+        <div class="mock-nav">
+          <div class="mock-section">My Work</div>
+          <div class="mock-nav-item active" style="background:rgba(21,101,192,0.25)"><div class="mock-nav-dot"></div>My Requests</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>New Request</div>
+          <div class="mock-section">General</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>Notifications</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>My Profile</div>
+        </div>
+        <div class="mock-user-footer">
+          <div class="mock-user-row">
+            <div class="mock-avatar" style="background:rgba(21,101,192,0.4)">J</div>
+            <div><div class="mock-username">Jarjish</div><div class="mock-role">Initiator</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-topbar">
+          <div class="mock-topbar-info">
+            <span>Initiator</span><span style="color:var(--t-text-5)">›</span>
+            <span style="color:var(--t-text-2);font-weight:700">Jarjish</span>
+          </div>
+          <div class="mock-theme-switcher">
+            <div class="mock-theme-btn active">☀ Light</div>
+            <div class="mock-theme-btn">🌙 Dark</div>
+          </div>
+        </div>
+        <div class="mock-content">
+          <div class="mock-page-title">My Requests</div>
+          <div class="mock-stats">
+            <div class="mock-stat" style="border-top:2.5px solid #0c1e38">
+              <div class="mock-stat-label">Total</div>
+              <div class="mock-stat-value" style="color:#0c1e38">12</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #1565C0">
+              <div class="mock-stat-label">Pending</div>
+              <div class="mock-stat-value" style="color:#1565C0"><span class="mock-stat-pulse" style="background:#1565C0"></span>4</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #09825D">
+              <div class="mock-stat-label">Approved</div>
+              <div class="mock-stat-value" style="color:#09825D">7</div>
+            </div>
+          </div>
+          <div class="mock-table">
+            <div class="mock-table-header">
+              <span style="width:22px">ID</span><span style="flex:1">Candidate</span><span style="flex:1">Company</span><span>Status</span>
+            </div>
+            <div class="mock-table-row"><span class="mock-col-id">#14</span><span class="mock-col-name">Arjun Mehta</span><span class="mock-col-co">RDC Pune</span><span class="mock-badge badge-pending">Pend. BH</span></div>
+            <div class="mock-table-row"><span class="mock-col-id">#13</span><span class="mock-col-name">Priya Sharma</span><span class="mock-col-co">RDC Mumbai</span><span class="mock-badge badge-approved">Approved</span></div>
+            <div class="mock-table-row"><span class="mock-col-id">#11</span><span class="mock-col-name">Vikram Rao</span><span class="mock-col-co">RDC Delhi</span><span class="mock-badge badge-rejected">Rejected</span></div>
+          </div>
+          <div class="mock-btn-row">
+            <div class="mock-btn" style="background:linear-gradient(135deg,#1976D2,#0D47A1);color:#fff;box-shadow:0 2px 8px rgba(21,101,192,0.38)">+ New Request</div>
+            <div class="mock-btn mock-btn-secondary">Export</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PALETTE 3: Deep Blue Sea ── -->
+  <div class="palette-card p3">
+    <div class="palette-label" style="background:linear-gradient(135deg,#0d2137,#2874A6);color:#fff">
+      Deep Blue Sea
+    </div>
+    <div class="swatch-row">
+      <div style="background:#0d2137"></div>
+      <div style="background:#1A508B"></div>
+      <div style="background:#2980B9"></div>
+      <div style="background:#5DADE2"></div>
+      <div style="background:#AED6F1"></div>
+    </div>
+    <div class="mock-app">
+      <div class="mock-sidebar">
+        <div class="mock-logo-row">
+          <div class="mock-logo-icon">
+            <svg width="14" height="14" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.5"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div><div class="mock-logo-text">RDC Teamlease</div><div class="mock-logo-sub">HR Portal</div></div>
+        </div>
+        <div class="mock-nav">
+          <div class="mock-section">My Work</div>
+          <div class="mock-nav-item active" style="background:rgba(40,116,166,0.25)"><div class="mock-nav-dot"></div>My Requests</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>New Request</div>
+          <div class="mock-section">General</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>Notifications</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>My Profile</div>
+        </div>
+        <div class="mock-user-footer">
+          <div class="mock-user-row">
+            <div class="mock-avatar" style="background:rgba(40,116,166,0.45)">J</div>
+            <div><div class="mock-username">Jarjish</div><div class="mock-role">Initiator</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-topbar">
+          <div class="mock-topbar-info">
+            <span>Initiator</span><span style="color:var(--t-text-5)">›</span>
+            <span style="color:var(--t-text-2);font-weight:700">Jarjish</span>
+          </div>
+          <div class="mock-theme-switcher">
+            <div class="mock-theme-btn active">☀ Light</div>
+            <div class="mock-theme-btn">🌙 Dark</div>
+          </div>
+        </div>
+        <div class="mock-content">
+          <div class="mock-page-title">My Requests</div>
+          <div class="mock-stats">
+            <div class="mock-stat" style="border-top:2.5px solid #0d2137">
+              <div class="mock-stat-label">Total</div>
+              <div class="mock-stat-value" style="color:#0d2137">12</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #2874A6">
+              <div class="mock-stat-label">Pending</div>
+              <div class="mock-stat-value" style="color:#2874A6"><span class="mock-stat-pulse" style="background:#2874A6"></span>4</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #09825D">
+              <div class="mock-stat-label">Approved</div>
+              <div class="mock-stat-value" style="color:#09825D">7</div>
+            </div>
+          </div>
+          <div class="mock-table">
+            <div class="mock-table-header">
+              <span style="width:22px">ID</span><span style="flex:1">Candidate</span><span style="flex:1">Company</span><span>Status</span>
+            </div>
+            <div class="mock-table-row"><span class="mock-col-id">#14</span><span class="mock-col-name">Arjun Mehta</span><span class="mock-col-co">RDC Pune</span><span class="mock-badge badge-pending">Pend. BH</span></div>
+            <div class="mock-table-row"><span class="mock-col-id">#13</span><span class="mock-col-name">Priya Sharma</span><span class="mock-col-co">RDC Mumbai</span><span class="mock-badge badge-approved">Approved</span></div>
+            <div class="mock-table-row"><span class="mock-col-id">#11</span><span class="mock-col-name">Vikram Rao</span><span class="mock-col-co">RDC Delhi</span><span class="mock-badge badge-rejected">Rejected</span></div>
+          </div>
+          <div class="mock-btn-row">
+            <div class="mock-btn" style="background:linear-gradient(135deg,#2E86C1,#1A5276);color:#fff;box-shadow:0 2px 8px rgba(40,116,166,0.38)">+ New Request</div>
+            <div class="mock-btn mock-btn-secondary">Export</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PALETTE 4: Earthy Forest Hues ── -->
+  <div class="palette-card p4">
+    <div class="palette-label" style="background:linear-gradient(135deg,#1e3326,#3D6B4F);color:#fff">
+      Earthy Forest Hues
+    </div>
+    <div class="swatch-row">
+      <div style="background:#1e3326"></div>
+      <div style="background:#2D5239"></div>
+      <div style="background:#3D6B4F"></div>
+      <div style="background:#6B9278"></div>
+      <div style="background:#C5D9C2"></div>
+    </div>
+    <div class="mock-app">
+      <div class="mock-sidebar">
+        <div class="mock-logo-row">
+          <div class="mock-logo-icon">
+            <svg width="14" height="14" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.5"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div><div class="mock-logo-text">RDC Teamlease</div><div class="mock-logo-sub">HR Portal</div></div>
+        </div>
+        <div class="mock-nav">
+          <div class="mock-section">My Work</div>
+          <div class="mock-nav-item active" style="background:rgba(61,107,79,0.28)"><div class="mock-nav-dot"></div>My Requests</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>New Request</div>
+          <div class="mock-section">General</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>Notifications</div>
+          <div class="mock-nav-item"><div class="mock-nav-dot"></div>My Profile</div>
+        </div>
+        <div class="mock-user-footer">
+          <div class="mock-user-row">
+            <div class="mock-avatar" style="background:rgba(61,107,79,0.45)">J</div>
+            <div><div class="mock-username">Jarjish</div><div class="mock-role">Initiator</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-main">
+        <div class="mock-topbar">
+          <div class="mock-topbar-info">
+            <span>Initiator</span><span style="color:var(--t-text-5)">›</span>
+            <span style="color:var(--t-text-2);font-weight:700">Jarjish</span>
+          </div>
+          <div class="mock-theme-switcher">
+            <div class="mock-theme-btn active">☀ Light</div>
+            <div class="mock-theme-btn">🌙 Dark</div>
+          </div>
+        </div>
+        <div class="mock-content">
+          <div class="mock-page-title">My Requests</div>
+          <div class="mock-stats">
+            <div class="mock-stat" style="border-top:2.5px solid #1e3326">
+              <div class="mock-stat-label">Total</div>
+              <div class="mock-stat-value" style="color:#1e3326">12</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #3D6B4F">
+              <div class="mock-stat-label">Pending</div>
+              <div class="mock-stat-value" style="color:#3D6B4F"><span class="mock-stat-pulse" style="background:#3D6B4F"></span>4</div>
+            </div>
+            <div class="mock-stat" style="border-top:2.5px solid #09825D">
+              <div class="mock-stat-label">Approved</div>
+              <div class="mock-stat-value" style="color:#09825D">7</div>
+            </div>
+          </div>
+          <div class="mock-table">
+            <div class="mock-table-header">
+              <span style="width:22px">ID</span><span style="flex:1">Candidate</span><span style="flex:1">Company</span><span>Status</span>
+            </div>
+            <div class="mock-table-row"><span class="mock-col-id">#14</span><span class="mock-col-name">Arjun Mehta</span><span class="mock-col-co">RDC Pune</span><span class="mock-badge badge-pending">Pend. BH</span></div>
+            <div class="mock-table-row"><span class="mock-col-id">#13</span><span class="mock-col-name">Priya Sharma</span><span class="mock-col-co">RDC Mumbai</span><span class="mock-badge badge-approved">Approved</span></div>
+            <div class="mock-table-row"><span class="mock-col-id">#11</span><span class="mock-col-name">Vikram Rao</span><span class="mock-col-co">RDC Delhi</span><span class="mock-badge badge-rejected">Rejected</span></div>
+          </div>
+          <div class="mock-btn-row">
+            <div class="mock-btn" style="background:linear-gradient(135deg,#3D6B4F,#2D5239);color:#fff;box-shadow:0 2px 8px rgba(61,107,79,0.38)">+ New Request</div>
+            <div class="mock-btn mock-btn-secondary">Export</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<p style="text-align:center;margin-top:20px;font-size:12px;color:#888;">Hover over cards to see border-highlight. The colour swatches strip under each title shows the full palette range.</p>
+</body>
+</html>

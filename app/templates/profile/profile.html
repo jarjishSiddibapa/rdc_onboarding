@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+{% block title %}My Profile — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;">
+
+  <div style="margin-bottom:28px;">
+    <h1 class="page-title">My Profile</h1>
+    <p class="page-sub">Manage your account details and security settings</p>
+  </div>
+
+  <!-- Profile Info Card -->
+  <div class="card" style="margin-bottom:20px;overflow:hidden;">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--c-border);background:var(--c-bg);">
+      <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">Profile Information</h2>
+      <p style="font-size:12.5px;color:var(--c-text-3);margin:4px 0 0;">Update your display name and profile picture</p>
+    </div>
+    <form method="POST" enctype="multipart/form-data" style="padding:24px;" id="profile-info-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <input type="hidden" name="action" value="update_profile"/>
+
+      <!-- Avatar section -->
+      <div style="display:flex;align-items:center;gap:20px;margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid var(--c-bg-2);">
+        <div style="position:relative;">
+          {% if current_user.profile_pic %}
+          <img src="{{ url_for('static', filename='uploads/' ~ current_user.profile_pic) }}"
+               alt="Profile picture"
+               id="avatar-img"
+               class="avatar-hover"
+               style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid var(--c-border);transition:transform 0.2s;"/>
+          {% else %}
+          <div id="avatar-preview" class="avatar-hover" style="width:72px;height:72px;border-radius:50%;background:rgba(99,91,255,0.15);border:3px solid var(--c-border);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:var(--c-primary);transition:transform 0.2s;">
+            {{ current_user.name[0].upper() }}
+          </div>
+          {% endif %}
+          <!-- Upload overlay -->
+          <label for="profile_pic_input" id="avatar-upload-label" style="position:absolute;bottom:0;right:0;width:22px;height:22px;background:var(--c-primary);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(99,91,255,0.5);transition:transform 0.15s;" title="Change photo">
+            <svg width="11" height="11" fill="none" stroke="white" viewBox="0 0 24 24" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </label>
+          <input type="file" id="profile_pic_input" name="profile_pic" accept="image/*" style="display:none;"/>
+        </div>
+        <div>
+          <div style="font-size:14.5px;font-weight:700;color:var(--c-text-1);">{{ current_user.name }}</div>
+          <div style="font-size:12.5px;color:var(--c-text-3);margin-top:2px;">{{ current_user.role_label }}</div>
+          <div style="font-size:12px;color:var(--c-text-4);margin-top:2px;">{{ current_user.email }}</div>
+          {% if current_user.profile_pic %}
+          <button type="button" id="remove-pic-btn"
+                  style="background:none;border:none;cursor:pointer;font-size:11.5px;color:var(--c-danger);font-family:inherit;padding:0;text-decoration:underline;transition:opacity 0.15s;margin-top:8px;display:inline-block;">Remove photo</button>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Name -->
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;letter-spacing:0.01em;">Display Name</label>
+        <input class="inp" type="text" name="name" value="{{ current_user.name }}" required maxlength="150" placeholder="Your full name"/>
+      </div>
+
+      <!-- Username -->
+      <div style="margin-bottom:20px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;letter-spacing:0.01em;">
+          Username
+          <span style="color:var(--c-text-5);font-weight:400;">(optional — lets you sign in without email)</span>
+        </label>
+        <div style="position:relative;">
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--c-text-5);font-weight:500;pointer-events:none;">@</span>
+          <input class="inp mono" type="text" name="username" id="profile-username"
+            value="{{ current_user.username or '' }}"
+            placeholder="e.g. john_doe"
+            style="padding-left:28px;padding-right:110px;"
+            autocomplete="off" maxlength="60"/>
+          <span id="uname-status" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;"></span>
+        </div>
+        <p id="uname-msg" style="font-size:11.5px;margin-top:5px;color:var(--c-text-4);">Lowercase letters, numbers and underscores only. Leave blank to remove username.</p>
+      </div>
+
+      <!-- Email (read-only) -->
+      <div style="margin-bottom:24px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;letter-spacing:0.01em;">Email Address <span style="color:var(--c-text-5);font-weight:400;">(cannot be changed here)</span></label>
+        <input class="inp" type="email" value="{{ current_user.email }}" readonly/>
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Change Password Card -->
+  <div class="card" style="margin-bottom:20px;overflow:hidden;">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--c-border);background:var(--c-bg);">
+      <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">Change Password</h2>
+      <p style="font-size:12.5px;color:var(--c-text-3);margin:4px 0 0;">Use a strong password you don't use elsewhere</p>
+    </div>
+    <form method="POST" style="padding:24px;" id="pwd-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <input type="hidden" name="action" value="change_password"/>
+
+      <div style="margin-bottom:18px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Current Password</label>
+        <div style="position:relative;">
+          <input class="inp" type="password" name="current_password" required placeholder="Enter current password" id="cur-pwd"/>
+          <button type="button" data-toggle-pwd="cur-pwd" data-toggle-eye="eye-cur" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--c-text-4);padding:0;transition:color 0.15s;" title="Show/hide" aria-label="Toggle password visibility">
+            <svg id="eye-cur" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:18px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">New Password</label>
+        <div style="position:relative;">
+          <input class="inp" type="password" name="new_password" required minlength="8" placeholder="Min 8 characters" id="new-pwd"/>
+          <button type="button" data-toggle-pwd="new-pwd" data-toggle-eye="eye-new" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--c-text-4);padding:0;" aria-label="Toggle password visibility">
+            <svg id="eye-new" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Strength bar -->
+        <div style="margin-top:7px;height:5px;border-radius:4px;background:var(--c-border);overflow:hidden;">
+          <div id="strength-bar" style="height:100%;width:0;border-radius:4px;transition:width 0.35s,background 0.35s;"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:5px;">
+          <div id="strength-label" style="font-size:11px;font-weight:600;min-width:38px;"></div>
+          <div id="strength-tips" style="font-size:11px;color:var(--c-text-4);display:none;"></div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:24px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Confirm New Password</label>
+        <div style="position:relative;">
+          <input class="inp" type="password" name="confirm_password" required placeholder="Repeat new password" id="conf-pwd"/>
+          <span id="match-icon" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:13px;display:none;"></span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Update password</button>
+    </form>
+  </div>
+
+  <!-- Email Notifications Card -->
+  <div class="card" style="overflow:hidden;">
+    <div style="padding:18px 24px;border-bottom:1px solid var(--c-border);background:var(--c-bg);">
+      <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">Email Notifications</h2>
+      <p style="font-size:12.5px;color:var(--c-text-3);margin:4px 0 0;">In-app notifications (the bell icon) are never affected by these — this only controls email.</p>
+    </div>
+    <form method="POST" style="padding:24px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <input type="hidden" name="action" value="update_notification_prefs"/>
+
+      <div style="margin-bottom:20px;">
+        <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;cursor:pointer;">
+          <input type="radio" name="email_mode" value="ALL" {% if current_user.email_mode != 'HIRING_ONLY' %}checked{% endif %} style="margin-top:3px;"/>
+          <span>
+            <span style="display:block;font-size:13px;font-weight:600;color:var(--c-text-1);">Send me all emails</span>
+            <span style="display:block;font-size:12px;color:var(--c-text-3);">Includes hiring status updates and administrative alerts (e.g. Truein push issues).</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+          <input type="radio" name="email_mode" value="HIRING_ONLY" {% if current_user.email_mode == 'HIRING_ONLY' %}checked{% endif %} style="margin-top:3px;"/>
+          <span>
+            <span style="display:block;font-size:13px;font-weight:600;color:var(--c-text-1);">Only send me hiring status updates</span>
+            <span style="display:block;font-size:12px;color:var(--c-text-3);">Submissions, approvals, rejections, and activations — no administrative/integration alerts.</span>
+          </span>
+        </label>
+      </div>
+
+      <div style="border-top:1px solid var(--c-border);padding-top:18px;margin-bottom:20px;">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+          <input type="checkbox" name="daily_digest_enabled" {% if current_user.daily_digest_enabled %}checked{% endif %} style="margin-top:3px;"/>
+          <span>
+            <span style="display:block;font-size:13px;font-weight:600;color:var(--c-text-1);">Also send me one daily summary email</span>
+            <span style="display:block;font-size:12px;color:var(--c-text-3);">A single once-a-day rollup of everything, in addition to the real-time emails above.</span>
+          </span>
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Save preferences</button>
+    </form>
+  </div>
+
+</div>
+
+{# Standalone remove-pic form — MUST be outside the main profile <form> #}
+<form id="remove-pic-form" method="POST" action="{{ url_for('profile.my_profile') }}" style="display:none;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+  <input type="hidden" name="action" value="remove_pic"/>
+</form>
+
+<style>
+.avatar-hover { transition: transform 0.2s; }
+.avatar-hover:hover { transform: scale(1.05); }
+#avatar-upload-label:hover { transform: scale(1.15); }
+#remove-pic-btn:hover { opacity: 0.7; }
+</style>
+<script>
+(function () {
+/* ── Username availability check ─────────────────────────────────────────────── */
+var UNAME_CHECK_URL = "{{ url_for('profile.check_username') }}";
+var unameOk = true;   // blank or pre-filled = ok
+var unameTimer = null;
+
+function sanitizeUname(inp) {
+  inp.value = inp.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+}
+
+function scheduleUnameCheck() {
+  clearTimeout(unameTimer);
+  unameTimer = setTimeout(doUnameCheck, 420);
+}
+
+function doUnameCheck() {
+  var inp = document.getElementById('profile-username');
+  var statusEl = document.getElementById('uname-status');
+  var msgEl = document.getElementById('uname-msg');
+  var val = inp.value.trim();
+
+  if (val === '') {
+    setUnameStatus('idle', '');
+    unameOk = true;
+    return;
+  }
+
+  setUnameStatus('checking', '');
+
+  fetch(UNAME_CHECK_URL + '?username=' + encodeURIComponent(val))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.available) {
+        setUnameStatus('ok', 'Username is available.');
+        unameOk = true;
+      } else {
+        setUnameStatus('error', 'This username is already taken.');
+        unameOk = false;
+      }
+    })
+    .catch(function() { setUnameStatus('idle', ''); });
+}
+
+function setUnameStatus(state, message) {
+  var statusEl = document.getElementById('uname-status');
+  var msgEl = document.getElementById('uname-msg');
+  var icons = {
+    checking: '<svg width="14" height="14" fill="none" stroke="var(--c-text-4)" viewBox="0 0 24 24" stroke-width="2" style="animation:spin-inline 0.8s linear infinite;display:inline-block;vertical-align:middle;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>',
+    ok:       '<svg width="14" height="14" fill="none" stroke="#046C4E" viewBox="0 0 24 24" stroke-width="2.5" style="vertical-align:middle;"><polyline points="20 6 9 17 4 12"/></svg>',
+    error:    '<svg width="14" height="14" fill="none" stroke="var(--c-danger)" viewBox="0 0 24 24" stroke-width="2.5" style="vertical-align:middle;"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
+    idle:     ''
+  };
+  statusEl.innerHTML = icons[state] || '';
+  if (message) {
+    msgEl.style.display = '';
+    msgEl.style.color = state === 'ok' ? '#046C4E' : '#C81E1E';
+    msgEl.textContent = message;
+  } else {
+    msgEl.style.display = state === 'idle' ? '' : 'none';
+    if (state === 'idle') {
+      msgEl.style.color = 'var(--c-text-4)';
+      msgEl.textContent = 'Lowercase letters, numbers and underscores only. Leave blank to remove username.';
+    }
+  }
+}
+
+function guardProfileSave() {
+  if (!unameOk) {
+    document.getElementById('profile-username').focus();
+    return false;
+  }
+  return true;
+}
+
+/* ── Password helpers ─────────────────────────────────────────────────────────── */
+function togglePwd(inputId, iconId) {
+  var inp = document.getElementById(inputId);
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function checkStrength(val) {
+  var bar   = document.getElementById('strength-bar');
+  var lbl   = document.getElementById('strength-label');
+  var tips  = document.getElementById('strength-tips');
+  var score = 0;
+  var missing = [];
+  if (val.length >= 8)         { score++; } else { missing.push('8+ chars'); }
+  if (val.length >= 12)        { score++; } else if (val.length >= 8) { missing.push('12+ for extra strength'); }
+  if (/[A-Z]/.test(val))      { score++; } else { missing.push('uppercase letter'); }
+  if (/[0-9]/.test(val))      { score++; } else { missing.push('number'); }
+  if (/[^A-Za-z0-9]/.test(val)) { score++; } else { missing.push('special character (!@#...)'); }
+
+  var pct    = (score / 5) * 100;
+  var colors = ['var(--c-border)','var(--c-danger)','var(--c-warn)','var(--c-warn)','var(--c-success)','var(--c-success)'];
+  var labels = ['','Weak','Fair','Fair','Good','Strong'];
+  bar.style.width      = pct + '%';
+  bar.style.background = colors[score] || 'var(--c-border)';
+  lbl.textContent      = val ? (labels[score] || '') : '';
+  lbl.style.color      = colors[score] || 'var(--c-text-4)';
+
+  if (tips) {
+    if (val && missing.length && score < 5) {
+      tips.textContent = 'Add: ' + missing.slice(0,2).join(', ');
+      tips.style.display = '';
+    } else {
+      tips.style.display = 'none';
+    }
+  }
+}
+
+function checkMatch() {
+  var np   = document.getElementById('new-pwd').value;
+  var cp   = document.getElementById('conf-pwd').value;
+  var icon = document.getElementById('match-icon');
+  if (!cp) { icon.style.display = 'none'; return; }
+  icon.style.display = '';
+  icon.textContent = np === cp ? '✓' : '✗';
+  icon.style.color = np === cp ? '#09825D' : '#DF1B41';
+}
+
+function previewPic(input) {
+  if (input.files && input.files[0]) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var preview = document.getElementById('avatar-preview');
+      if (preview) {
+        preview.style.backgroundImage = 'url(' + e.target.result + ')';
+        preview.style.backgroundSize = 'cover';
+        preview.style.backgroundPosition = 'center';
+        preview.textContent = '';
+      }
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+/* ── DOMContentLoaded wiring ─────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function () {
+
+  // Profile info form guard
+  var profileForm = document.getElementById('profile-info-form');
+  if (profileForm) {
+    profileForm.addEventListener('submit', function (e) {
+      if (!unameOk) {
+        e.preventDefault();
+        var u = document.getElementById('profile-username');
+        if (u) u.focus();
+      }
+    });
+  }
+
+  // Username input
+  var unameInp = document.getElementById('profile-username');
+  if (unameInp) {
+    unameInp.addEventListener('input', function () {
+      sanitizeUname(this);
+      scheduleUnameCheck();
+    });
+  }
+
+  // File input → preview
+  var picInput = document.getElementById('profile_pic_input');
+  if (picInput) {
+    picInput.addEventListener('change', function () { previewPic(this); });
+  }
+
+  // Remove photo button
+  var removePicBtn = document.getElementById('remove-pic-btn');
+  if (removePicBtn) {
+    removePicBtn.addEventListener('click', function () {
+      var f = document.getElementById('remove-pic-form');
+      if (f) f.submit();
+    });
+  }
+
+  // Eye toggle buttons (password show/hide)
+  document.querySelectorAll('[data-toggle-pwd]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var inputId = this.dataset.togglePwd;
+      var eyeId   = this.dataset.toggleEye;
+      togglePwd(inputId, eyeId);
+    });
+  });
+
+  // New password strength meter
+  var newPwdInp = document.getElementById('new-pwd');
+  if (newPwdInp) {
+    newPwdInp.addEventListener('input', function () { checkStrength(this.value); });
+  }
+
+  // Confirm password match indicator
+  var confPwdInp = document.getElementById('conf-pwd');
+  if (confPwdInp) {
+    confPwdInp.addEventListener('input', checkMatch);
+  }
+});
+
+})(); // end IIFE
+</script>
+<style>
+@keyframes spin-inline {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
+

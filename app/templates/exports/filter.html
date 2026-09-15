@@ -1,0 +1,546 @@
+{% extends "base.html" %}
+{% block title %}Export Report — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block content %}
+<div style="max-width:960px;">
+
+  {# ── Page header ───────────────────────────────────────────────────────────── #}
+  <div style="margin-bottom:28px;">
+    <h1 class="page-title">Export Report</h1>
+    <p class="page-sub">Apply filters then preview before downloading the Excel file</p>
+  </div>
+
+  {# ── Filter form ───────────────────────────────────────────────────────────── #}
+  <div id="filter-section">
+
+    <form id="export-form">
+
+      {# ── Status ─────────────────────────────────────────────────────────────── #}
+      <div class="card" style="padding:22px 24px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--c-text-1);">Status</div>
+            <div style="font-size:12px;color:var(--c-text-4);margin-top:2px;">Select one or more statuses to include</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="button" id="status-all-btn" class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:11.5px;">All</button>
+            <button type="button" id="status-none-btn" class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:11.5px;">None</button>
+            <button type="button" id="status-active-btn" class="btn btn-secondary btn-sm" style="padding:4px 10px;font-size:11.5px;">Approved only</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;">
+          {% for s in statuses %}
+          {% set label = status_labels.get(s.value, s.value) %}
+          {% set is_active_status = s.value == 'ACTIVE' %}
+          <label style="display:flex;align-items:center;gap:9px;padding:9px 12px;border:1.5px solid {% if is_active_status %}var(--c-success-border){% else %}var(--c-border){% endif %};border-radius:8px;cursor:pointer;background:{% if is_active_status %}var(--c-success-soft){% else %}var(--c-surface-2){% endif %};transition:border-color 0.15s,background 0.15s;" class="status-label" data-status="{{ s.value }}">
+            <input type="checkbox" name="status" value="{{ s.value }}"
+              {% if is_active_status %}checked{% endif %}
+              class="status-checkbox"
+              style="width:15px;height:15px;accent-color:#ef8354;cursor:pointer;flex-shrink:0;"/>
+            <span style="font-size:12.5px;font-weight:600;color:var(--c-text-2);">{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div id="status-warn" style="display:none;margin-top:10px;font-size:12px;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:7px 12px;">
+          ⚠ No status selected — the report will default to <strong>Approved</strong> only.
+        </div>
+      </div>
+
+      {# ── Date Ranges ──────────────────────────────────────────────────────────── #}
+      <div class="card" style="padding:22px 24px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--c-text-1);margin-bottom:14px;">Date Ranges</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Submission Date</div>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <div style="flex:1;">
+                <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-2);margin-bottom:5px;">From</label>
+                <input type="date" name="date_from" class="inp" style="font-size:13px;"/>
+              </div>
+              <div style="color:var(--c-text-5);font-size:13px;margin-top:18px;">→</div>
+              <div style="flex:1;">
+                <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-2);margin-bottom:5px;">To</label>
+                <input type="date" name="date_to" class="inp" style="font-size:13px;"/>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:700;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px;">Joining Date</div>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <div style="flex:1;">
+                <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-2);margin-bottom:5px;">From</label>
+                <input type="date" name="joining_from" class="inp" style="font-size:13px;"/>
+              </div>
+              <div style="color:var(--c-text-5);font-size:13px;margin-top:18px;">→</div>
+              <div style="flex:1;">
+                <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-2);margin-bottom:5px;">To</label>
+                <input type="date" name="joining_to" class="inp" style="font-size:13px;"/>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# ── Record Filters ────────────────────────────────────────────────────────── #}
+      <div class="card" style="padding:22px 24px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--c-text-1);margin-bottom:14px;">Record Filters</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Plant Location</label>
+            <select name="plant" class="inp inp-select">
+              <option value="">All locations</option>
+              {% for p in plants %}
+              <option value="{{ p.name }}">{{ p.name | plant_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Designation</label>
+            <select name="designation" class="inp inp-select">
+              <option value="">All designations</option>
+              {% for d in designations %}
+              <option value="{{ d.name }}">{{ d.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Company</label>
+            <select name="company" class="inp inp-select">
+              <option value="">All companies</option>
+              {% for co in companies %}
+              <option value="{{ co }}">{{ co }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {# ── People Filters ────────────────────────────────────────────────────────── #}
+      <div class="card" style="padding:22px 24px;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--c-text-1);margin-bottom:14px;">People Filters</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Initiator</label>
+            <select name="initiator_id" class="inp inp-select" id="initiator-select">
+              <option value="">All initiators</option>
+              {% for u in initiators %}
+              <option value="{{ u.id }}">{{ u.name }}</option>
+              {% endfor %}
+            </select>
+            <p style="font-size:11px;color:var(--c-text-4);margin:5px 0 0;">Filter by the HR who submitted the request</p>
+          </div>
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Business Head</label>
+            <select name="bh_id" class="inp inp-select" id="bh-select">
+              <option value="">All business heads</option>
+              {% for bh in business_heads %}
+              <option value="{{ bh.id }}">{{ bh.name }}</option>
+              {% endfor %}
+            </select>
+            <p style="font-size:11px;color:var(--c-text-4);margin:5px 0 0;">Shows all requests from initiators assigned to this BH</p>
+          </div>
+        </div>
+      </div>
+
+      {# ── Advanced Filters ──────────────────────────────────────────────────────── #}
+      <div class="card" style="padding:22px 24px;margin-bottom:20px;">
+        <div style="font-size:13px;font-weight:700;color:var(--c-text-1);margin-bottom:14px;">Advanced Filters</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;">
+          <div>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Retry Count (Resubmissions)</label>
+            <div style="display:flex;gap:10px;align-items:center;">
+              <div style="flex:1;">
+                <label style="display:block;font-size:11px;font-weight:600;color:var(--c-text-2);margin-bottom:5px;">Min</label>
+                <input type="number" name="retry_min" min="0" class="inp" placeholder="0" style="font-size:13px;"/>
+              </div>
+              <div style="color:var(--c-text-5);font-size:13px;margin-top:18px;">–</div>
+              <div style="flex:1;">
+                <label style="display:block;font-size:11px;font-weight:600;color:var(--c-text-2);margin-bottom:5px;">Max</label>
+                <input type="number" name="retry_max" min="0" class="inp" placeholder="Any" style="font-size:13px;"/>
+              </div>
+            </div>
+            <p style="font-size:11px;color:var(--c-text-4);margin:5px 0 0;">e.g. Min=1 to include only resubmitted requests</p>
+          </div>
+        </div>
+      </div>
+
+      {# ── Preview button ────────────────────────────────────────────────────────── #}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 2px;">
+        <p style="font-size:12.5px;color:var(--c-text-4);margin:0;">The Excel will include all active (non-file) form fields as columns.</p>
+        <button type="button" class="btn btn-primary" id="preview-btn"
+                style="padding:11px 28px;font-size:14px;font-weight:700;">
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="margin-right:7px;vertical-align:-3px;flex-shrink:0;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+          </svg>
+          <span id="preview-btn-label">Preview Report</span>
+        </button>
+      </div>
+
+    </form>
+  </div>{# /filter-section #}
+
+  {# ── Preview panel ─────────────────────────────────────────────────────────── #}
+  <div id="preview-panel" style="display:none;margin-top:28px;" aria-live="polite">
+
+    {# Header row: title + actions #}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div id="preview-title" style="font-size:16px;font-weight:700;color:var(--c-text-1);"></div>
+        <div id="preview-subtitle" style="font-size:13px;color:var(--c-text-4);margin-top:3px;"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button type="button" id="close-preview-btn" class="btn btn-secondary" style="font-size:13px;">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="margin-right:5px;vertical-align:-2px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 17l-5-5m0 0l5-5m-5 5h12"/>
+          </svg>
+          Edit Filters
+        </button>
+        <a id="download-link" href="#" class="btn btn-success" style="font-size:13px;font-weight:700;padding:9px 22px;text-decoration:none;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="margin-right:6px;vertical-align:-2px;flex-shrink:0;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          Download Excel
+        </a>
+      </div>
+    </div>
+
+    {# Filter chips ─ summary of applied filters #}
+    <div id="filter-chips" style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px;"></div>
+
+    {# Zero results state #}
+    <div id="preview-empty" style="display:none;">
+      <div class="card" style="padding:64px 24px;text-align:center;">
+        <div style="width:48px;height:48px;background:var(--c-bg);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;border:1px solid var(--c-border);">
+          <svg width="22" height="22" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+        </div>
+        <p style="font-size:15px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No records match these filters</p>
+        <p style="font-size:13px;color:var(--c-text-4);margin:0;">Try adjusting your filters to widen the result set.</p>
+      </div>
+    </div>
+
+    {# Preview table ─ shown when results exist #}
+    <div id="preview-table-wrap" style="display:none;">
+      <div class="card" style="overflow:hidden;padding:0;">
+
+        {# Table scrollable container #}
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+          <table class="tbl" id="preview-table" style="font-size:12.5px;min-width:600px;">
+            <thead>
+              <tr id="preview-thead-row"></tr>
+            </thead>
+            <tbody id="preview-tbody"></tbody>
+          </table>
+        </div>
+
+        {# Footer row #}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-top:1px solid var(--c-border);background:var(--c-surface-2);">
+          <span id="preview-row-note" style="font-size:12px;color:var(--c-text-4);"></span>
+          <span style="font-size:12px;color:var(--c-text-4);">
+            The Excel file will include <strong id="preview-col-count"></strong> columns.
+          </span>
+        </div>
+
+      </div>
+    </div>
+
+  </div>{# /preview-panel #}
+
+</div>
+
+{# ── Styles ──────────────────────────────────────────────────────────────────── #}
+<style>
+/* Filter chip pills */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 99px;
+  font-size: 12px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+}
+.filter-chip strong {
+  color: var(--c-text-1);
+  font-weight: 600;
+}
+
+/* Preview table — make header slightly sticky & styled */
+#preview-table thead th {
+  background: var(--c-surface-3);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  padding: 10px 14px;
+}
+#preview-table td {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 9px 14px;
+}
+
+/* Preview panel entrance */
+#preview-panel.visible {
+  animation: fadeUp var(--dur-3) var(--ease) both;
+}
+
+/* Preview btn loading state */
+#preview-btn.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+#preview-btn.loading #preview-btn-label::after {
+  content: '…';
+}
+</style>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Status checkbox helpers
+═══════════════════════════════════════════════════════════════════════════════ */
+function getCheckboxes() {
+  return document.querySelectorAll('input[name="status"]');
+}
+function selectAll() {
+  getCheckboxes().forEach(function(cb) { cb.checked = true;  updateStatusStyle(cb); });
+  checkStatusWarn();
+}
+function selectNone() {
+  getCheckboxes().forEach(function(cb) { cb.checked = false; updateStatusStyle(cb); });
+  checkStatusWarn();
+}
+function selectActive() {
+  getCheckboxes().forEach(function(cb) {
+    cb.checked = (cb.value === 'ACTIVE');
+    updateStatusStyle(cb);
+  });
+  checkStatusWarn();
+}
+function updateStatusStyle(cb) {
+  var lbl = cb.closest('label');
+  if (!lbl) return;
+  if (cb.checked) {
+    lbl.style.background  = '#EEF4FF';
+    lbl.style.borderColor = '#ef8354';
+  } else {
+    var isActive = cb.value === 'ACTIVE';
+    lbl.style.background  = isActive ? '#F0FBF4' : '#FAFAFA';
+    lbl.style.borderColor = isActive ? 'var(--c-success-border)' : 'var(--c-border)';
+  }
+  checkStatusWarn();
+}
+function checkStatusWarn() {
+  var anyChecked = Array.from(getCheckboxes()).some(function(cb) { return cb.checked; });
+  document.getElementById('status-warn').style.display = anyChecked ? 'none' : '';
+}
+
+/* ── People filter mutual-exclusion ── */
+function syncPeopleFilters(changed) {
+  var initSel = document.getElementById('initiator-select');
+  var bhSel   = document.getElementById('bh-select');
+  if (changed === 'initiator' && initSel.value) bhSel.value   = '';
+  else if (changed === 'bh'   && bhSel.value)   initSel.value = '';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Build query-string from form
+═══════════════════════════════════════════════════════════════════════════════ */
+function buildQueryString() {
+  var form = document.getElementById('export-form');
+  var parts = [];
+
+  // Multi-value checkboxes (status)
+  form.querySelectorAll('input[name="status"]:checked').forEach(function(cb) {
+    parts.push('status=' + encodeURIComponent(cb.value));
+  });
+
+  // All other inputs / selects (skip status checkboxes already handled)
+  ['date_from','date_to','joining_from','joining_to',
+   'plant','designation','company',
+   'initiator_id','bh_id','retry_min','retry_max'].forEach(function(n) {
+    var el = form.querySelector('[name="' + n + '"]');
+    if (el && el.value.trim()) {
+      parts.push(n + '=' + encodeURIComponent(el.value.trim()));
+    }
+  });
+
+  return parts.join('&');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Preview
+═══════════════════════════════════════════════════════════════════════════════ */
+function runPreview() {
+  var btn = document.getElementById('preview-btn');
+  btn.classList.add('loading');
+
+  var qs = buildQueryString();
+
+  fetch('{{ url_for("exports.preview_excel") }}?' + qs, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btn.classList.remove('loading');
+    if (!data.ok) { alert('Preview failed. Please try again.'); return; }
+    renderPreview(data, qs);
+  })
+  .catch(function() {
+    btn.classList.remove('loading');
+    alert('Could not load preview. Check your connection and try again.');
+  });
+}
+
+function renderPreview(data, qs) {
+  /* Title */
+  document.getElementById('preview-title').textContent = data.title;
+
+  var total = data.total;
+  var sub   = total === 0
+    ? 'No records match these filters'
+    : total === 1
+      ? '1 record will be included in the Excel file'
+      : total.toLocaleString() + ' records will be included in the Excel file';
+  document.getElementById('preview-subtitle').textContent = sub;
+
+  /* Download link */
+  document.getElementById('download-link').href =
+    '{{ url_for("exports.download_excel") }}?' + qs;
+
+  /* Filter chips */
+  var chipsEl = document.getElementById('filter-chips');
+  chipsEl.innerHTML = '';
+  (data.chips || []).forEach(function(chip) {
+    var span = document.createElement('span');
+    span.className = 'filter-chip';
+    span.innerHTML = chip.label + ': <strong>' + _esc(chip.value) + '</strong>';
+    chipsEl.appendChild(span);
+  });
+
+  /* Show/hide states */
+  var emptyEl     = document.getElementById('preview-empty');
+  var tableWrapEl = document.getElementById('preview-table-wrap');
+  var panelEl     = document.getElementById('preview-panel');
+
+  if (total === 0) {
+    emptyEl.style.display     = '';
+    tableWrapEl.style.display = 'none';
+  } else {
+    emptyEl.style.display     = 'none';
+    tableWrapEl.style.display = '';
+    renderTable(data);
+  }
+
+  /* Reveal panel */
+  panelEl.style.display = '';
+  panelEl.classList.add('visible');
+
+  /* Scroll to preview */
+  setTimeout(function() {
+    panelEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 60);
+}
+
+function renderTable(data) {
+  /* Header */
+  var thead = document.getElementById('preview-thead-row');
+  thead.innerHTML = '';
+  data.columns.forEach(function(col) {
+    var th = document.createElement('th');
+    th.textContent = col;
+    thead.appendChild(th);
+  });
+
+  /* Body */
+  var tbody = document.getElementById('preview-tbody');
+  tbody.innerHTML = '';
+  data.rows.forEach(function(row, ri) {
+    var tr = document.createElement('tr');
+    row.forEach(function(cell) {
+      var td = document.createElement('td');
+      td.textContent = cell === '' ? '—' : cell;
+      if (cell === '' || cell === null) td.style.color = 'var(--c-text-5)';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  /* Footer notes */
+  var shown = data.rows.length;
+  var total = data.total;
+  var rowNote = shown < total
+    ? 'Showing first ' + shown + ' of ' + total.toLocaleString() + ' records'
+    : 'All ' + total.toLocaleString() + ' records shown';
+  document.getElementById('preview-row-note').textContent = rowNote;
+  document.getElementById('preview-col-count').textContent = data.columns.length;
+}
+
+function closePreview() {
+  var panelEl = document.getElementById('preview-panel');
+  panelEl.classList.remove('visible');
+  panelEl.style.display = 'none';
+  /* Smooth scroll back up */
+  document.getElementById('filter-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* Simple HTML escaper for chip values */
+function _esc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+/* ── Init ── */
+document.addEventListener('DOMContentLoaded', function () {
+  // Prevent real form submission (preview only)
+  var exportForm = document.getElementById('export-form');
+  if (exportForm) {
+    exportForm.addEventListener('submit', function (e) { e.preventDefault(); });
+  }
+
+  // Status quick-select buttons
+  var allBtn    = document.getElementById('status-all-btn');
+  var noneBtn   = document.getElementById('status-none-btn');
+  var activeBtn = document.getElementById('status-active-btn');
+  if (allBtn)    allBtn.addEventListener('click', selectAll);
+  if (noneBtn)   noneBtn.addEventListener('click', selectNone);
+  if (activeBtn) activeBtn.addEventListener('click', selectActive);
+
+  // Status checkbox change → style update (event delegation)
+  document.querySelectorAll('.status-checkbox').forEach(function (cb) {
+    cb.addEventListener('change', function () { updateStatusStyle(this); });
+  });
+  // Initial style pass
+  getCheckboxes().forEach(function (cb) { updateStatusStyle(cb); });
+
+  // People filters mutual exclusion
+  var initSel = document.getElementById('initiator-select');
+  var bhSel   = document.getElementById('bh-select');
+  if (initSel) initSel.addEventListener('change', function () { syncPeopleFilters('initiator'); });
+  if (bhSel)   bhSel.addEventListener('change',   function () { syncPeopleFilters('bh'); });
+
+  // Preview button
+  var previewBtn = document.getElementById('preview-btn');
+  if (previewBtn) previewBtn.addEventListener('click', runPreview);
+
+  // Close preview button
+  var closeBtn = document.getElementById('close-preview-btn');
+  if (closeBtn) closeBtn.addEventListener('click', closePreview);
+});
+</script>
+{% endblock %}

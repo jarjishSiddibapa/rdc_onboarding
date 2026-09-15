@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In — RDC Teamlease Employee Onboarding Portal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/inter-font.css') }}">
+  <style>
+    /* ── Design tokens ── */
+    [data-theme="light"] {
+      --bg:          #f5f6fa;
+      --surface:     #ffffff;
+      --surface-2:   #f0f2f7;
+      --border:      #e2e5ec;
+      --text-1:      #2d3142;
+      --text-2:      #3d4357;
+      --text-3:      #5a6278;
+      --text-4:      #7d8699;
+      --text-5:      #a8adb8;
+      --primary:     #ef8354;
+      --primary-h:   #e7733d;
+      --primary-glow:rgba(239,131,84,0.18);
+      --panel-bg:    linear-gradient(145deg, #252839 0%, #2d3142 40%, #1e2130 70%, #252839 100%);
+      --panel-text:  rgba(255,255,255,0.9);
+      --panel-muted: rgba(138,154,178,0.9);
+      --panel-stat:  rgba(255,212,184,0.95);
+      --inp-bg:      #ffffff;
+      --inp-border:  #e2e5ec;
+      --shadow:      0 32px 80px rgba(0,0,0,0.14);
+      --aurora-1:    rgba(239,131,84,0.10);
+      --aurora-2:    rgba(239,131,84,0.06);
+      --aurora-3:    rgba(79,93,117,0.08);
+      --footer-border: #f0f2f7;
+      --footer-text: #a8adb8;
+    }
+    [data-theme="dark"] {
+      --bg:          #1c1f2e;
+      --surface:     #2d3142;
+      --surface-2:   #333749;
+      --border:      rgba(255,255,255,0.10);
+      --text-1:      #f0f2f7;
+      --text-2:      #d2d7e4;
+      --text-3:      #8c96aa;
+      --text-4:      #626c7e;
+      --text-5:      #454d60;
+      --primary:     #f0956a;
+      --primary-h:   #e8804f;
+      --primary-glow:rgba(240,149,106,0.25);
+      --panel-bg:    linear-gradient(145deg, #171923 0%, #1c1f2e 40%, #111420 70%, #171923 100%);
+      --panel-text:  rgba(232,238,255,0.92);
+      --panel-muted: rgba(79,93,117,0.9);
+      --panel-stat:  rgba(240,149,106,0.9);
+      --inp-bg:      #2d3142;
+      --inp-border:  rgba(255,255,255,0.10);
+      --shadow:      0 32px 80px rgba(0,0,0,0.6);
+      --aurora-1:    rgba(240,149,106,0.16);
+      --aurora-2:    rgba(240,149,106,0.08);
+      --aurora-3:    rgba(79,93,117,0.12);
+      --footer-border: rgba(255,255,255,0.10);
+      --footer-text: #454d60;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    * { -webkit-font-smoothing: antialiased; transition: background-color 0.25s, border-color 0.25s, color 0.25s; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      background: var(--bg);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* ── Aurora background ── */
+    .aurora-bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden;
+    }
+    .aurora-blob {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); opacity: 1;
+    }
+    .aurora-blob-1 {
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, var(--aurora-1) 0%, transparent 70%);
+      top: -200px; right: -100px;
+      animation: auroraFloat1 18s ease-in-out infinite;
+    }
+    .aurora-blob-2 {
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, var(--aurora-3) 0%, transparent 70%);
+      bottom: -150px; left: -100px;
+      animation: auroraFloat2 22s ease-in-out infinite;
+    }
+    .aurora-blob-3 {
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, var(--aurora-2) 0%, transparent 70%);
+      top: 40%; left: 35%;
+      animation: auroraFloat3 15s ease-in-out infinite;
+    }
+
+    @keyframes auroraFloat1 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      33%       { transform: translate(-40px, 50px) scale(1.08); }
+      66%       { transform: translate(30px,-30px) scale(0.95); }
+    }
+    @keyframes auroraFloat2 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      40%       { transform: translate(50px,-40px) scale(1.1); }
+      70%       { transform: translate(-20px, 20px) scale(0.93); }
+    }
+    @keyframes auroraFloat3 {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      50%       { transform: translate(-30px, 40px) scale(1.12); }
+    }
+
+    /* ── Keyframes ── */
+    @keyframes bgShift {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeLeft {
+      from { opacity: 0; transform: translateX(-20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fadeRight {
+      from { opacity: 0; transform: translateX(28px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes floatOrb {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50%       { transform: translateY(-16px) scale(1.04); }
+    }
+    @keyframes shimmerLine {
+      from { background-position: -300px 0; }
+      to   { background-position:  300px 0; }
+    }
+    @keyframes glowPulse {
+      0%, 100% { box-shadow: 0 0 0 0   rgba(239,131,84,0.50); }
+      50%       { box-shadow: 0 0 0 12px rgba(239,131,84,0); }
+    }
+    @keyframes ripple {
+      to { transform: scale(3.5); opacity: 0; }
+    }
+    @keyframes borderGlow {
+      0%, 100% { opacity: 0.4; }
+      50%       { opacity: 1; }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Layout ── */
+    .left-panel {
+      flex: 1;
+      background: var(--panel-bg);
+      background-size: 300% 300%;
+      animation: bgShift 12s ease infinite;
+      display: flex; flex-direction: column; justify-content: center;
+      padding: 60px 64px;
+      min-width: 0;
+      position: relative; overflow: hidden; z-index: 1;
+    }
+
+    /* Grid overlay */
+    .grid-overlay {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 44px 44px;
+      pointer-events: none;
+    }
+
+    /* Animated orbs inside left panel */
+    .panel-orb {
+      position: absolute; border-radius: 50%; pointer-events: none;
+    }
+    .panel-orb-1 {
+      width: 320px; height: 320px; top: -100px; right: -80px;
+      background: radial-gradient(circle, rgba(239,131,84,0.22) 0%, transparent 70%);
+      animation: floatOrb 8s ease-in-out infinite;
+    }
+    .panel-orb-2 {
+      width: 240px; height: 240px; bottom: -80px; left: -40px;
+      background: radial-gradient(circle, rgba(239,131,84,0.18) 0%, transparent 70%);
+      animation: floatOrb 11s 2s ease-in-out infinite;
+    }
+    .panel-orb-3 {
+      width: 160px; height: 160px; top: 45%; left: 30%;
+      background: radial-gradient(circle, rgba(79,93,117,0.15) 0%, transparent 70%);
+      animation: floatOrb 6s 1s ease-in-out infinite;
+    }
+
+    /* ── Right form panel ── */
+    .right-panel {
+      width: 480px; flex-shrink: 0;
+      background: var(--surface);
+      display: flex; align-items: center; justify-content: center;
+      padding: 52px 56px;
+      box-shadow: -1px 0 0 var(--border), var(--shadow);
+      animation: fadeRight 0.45s cubic-bezier(0.16,1,0.3,1) both;
+      position: relative; z-index: 1;
+    }
+
+    /* ── Input ── */
+    .inp {
+      width: 100%; padding: 11px 14px; font-size: 14px;
+      color: var(--text-1); border: 1.5px solid var(--inp-border);
+      border-radius: 8px; background: var(--inp-bg);
+      transition: border 0.18s, box-shadow 0.18s, background 0.18s; outline: none;
+      font-family: inherit;
+    }
+    .inp:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+    .inp:hover:not(:focus) { border-color: var(--text-4); }
+    .inp::placeholder { color: var(--text-5); }
+
+    /* ── Feature item ── */
+    .feature-item {
+      display: flex; align-items: center; gap: 14px; margin-bottom: 18px;
+      opacity: 0; animation: fadeLeft 0.45s cubic-bezier(0.16,1,0.3,1) forwards;
+    }
+    .feature-item:nth-child(1) { animation-delay: 0.3s; }
+    .feature-item:nth-child(2) { animation-delay: 0.42s; }
+    .feature-item:nth-child(3) { animation-delay: 0.54s; }
+    .feature-item:nth-child(4) { animation-delay: 0.66s; }
+
+    .feature-check {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: rgba(99,91,255,0.2);
+      border: 1px solid rgba(239,131,84,0.40);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .feature-item:hover .feature-check {
+      transform: scale(1.15);
+      background: rgba(239,131,84,0.35);
+    }
+
+    /* ── Form section ── */
+    .form-title { animation: fadeUp 0.4s 0.08s cubic-bezier(0.16,1,0.3,1) both; }
+    .form-fields { animation: fadeUp 0.4s 0.18s cubic-bezier(0.16,1,0.3,1) both; }
+
+    /* ── Label ── */
+    .field-label {
+      display: block; font-size: 12.5px; font-weight: 600;
+      color: var(--text-2); margin-bottom: 8px; letter-spacing: 0.01em;
+      transition: color 0.15s;
+    }
+    .field-label.focused { color: var(--primary); }
+
+    /* ── Submit button ── */
+    .submit-btn {
+      width: 100%; background: var(--primary); color: #fff;
+      font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600;
+      padding: 12px 20px; border-radius: 8px; border: none; cursor: pointer;
+      transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+      box-shadow: 0 2px 10px var(--primary-glow);
+      position: relative; overflow: hidden;
+    }
+    .submit-btn:hover {
+      background: var(--primary-h);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px var(--primary-glow);
+    }
+    .submit-btn:active { transform: scale(0.97); }
+    .submit-btn::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+      background-size: 300px 100%;
+      animation: shimmerLine 2.2s ease-in-out infinite;
+    }
+    .submit-btn .btn-ripple {
+      position: absolute; border-radius: 50%;
+      background: rgba(255,255,255,0.35);
+      transform: scale(0); animation: ripple 0.55s linear;
+      pointer-events: none;
+    }
+    .submit-btn.btn--loading .btn-text { visibility: hidden; }
+    .submit-btn.btn--loading::before {
+      content: '';
+      position: absolute; top: 50%; left: 50%;
+      width: 18px; height: 18px; margin: -9px 0 0 -9px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ── Theme toggle ── */
+    .theme-toggle {
+      position: fixed; top: 18px; right: 18px; z-index: 100;
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--surface); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+      color: var(--text-3);
+    }
+    .theme-toggle:hover {
+      transform: scale(1.1) rotate(15deg);
+      border-color: var(--primary);
+      color: var(--primary);
+      box-shadow: 0 4px 16px var(--primary-glow);
+    }
+    .theme-toggle svg { transition: all 0.25s; }
+    [data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+    [data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+    [data-theme="light"] .theme-toggle .icon-sun { display: none; }
+    [data-theme="light"] .theme-toggle .icon-moon { display: block; }
+
+    /* ── Logo icon ── */
+    .logo-icon {
+      width: 44px; height: 44px; background: var(--primary);
+      border-radius: 11px; display: flex; align-items: center; justify-content: center;
+      animation: glowPulse 3s ease-in-out infinite;
+      box-shadow: 0 4px 20px rgba(239,131,84,0.50);
+      flex-shrink: 0;
+    }
+
+    /* ── Headline gradient ── */
+    .headline-gradient {
+      background: linear-gradient(135deg, #fff 30%, #ef8354 80%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ── Flash alert ── */
+    .flash-alert {
+      display: flex; align-items: center; gap: 10px;
+      background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B;
+      border-radius: 9px; padding: 12px 16px; font-size: 13.5px;
+      margin-bottom: 24px; animation: fadeUp 0.3s ease;
+    }
+    [data-theme="dark"] .flash-alert {
+      background: rgba(220,38,38,0.12); border-color: rgba(220,38,38,0.3); color: #FCA5A5;
+    }
+    .flash-alert.flash-warning {
+      background: #FFFBEB; border-color: #FDE68A; color: #92400E;
+    }
+    [data-theme="dark"] .flash-alert.flash-warning {
+      background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: #FCD34D;
+    }
+    .flash-alert.flash-info {
+      background: #EFF6FF; border-color: #BFDBFE; color: #1E40AF;
+    }
+    [data-theme="dark"] .flash-alert.flash-info {
+      background: rgba(79,93,117,0.12); border-color: rgba(59,130,246,0.3); color: #93C5FD;
+    }
+    .flash-alert.flash-success {
+      background: #ECFDF3; border-color: #A7F3D0; color: #065F46;
+    }
+    [data-theme="dark"] .flash-alert.flash-success {
+      background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.3); color: #6EE7B7;
+    }
+
+    /* ── Divider ── */
+    .divider { border-top: 1px solid var(--footer-border); }
+
+    /* ── Forgot link ── */
+    .forgot-link {
+      font-size: 12.5px; color: var(--primary); font-weight: 600;
+      text-decoration: none; transition: opacity 0.15s;
+    }
+    .forgot-link:hover { opacity: 0.72; }
+
+    @media (max-width: 768px) {
+      .left-panel { display: none; }
+      .right-panel {
+        width: 100%; padding: 40px 28px;
+        box-shadow: none;
+        animation: fadeUp 0.4s ease both;
+      }
+      .theme-toggle { top: 12px; right: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Aurora -->
+<div class="aurora-bg">
+  <div class="aurora-blob aurora-blob-1"></div>
+  <div class="aurora-blob aurora-blob-2"></div>
+  <div class="aurora-blob aurora-blob-3"></div>
+</div>
+
+<!-- Theme toggle -->
+<button class="theme-toggle" id="theme-btn" aria-label="Toggle dark/light mode">
+  <svg class="icon-moon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+  </svg>
+  <svg class="icon-sun" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+    <circle cx="12" cy="12" r="5"/>
+    <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+    <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+  </svg>
+</button>
+
+<!-- Left: Animated brand panel -->
+<div class="left-panel">
+  <div class="grid-overlay"></div>
+  <div class="panel-orb panel-orb-1"></div>
+  <div class="panel-orb panel-orb-2"></div>
+  <div class="panel-orb panel-orb-3"></div>
+
+  <!-- Logo -->
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:52px;animation:fadeLeft 0.45s 0.1s cubic-bezier(0.16,1,0.3,1) both;opacity:0;position:relative;z-index:1;">
+    <div class="logo-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+    </div>
+    <div>
+      <div style="color:#fff;font-size:17px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">RDC Teamlease Employee Onboarding Portal</div>
+      <div style="color:#8a9ab2;font-size:11px;font-weight:500;margin-top:3px;letter-spacing:0.02em;text-transform:uppercase;">Teamlease HR Portal</div>
+    </div>
+  </div>
+
+  <!-- Headline -->
+  <div style="animation:fadeUp 0.5s 0.14s cubic-bezier(0.16,1,0.3,1) both;position:relative;z-index:1;">
+    <h1 style="font-size:34px;font-weight:800;line-height:1.15;margin:0 0 16px;letter-spacing:-0.7px;">
+      <span class="headline-gradient">RDC Teamlease<br>Employee Onboarding<br>Portal</span>
+    </h1>
+    <p style="color:#8a9ab2;font-size:14px;line-height:1.8;margin:0 0 44px;max-width:380px;">
+      The official HR portal for RDC Concrete — manage onboarding requests, multi-stage approvals, and active employee records across all plants.
+    </p>
+  </div>
+
+  <!-- Features -->
+  <div style="position:relative;z-index:1;">
+    {% set features = [
+      ('140+',        'RDC Concrete plants across India'),
+      ('2,000+',      'employees currently employed at RDC Concrete'),
+      ('Multi-stage', 'approval workflow with full audit trail'),
+      ('Real-time',   'status updates & notifications'),
+    ] %}
+    {% for stat, desc in features %}
+    <div class="feature-item">
+      <div class="feature-check">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffd4b8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <span style="color:#bfc0c0;font-size:13.5px;font-weight:500;">
+        <strong style="color:#ffd4b8;font-weight:700;">{{ stat }}</strong> {{ desc }}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Right: Login form -->
+<div class="right-panel">
+  <div style="width:100%;">
+
+    <div class="form-title" style="margin-bottom:30px;">
+      <h2 style="font-size:24px;font-weight:700;color:var(--text-1);margin:0 0 7px;letter-spacing:-0.4px;">Welcome back</h2>
+      <p style="font-size:13.5px;color:var(--text-3);margin:0;">Sign in to your account to continue</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+      <div class="flash-alert {% if cat == 'warning' %}flash-warning{% elif cat == 'info' %}flash-info{% elif cat == 'success' %}flash-success{% endif %}">
+        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span>{{ msg }}</span>
+      </div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST" class="form-fields" id="login-form" style="display:flex;flex-direction:column;gap:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}"/>
+
+      <div>
+        <label class="field-label" id="lbl-email" for="login_id">Email address or Username</label>
+        <input class="inp" type="text" id="login_id" name="login_id" required autocomplete="username"
+          placeholder="you@rdc.in  or  @username"/>
+      </div>
+
+      <div>
+        <label class="field-label" id="lbl-pass" for="password">Password</label>
+        <div style="position:relative;">
+          <input class="inp" type="password" id="password" name="password" required autocomplete="current-password"
+            placeholder="••••••••" style="padding-right:44px;"/>
+          <button type="button" id="pw-toggle"
+                  style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;color:var(--text-4);transition:color 0.15s;"
+                  aria-label="Toggle password visibility">
+            <svg id="eye-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:9px;">
+        <input type="checkbox" name="remember" id="remember" style="width:15px;height:15px;accent-color:var(--primary);cursor:pointer;border-radius:4px;"/>
+        <label for="remember" style="font-size:13.5px;color:var(--text-3);cursor:pointer;user-select:none;">Keep me signed in</label>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submit-btn">
+        <span class="btn-text">Sign in →</span>
+      </button>
+
+      <div style="text-align:center;margin-top:4px;">
+        <a href="{{ url_for('auth.forgot_password') }}" class="forgot-link">Forgot password?</a>
+      </div>
+    </form>
+
+    <p style="font-size:11.5px;color:var(--text-5);margin-top:16px;text-align:center;line-height:1.6;">
+      Sign in with your <strong style="color:var(--text-4);">email address</strong> or <strong style="color:var(--text-4);">@username</strong>
+    </p>
+
+    <div style="margin-top:32px;padding-top:20px;" class="divider">
+      <p style="font-size:11.5px;color:var(--footer-text);margin-top:16px;text-align:center;">
+        RDC Teamlease Employee Onboarding Portal &mdash; Authorized personnel only
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  /* ── Theme ── */
+  var root = document.documentElement;
+  var btn = document.getElementById('theme-btn');
+
+  function applyTheme(t) {
+    root.setAttribute('data-theme', t);
+    localStorage.setItem('rdc_theme', t);
+  }
+
+  var saved = localStorage.getItem('rdc_theme');
+  if (saved) {
+    applyTheme(saved);
+  } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    applyTheme('dark');
+  }
+
+  btn.addEventListener('click', function () {
+    applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
+      if (!localStorage.getItem('rdc_theme')) applyTheme(e.matches ? 'dark' : 'light');
+    });
+  }
+
+  /* ── Label focus highlight ── */
+  function wireLabel(inputId, labelId) {
+    var inp = document.getElementById(inputId);
+    var lbl = document.getElementById(labelId);
+    if (!inp || !lbl) return;
+    inp.addEventListener('focus', function () { lbl.classList.add('focused'); });
+    inp.addEventListener('blur',  function () { lbl.classList.remove('focused'); });
+  }
+  wireLabel('login_id', 'lbl-email');
+  wireLabel('password', 'lbl-pass');
+
+  /* ── Password toggle ── */
+  var pwToggle = document.getElementById('pw-toggle');
+  var pwInput  = document.getElementById('password');
+  if (pwToggle && pwInput) {
+    pwToggle.addEventListener('click', function () {
+      pwInput.type = pwInput.type === 'password' ? 'text' : 'password';
+    });
+  }
+
+  /* ── Button loading + ripple ── */
+  var form = document.getElementById('login-form');
+  var submitBtn = document.getElementById('submit-btn');
+  if (form && submitBtn) {
+    submitBtn.addEventListener('mousedown', function (e) {
+      var r = document.createElement('span');
+      r.className = 'btn-ripple';
+      var rect = submitBtn.getBoundingClientRect();
+      var size = Math.max(rect.width, rect.height);
+      r.style.cssText = 'width:' + size + 'px;height:' + size + 'px;left:' + (e.clientX - rect.left - size/2) + 'px;top:' + (e.clientY - rect.top - size/2) + 'px;';
+      submitBtn.appendChild(r);
+      setTimeout(function () { r.remove(); }, 600);
+    });
+    form.addEventListener('submit', function () {
+      submitBtn.classList.add('btn--loading');
+      submitBtn.disabled = true;
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

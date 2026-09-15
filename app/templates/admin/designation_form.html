@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Designation' if designation else 'Add Designation' }} — TeamLease Admin{% endblock %}
+{% block content %}
+<div style="max-width:480px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('admin.designations_list') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="page-title">{{ 'Edit Designation' if designation else 'Add Designation' }}</h1>
+    </div>
+  </div>
+  <div class="card" style="padding:28px;">
+    <form method="POST" style="display:flex;flex-direction:column;gap:20px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Designation Name <span style="color:var(--c-danger);">*</span></label>
+        <input class="inp" type="text" name="name" required value="{{ designation.name if designation else '' }}" placeholder="e.g. Batching Plant Operator"/>
+      </div>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Notice Period (days) <span style="color:var(--c-danger);">*</span></label>
+        <input class="inp" type="number" name="notice_period_days" required min="0"
+          value="{{ designation.notice_period_days if designation else 30 }}" placeholder="e.g. 30"/>
+        <p style="font-size:12px;color:var(--c-text-4);margin-top:6px;">Auto-filled in the onboarding form when this designation is selected.</p>
+      </div>
+
+      {# ── RDC Staffing Norm ── #}
+      <div style="background:var(--c-bg);border:1.5px solid var(--c-border);border-radius:10px;padding:16px 18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <span style="font-size:12px;font-weight:700;color:var(--c-text-2);text-transform:uppercase;letter-spacing:0.06em;">RDC Staffing Norm</span>
+        </div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Norm Category</label>
+        <select class="inp" name="norm_category_id">
+          <option value="">— None (not covered by staffing norms) —</option>
+          {% for cat in norm_categories %}
+          <option value="{{ cat.id }}" {% if designation and designation.norm_category_id == cat.id %}selected{% endif %}>
+            {{ cat.name }} ({{ cat.scope.value|title }}{% if cat.sheet.value != 'SHEET1' %}, {{ cat.sheet.value }}{% endif %})
+          </option>
+          {% endfor %}
+        </select>
+        <p style="font-size:12px;color:var(--c-text-4);margin-top:6px;">
+          Which RDC staffing-norm role bucket this designation counts toward. Used to gate RDC hiring against plant/cluster headcount norms — leave as "None" for designations not covered by the norms table.
+        </p>
+      </div>
+
+      {# ── Truein Settings ── #}
+      <div style="background:var(--c-bg);border:1.5px solid var(--c-border);border-radius:10px;padding:16px 18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <svg width="14" height="14" fill="none" stroke="var(--c-primary)" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+          <span style="font-size:12px;font-weight:700;color:var(--c-text-2);text-transform:uppercase;letter-spacing:0.06em;">Truein Integration</span>
+        </div>
+
+        <label style="display:flex;align-items:flex-start;gap:14px;cursor:pointer;user-select:none;">
+          <div style="position:relative;flex-shrink:0;margin-top:2px;">
+            <input type="checkbox" name="truein_app_attendance" id="truein_app_attendance" value="1"
+              {% if designation and designation.truein_app_attendance %}checked{% endif %}
+              style="position:absolute;opacity:0;width:0;height:0;"
+              onchange="updateToggle(this)"/>
+            <div id="toggle-track" style="
+              width:42px;height:24px;border-radius:12px;
+              background:{% if designation and designation.truein_app_attendance %}var(--c-primary){% else %}#D1D5DB{% endif %};
+              transition:background 0.2s;position:relative;">
+              <div id="toggle-thumb" style="
+                position:absolute;top:3px;
+                left:{% if designation and designation.truein_app_attendance %}21px{% else %}3px{% endif %};
+                width:18px;height:18px;border-radius:50%;background:#fff;
+                box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:left 0.2s;"></div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--c-text-1);">Enable App Attendance (Truein)</div>
+            <div style="font-size:12px;color:var(--c-text-4);margin-top:3px;">
+              When ON — employees with this designation will have <code style="font-size:11px;background:var(--c-border);padding:1px 5px;border-radius:3px;">userAppAttendance = 1</code> sent to Truein,
+              allowing them to mark attendance via the Truein mobile app.
+              When OFF — attendance is recorded only via hardware device.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <hr class="divider"/>
+      <div style="display:flex;gap:10px;">
+        <a href="{{ url_for('admin.designations_list') }}" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</a>
+        <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center;">
+          {{ 'Save Changes' if designation else 'Add Designation' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateToggle(checkbox) {
+  var track = document.getElementById('toggle-track');
+  var thumb = document.getElementById('toggle-thumb');
+  if (checkbox.checked) {
+    track.style.background = 'var(--c-primary)';
+    thumb.style.left = '21px';
+  } else {
+    track.style.background = '#D1D5DB';
+    thumb.style.left = '3px';
+  }
+}
+document.addEventListener('DOMContentLoaded', function() {
+  var track = document.getElementById('toggle-track');
+  var cb    = document.getElementById('truein_app_attendance');
+  if (track && cb) {
+    track.addEventListener('click', function() {
+      cb.checked = !cb.checked;
+      updateToggle(cb);
+    });
+  }
+});
+</script>
+{% endblock %}

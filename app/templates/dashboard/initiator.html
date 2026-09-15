@@ -1,0 +1,145 @@
+{% from '_macros.html' import render_pagination %}
+{% extends "base.html" %}
+{% block title %}My Requests — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
+    <div>
+      <h1 class="page-title">My Requests</h1>
+      <p class="page-sub">Welcome back, {{ current_user.name }} &mdash; {{ pagination.total }} request{{ 's' if pagination.total != 1 else '' }} total</p>
+    </div>
+    <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+      New Request
+    </a>
+  </div>
+
+  <!-- Stat cards -->
+  {% set card_data = [
+    ('Total Requests', counts.total,    'var(--c-text-1)',    'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', ''),
+    ('Pending',        counts.pending,  'var(--c-primary)',   'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', 'PENDING_BH'),
+    ('Approved',       counts.active,   'var(--c-success)',   'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 'ACTIVE'),
+    ('Rejected',       counts.rejected, 'var(--c-danger)',    'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z', 'REJECTED_BH'),
+  ] %}
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
+    {% for label, val, color, icon_path, filter_status in card_data %}
+    {% if filter_status %}
+      {% set card_url = url_for('main.dashboard', status=filter_status) %}
+    {% else %}
+      {% set card_url = url_for('main.dashboard') %}
+    {% endif %}
+    <a href="{{ card_url }}" class="card stat-card" style="padding:20px 22px;cursor:pointer;text-decoration:none;display:block;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <span style="font-size:11.5px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;">{{ label }}</span>
+        <div style="width:32px;height:32px;background:var(--c-bg);border-radius:7px;display:flex;align-items:center;justify-content:center;border:1px solid var(--c-border);">
+          <svg width="15" height="15" fill="none" stroke="{{ color }}" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="{{ icon_path }}"/>
+          </svg>
+        </div>
+      </div>
+      <div style="font-size:30px;font-weight:700;color:{{ color }};line-height:1;" data-count="{{ val }}">{{ val }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Filter bar -->
+  {% set stage_labels = {
+    'DRAFT':               'Draft',
+    'PENDING_BH':          'Pending Business Head',
+    'PENDING_DR_BHOON':    'Pending Dr. Bhoon',
+    'PENDING_HR_MANAGER':  'Pending HR Manager',
+    'PENDING_HEAD_HR':     'Pending Head HR',
+    'ACTIVE':              'Approved',
+    'REJECTED_BH':         'Rejected by Business Head',
+    'REJECTED_DR_BHOON':   'Rejected by Dr. Bhoon',
+    'REJECTED_HRM':        'Rejected by HR Manager',
+    'REJECTED_HEAD_HR':    'Rejected by Head HR',
+  } %}
+  <div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:12.5px;font-weight:600;color:var(--c-text-3);white-space:nowrap;">Filter by stage:</span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1;">
+
+      <a href="{{ url_for('main.dashboard') }}"
+         class="btn btn-sm {% if not selected_status %}btn-primary{% else %}btn-secondary{% endif %}">
+        All
+      </a>
+
+      {% for s in statuses %}
+      <a href="{{ url_for('main.dashboard', status=s.value) }}"
+         class="filter-pill {% if selected_status == s.value %}filter-pill--active{% endif %}">
+        {{ stage_labels.get(s.value, s.value) }}
+      </a>
+      {% endfor %}
+
+    </div>
+    {% if selected_status %}
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-ghost" style="white-space:nowrap;">
+      <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+      Clear
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Requests table -->
+  <div class="card" style="overflow:hidden;">
+    {% if requests %}
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Candidate</th>
+          <th>Company</th>
+          <th>Designation</th>
+          <th>Status</th>
+          <th>Last Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in requests %}
+        {% set sc = req.status_color %}
+        {% set badge_cls = {'green':'badge-green','blue':'badge-blue','red':'badge-red','yellow':'badge-yellow','gray':'badge-draft'}.get(sc,'badge-draft') %}
+        <tr>
+          <td><span class="mono" style="color:var(--c-text-4);font-size:12.5px;">#{{ req.id }}</span></td>
+          <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
+          <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
+          <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
+          <td><span class="badge {{ badge_cls }}">{{ req.status_label }}</span></td>
+          <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.updated_at | ist }}</td>
+          <td style="text-align:right;">
+            <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-secondary btn-sm">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {{ render_pagination(pagination, pg_base) }}
+    {% else %}
+    <div style="text-align:center;padding:72px 24px;">
+      <div style="width:56px;height:56px;background:var(--c-bg);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;border:1px solid var(--c-border);">
+        <svg width="26" height="26" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+      </div>
+      {% if selected_status %}
+      <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No requests in this stage</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 22px;">Try a different filter or clear to see all requests.</p>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Clear filter</a>
+      {% else %}
+      <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No requests yet</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 22px;">Create your first onboarding request to get started.</p>
+      <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+        New Request
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+
+</div>
+{% endblock %}

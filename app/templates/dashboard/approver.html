@@ -1,0 +1,223 @@
+{% from '_macros.html' import render_pagination %}
+{% extends "base.html" %}
+{% block title %}Dashboard — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
+    <div>
+      <h1 class="page-title">Dashboard</h1>
+      <p class="page-sub">{{ current_user.role_label }} &mdash; {{ current_user.name }}</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      {% include "_sync_now_widget.html" %}
+      {% if current_user.role.value in ('HEAD_HR', 'HR_MANAGER') %}
+      <a href="{{ url_for('exports.active_employees') }}" class="btn btn-success">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Export Report
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
+    <div class="card stat-card" style="padding:20px 22px;border-top:3px solid var(--c-primary);cursor:default;">
+      <div style="font-size:11.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Pending My Action</div>
+      <div style="font-size:32px;font-weight:700;color:var(--c-primary);line-height:1;" data-count="{{ counts.pending }}">{{ counts.pending }}</div>
+      {% if counts.pending > 0 %}
+      <div style="font-size:12px;color:var(--c-primary);margin-top:8px;display:flex;align-items:center;gap:5px;">
+        <span style="width:7px;height:7px;background:var(--c-primary);border-radius:50%;display:inline-block;animation:pendingPulse 1.5s ease-in-out infinite;"></span>
+        Requires attention
+      </div>
+      {% endif %}
+    </div>
+    <div class="card stat-card" style="padding:20px 22px;cursor:default;">
+      <div style="font-size:11.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Total Requests</div>
+      <div style="font-size:32px;font-weight:700;color:var(--c-text-1);line-height:1;" data-count="{{ counts.total }}">{{ counts.total }}</div>
+    </div>
+    <a href="{{ url_for('main.dashboard', status='ACTIVE') }}" class="card stat-card" style="padding:20px 22px;border-top:3px solid var(--c-success);text-decoration:none;">
+      <div style="font-size:11.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Active Employees</div>
+      <div style="font-size:32px;font-weight:700;color:var(--c-success);line-height:1;" data-count="{{ counts.active }}">{{ counts.active }}</div>
+      <div style="font-size:12px;color:var(--c-text-4);margin-top:8px;">View completed onboardings →</div>
+    </a>
+  </div>
+
+  {% set special_queue = queue | selectattr('is_special_case') | list %}
+  {% set normal_queue = queue | rejectattr('is_special_case') | list %}
+
+  <!-- Queue: Special Approvals (over-norm) -->
+  {% if special_queue %}
+  <div style="margin-bottom:28px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <h2 style="font-size:15px;font-weight:700;color:var(--c-text-1);margin:0;">Special Approvals — Over-Norm Hiring</h2>
+      <span class="badge badge-red">{{ special_queue|length }}</span>
+    </div>
+    <div class="card" style="overflow:hidden;">
+      <div style="background:color-mix(in srgb, var(--c-danger, #dc2626) 8%, var(--c-surface));padding:10px 18px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:7px;">
+        <span style="width:7px;height:7px;background:var(--c-danger, #dc2626);border-radius:50%;display:inline-block;animation:pendingPulse 2s ease-in-out infinite;"></span>
+        <span style="font-size:12px;font-weight:600;color:var(--c-danger, #dc2626);">Hiring outside staffing norms — requires your justification to approve</span>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Candidate</th>
+            <th>Designation</th>
+            <th>Company</th>
+            <th>Submitted</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in special_queue %}
+          <tr>
+            <td><span class="mono" style="color:var(--c-text-4);font-size:12.5px;">#{{ req.id }}</span></td>
+            <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
+            <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
+            <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
+            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.created_at | ist('%d %b %Y') }}</td>
+            <td style="text-align:right;">
+              <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-primary btn-sm">
+                Review →
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Queue: Normal Approvals -->
+  {% if normal_queue %}
+  <div style="margin-bottom:28px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <h2 style="font-size:15px;font-weight:700;color:var(--c-text-1);margin:0;">Normal Approvals</h2>
+      <span class="badge badge-blue">{{ normal_queue|length }}</span>
+    </div>
+    <div class="card" style="overflow:hidden;">
+      <div style="background:color-mix(in srgb, var(--c-primary) 8%, var(--c-surface));padding:10px 18px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:7px;">
+        <span style="width:7px;height:7px;background:var(--c-primary);border-radius:50%;display:inline-block;animation:pendingPulse 2s ease-in-out infinite;"></span>
+        <span style="font-size:12px;font-weight:600;color:var(--c-primary);">These requests are waiting for your review</span>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Candidate</th>
+            <th>Designation</th>
+            <th>Company</th>
+            <th>Submitted</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in normal_queue %}
+          <tr>
+            <td><span class="mono" style="color:var(--c-text-4);font-size:12.5px;">#{{ req.id }}</span></td>
+            <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
+            <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
+            <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
+            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.created_at | ist('%d %b %Y') }}</td>
+            <td style="text-align:right;">
+              <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-primary btn-sm">
+                Review →
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Filter bar — All Requests -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <h2 style="font-size:15px;font-weight:700;color:var(--c-text-1);margin:0;">All Requests</h2>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:600;color:var(--c-text-4);">Stage:</span>
+
+      <a href="{{ url_for('main.dashboard') }}"
+         class="filter-pill {% if not selected_status %}filter-pill--active{% endif %}">All</a>
+
+      {% set stage_labels = {
+        'DRAFT':              'Draft',
+        'PENDING_BH':         'Pending Business Head',
+        'PENDING_DR_BHOON':   'Pending Dr. Bhoon',
+        'PENDING_HR_MANAGER': 'Pending HR Manager',
+        'PENDING_HEAD_HR':    'Pending Head HR',
+        'ACTIVE':             'Approved',
+        'REJECTED_BH':        'Rejected by Business Head',
+        'REJECTED_DR_BHOON':  'Rejected by Dr. Bhoon',
+        'REJECTED_HRM':       'Rejected by HR Manager',
+        'REJECTED_HEAD_HR':   'Rejected by Head HR'
+      } %}
+      {% for s in statuses %}
+      <a href="{{ url_for('main.dashboard', status=s.value) }}"
+         class="filter-pill {% if selected_status == s.value %}filter-pill--active{% endif %}">
+        {{ stage_labels.get(s.value, s.value) }}
+      </a>
+      {% endfor %}
+      {% if selected_status %}
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-ghost" style="padding:3px 9px;">
+        <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+        Clear
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- All Requests table -->
+  <div class="card" style="overflow:hidden;">
+    {% if all_requests %}
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Candidate</th>
+          <th>Designation</th>
+          <th>Status</th>
+          <th>Last Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in all_requests %}
+        {% set sc = req.status_color %}
+        {% set badge_cls = {'green':'badge-green','blue':'badge-blue','red':'badge-red','yellow':'badge-yellow','gray':'badge-draft'}.get(sc,'badge-draft') %}
+        <tr>
+          <td><span class="mono" style="color:var(--c-text-4);font-size:12.5px;">#{{ req.id }}</span></td>
+          <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
+          <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
+          <td><span class="badge {{ badge_cls }}">{{ req.status_label }}</span></td>
+          <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.updated_at | ist }}</td>
+          <td style="text-align:right;">
+            <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-secondary btn-sm">View</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {{ render_pagination(pagination, pg_base) }}
+    {% else %}
+    <div style="text-align:center;padding:56px 24px;">
+      <div style="width:48px;height:48px;background:var(--c-bg);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;border:1px solid var(--c-border);">
+        <svg width="22" height="22" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      </div>
+      {% if selected_status %}
+      <p style="font-size:14px;font-weight:500;margin:0 0 12px;color:var(--c-text-2);">No requests in this stage.</p>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary btn-sm">Clear filter</a>
+      {% else %}
+      <p style="font-size:14px;font-weight:500;margin:0;color:var(--c-text-3);">No requests in the system yet.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

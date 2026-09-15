@@ -1,0 +1,162 @@
+{# ════════════════════════════════════════════════════════════════
+   render_pagination(pagination, pg_base)
+
+   Renders a full-featured pagination bar with:
+     • "Showing X–Y of Z"  +  per-page pill selector (10 / 25 / 50 / 100)
+     • First / Prev / smart page numbers with ellipsis / Next / Last
+     • Jump-to-page input (Enter key or Go button)
+
+   Parameters:
+     pagination — Flask-SQLAlchemy Pagination object
+     pg_base    — Base URL ending in '?' or '?foo=bar&'
+                  IMPORTANT: strip BOTH 'page' AND 'per_page' from args:
+                    args = {k:v for k,v in request.args.items()
+                            if k not in ('page','per_page') and v}
+                    pg_base = request.path + ('?' + urlencode(args) + '&' if args else '?')
+
+   Page nav links  : pg_base + "per_page=N&page=M"
+   Per-page links  : pg_base + "per_page=N&page=1"
+   ════════════════════════════════════════════════════════════════ #}
+{% macro render_pagination(pagination, pg_base) %}
+{% if pagination and pagination.total > 0 %}
+{% set p      = pagination.page %}
+{% set total  = pagination.pages %}
+{% set per    = pagination.per_page %}
+{% set count  = pagination.total %}
+{% set first_item = (p - 1) * per + 1 %}
+{% set ns = namespace(last_item = p * per) %}
+{% if ns.last_item > count %}{% set ns.last_item = count %}{% endif %}
+
+<div class="pg-wrap">
+
+  {# ── Left: info + per-page selector ── #}
+  <div class="pg-left">
+    <div class="pg-info">
+      Showing <strong>{{ first_item }}–{{ ns.last_item }}</strong>
+      of <strong>{{ "{:,}".format(count) }}</strong>
+    </div>
+    <div class="pg-perpage" role="group" aria-label="Rows per page">
+      <span class="pg-perpage-label">Rows:</span>
+      {% for n in [10, 25, 50, 100] %}
+      <a href="{{ pg_base }}per_page={{ n }}&page=1"
+         class="pg-pp-btn{% if per == n %} pg-pp-active{% endif %}"
+         aria-label="{{ n }} per page"
+         {% if per == n %}aria-pressed="true"{% endif %}>{{ n }}</a>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if total > 1 %}
+  {# ── Centre: page buttons ── #}
+  <nav class="pg-btns" aria-label="Page navigation">
+
+    {# First ⇤ #}
+    {% if p > 1 %}
+    <a href="{{ pg_base }}per_page={{ per }}&page=1" class="pg-btn" aria-label="First page" title="First page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7M19 19l-7-7 7-7"/></svg>
+    </a>
+    {% else %}
+    <span class="pg-btn pg-disabled" aria-disabled="true" title="First page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7M19 19l-7-7 7-7"/></svg>
+    </span>
+    {% endif %}
+
+    {# Prev ← #}
+    {% if pagination.has_prev %}
+    <a href="{{ pg_base }}per_page={{ per }}&page={{ p - 1 }}" class="pg-btn" aria-label="Previous page" title="Previous page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    {% else %}
+    <span class="pg-btn pg-disabled" aria-disabled="true" title="Previous page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+    </span>
+    {% endif %}
+
+    {# Smart page numbers with ellipsis #}
+    {% for pg_num in pagination.iter_pages(left_edge=2, left_current=2, right_current=2, right_edge=2) %}
+      {% if pg_num is none %}
+        <span class="pg-ellipsis">···</span>
+      {% elif pg_num == p %}
+        <span class="pg-btn pg-active" aria-current="page" aria-label="Page {{ pg_num }}">{{ pg_num }}</span>
+      {% else %}
+        <a href="{{ pg_base }}per_page={{ per }}&page={{ pg_num }}" class="pg-btn" aria-label="Page {{ pg_num }}">{{ pg_num }}</a>
+      {% endif %}
+    {% endfor %}
+
+    {# Next → #}
+    {% if pagination.has_next %}
+    <a href="{{ pg_base }}per_page={{ per }}&page={{ p + 1 }}" class="pg-btn" aria-label="Next page" title="Next page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </a>
+    {% else %}
+    <span class="pg-btn pg-disabled" aria-disabled="true" title="Next page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </span>
+    {% endif %}
+
+    {# Last ⇥ #}
+    {% if p < total %}
+    <a href="{{ pg_base }}per_page={{ per }}&page={{ total }}" class="pg-btn" aria-label="Last page" title="Last page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+    </a>
+    {% else %}
+    <span class="pg-btn pg-disabled" aria-disabled="true" title="Last page">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+    </span>
+    {% endif %}
+
+  </nav>
+
+  {# ── Right: jump to page ── #}
+  <div class="pg-jump">
+    <span>Go to</span>
+    <input class="pg-jump-inp"
+           type="number" min="1" max="{{ total }}"
+           placeholder="{{ p }}"
+           data-pg-total="{{ total }}"
+           data-pg-base="{{ pg_base }}per_page={{ per }}&"
+           aria-label="Jump to page">
+    <button class="btn btn-secondary btn-sm pg-go-btn" type="button"
+            style="padding:5px 11px;">Go</button>
+    <span>of <strong>{{ total }}</strong></span>
+  </div>
+  {% endif %}
+
+</div>
+{% endif %}
+{% endmacro %}
+
+
+{# ════════════════════════════════════════════════════════════════
+   render_list_search(input_id, row_selector, placeholder)
+
+   Instant client-side search box for a fully-rendered admin list
+   table (no server round-trip, no page reload). Filters every row
+   matched by `row_selector` by substring match against that row's
+   own text as the user types, and shows a live "X of Y match(es)"
+   count next to the box. Wired by ONE shared delegated listener in
+   base.html (see "INSTANT LIST SEARCH") — every page using this
+   macro gets identical search behavior for free, no per-page JS.
+   This is the standard search UI for every admin config list in
+   the app (Designations, Plant Locations, Form Fields, Users,
+   Plant/Cluster Mappings, ...) — reuse it rather than a one-off.
+
+   Parameters:
+     input_id     — unique id for this page's search input
+     row_selector — CSS selector matching every searchable <tr>,
+                    e.g. '#dtab-panel-active tbody tr, #dtab-panel-inactive tbody tr'
+                    (include every tab/panel so search survives a tab switch —
+                    a hidden tab's rows are still filtered, just not visible)
+     placeholder  — input placeholder text, e.g. "Search designations…"
+   ════════════════════════════════════════════════════════════════ #}
+{% macro render_list_search(input_id, row_selector, placeholder) %}
+<div style="padding:14px 16px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;gap:12px;">
+  <div class="list-search-wrap">
+    <svg class="list-search-icon" width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.3"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/></svg>
+    <input type="text" class="inp list-search-input" id="{{ input_id }}"
+           placeholder="{{ placeholder }}" autocomplete="off"
+           data-search-rows="{{ row_selector }}" data-search-count="{{ input_id }}-count"/>
+  </div>
+  <span id="{{ input_id }}-count" class="list-search-count"></span>
+</div>
+{% endmacro %}

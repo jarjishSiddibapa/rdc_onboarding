@@ -1,0 +1,592 @@
+{% extends "base.html" %}
+{% block title %}Request #{{ req.id }} — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">
+    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </a>
+  <span class="bc-sep" aria-hidden="true">/</span>
+  <span class="bc-item bc-current">Request #{{ req.id }}{% if req.candidate_name %} — {{ req.candidate_name }}{% endif %}</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1060px;">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div style="flex:1;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <h1 class="page-title" style="margin:0;">Request</h1>
+        <span class="mono" style="font-size:18px;font-weight:700;color:var(--c-primary);">#{{ req.id }}</span>
+        {% set sc = req.status_color %}
+        {% set badge_cls = {'green':'badge-green','blue':'badge-blue','red':'badge-red','yellow':'badge-yellow','gray':'badge-draft'}.get(sc,'badge-draft') %}
+        <span class="badge {{ badge_cls }}" style="font-size:12px;">{{ req.status_label }}</span>
+        {% if req.is_special_case %}
+        <span class="mono" style="font-size:11px;font-weight:700;background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;border-radius:20px;padding:2px 10px;">⚠ Over-Norm Special Case</span>
+        {% endif %}
+      </div>
+      <p class="page-sub" style="margin-top:4px;">Initiated by {{ req.initiator.name }} on {{ req.created_at | ist('%d %b %Y') }}</p>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
+
+    <!-- Left: Form data -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      {% set step_labels = {1: 'Personal Information', 2: 'Employment Details', 3: 'Bank Details'} %}
+      {% set fd = req.form_data %}
+
+      {% for step_num in [1, 2, 3] %}
+      {% set step_fields = all_fields | selectattr('step', 'equalto', step_num) | list %}
+      {% if step_fields %}
+      <div class="card" style="padding:24px;">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:18px;">
+          <div style="width:6px;height:18px;border-radius:3px;background:var(--c-primary);"></div>
+          <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0;">{{ step_labels.get(step_num, 'Details') }}</h3>
+        </div>
+        <dl style="display:grid;grid-template-columns:1fr 1fr;column-gap:24px;row-gap:0;">
+          {% for field in step_fields %}
+          {% if field.field_type != FieldType.FILE %}
+          <div style="padding:10px 0;border-bottom:1px solid var(--c-border);{% if field.field_type.value == 'textarea' %}grid-column:span 2;{% endif %}">
+            <dt style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;">{{ field.field_label }}</dt>
+            <dd style="font-size:14px;color:var(--c-text-1);font-weight:500;margin:0;word-break:break-word;">
+              {% set raw_val = fd.get(field.field_key, '') %}
+              {% if raw_val == 'Other' %}
+                Other: <span style="color:var(--c-primary);">{{ fd.get(field.field_key ~ '_other', '') or '—' }}</span>
+              {% elif raw_val %}
+                {%- if field.field_type.value == 'date' and raw_val|length == 10 and raw_val[4:5] == '-' -%}
+                  {%- set dp = raw_val.split('-') -%}{{ dp[2] }}/{{ dp[1] }}/{{ dp[0] }}
+                {%- else -%}{{ raw_val }}{%- endif -%}
+              {% else %}
+                <span style="color:#C1C9D2;font-weight:400;">—</span>
+              {% endif %}
+            </dd>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </dl>
+      </div>
+      {% endif %}
+      {% endfor %}
+
+      <!-- Documents -->
+      {% if req.documents %}
+      <div class="card" style="padding:24px;">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:18px;">
+          <div style="width:6px;height:18px;border-radius:3px;background:var(--c-success);"></div>
+          <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0;">Uploaded Documents</h3>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          {% for doc in req.documents %}
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--c-bg);border:1px solid var(--c-border);border-radius:8px;">
+            <div style="width:32px;height:32px;background:#EEF4FF;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <svg width="15" height="15" fill="none" stroke="#3A5CCC" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+              </svg>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <a href="{{ doc.url }}" target="_blank" style="color:var(--c-primary);font-size:13.5px;font-weight:500;text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ doc.name }}</a>
+              <span style="font-size:11.5px;color:var(--c-text-4);">{{ doc.get('label', doc.get('type', '')) }}</span>
+            </div>
+            <a href="{{ doc.url }}" target="_blank" class="btn btn-secondary btn-sm">
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+              Open
+            </a>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Action buttons -->
+      {% if can_submit %}
+      <form method="POST" action="{{ url_for('requests_bp.submit_request', token=req.public_token) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:12px;">
+          Submit for Approval →
+        </button>
+      </form>
+      {% endif %}
+
+      {% if can_resubmit %}
+      <div style="display:flex;gap:12px;">
+        <a href="{{ url_for('requests_bp.edit_request', token=req.public_token) }}" class="btn btn-secondary" style="flex:1;justify-content:center;">
+          Edit & Fix
+        </a>
+        <form method="POST" action="{{ url_for('requests_bp.resubmit_request', token=req.public_token) }}" style="flex:1;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">Resubmit</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if req.status.value == 'DRAFT' and current_user.role.value == 'INITIATOR' and req.initiated_by == current_user.id %}
+      <div style="display:flex;gap:12px;">
+        <a href="{{ url_for('requests_bp.new_request', step=1, token=req.public_token) }}" class="btn btn-secondary" style="flex:1;justify-content:center;">
+          Continue Editing
+        </a>
+        <form method="POST" action="{{ url_for('requests_bp.delete_request', token=req.public_token) }}" style="flex:1;" class="js-confirm-form" data-confirm-title="Delete Draft?" data-confirm-body="This draft will be permanently deleted and cannot be recovered." data-confirm-label="Delete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center;">Delete Draft</button>
+        </form>
+      </div>
+      {% endif %}
+
+      <!-- Approver actions -->
+      {% if can_approve %}
+      <div class="card" style="padding:24px;">
+        <h3 style="font-size:13px;font-weight:700;color:var(--c-text-1);margin:0 0 6px;">Your Action</h3>
+        <p style="font-size:12.5px;color:var(--c-text-4);margin:0 0 16px;">All actions require a comment.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button type="button" id="approve-btn" data-token="{{ req.public_token }}" class="btn btn-success">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="approve-btn-label">Approve</span>
+          </button>
+          <button type="button" data-open-modal="reject-modal" class="btn btn-danger">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            Reject
+          </button>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- Right: Workflow mini-map (multi-round) -->
+    <div>
+      <div class="card" style="padding:22px;position:sticky;top:20px;">
+        <h3 style="font-size:12px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin:0 0 18px;">Workflow Status</h3>
+
+        {# ── Reusable stage-row macro ── #}
+        {% macro stage_row(stage, is_last) %}
+        {% set s = stage.state %}
+        {% if s == 'done' %}
+          {% set dot_bg = 'var(--c-success-soft)' %}{% set dot_border = '#6EE7B7' %}{% set dot_color = 'var(--c-success)' %}
+          {% set label_color = 'var(--c-text-1)' %}
+        {% elif s == 'flagged' %}
+          {% set dot_bg = 'var(--c-warn-soft)' %}{% set dot_border = 'var(--c-warn-border)' %}{% set dot_color = 'var(--c-warn)' %}
+          {% set label_color = 'var(--c-warn)' %}
+        {% elif s == 'current' %}
+          {% set dot_bg = 'var(--c-info-soft)' %}{% set dot_border = 'var(--c-primary)' %}{% set dot_color = 'var(--c-primary)' %}
+          {% set label_color = 'var(--c-primary)' %}
+        {% elif s == 'rejected' %}
+          {% set dot_bg = 'var(--c-danger-soft)' %}{% set dot_border = 'var(--c-danger-border)' %}{% set dot_color = 'var(--c-danger)' %}
+          {% set label_color = 'var(--c-danger)' %}
+        {% else %}
+          {% set dot_bg = 'var(--c-bg)' %}{% set dot_border = 'var(--c-border)' %}{% set dot_color = 'var(--c-text-5)' %}
+          {% set label_color = 'var(--c-text-5)' %}
+        {% endif %}
+
+        <div style="display:flex;gap:12px;padding-bottom:{% if not is_last %}20px{% else %}4px{% endif %};position:relative;z-index:1;">
+          <!-- Dot -->
+          <div style="flex-shrink:0;width:28px;height:28px;border-radius:50%;background:{{ dot_bg }};border:2px solid {{ dot_border }};display:flex;align-items:center;justify-content:center;{% if s == 'current' %}box-shadow:0 0 0 4px rgba(99,91,255,0.12);animation:wfPulse 2s ease-in-out infinite;{% endif %}">
+            {% if s == 'done' %}
+              <svg width="12" height="12" fill="none" stroke="{{ dot_color }}" viewBox="0 0 24 24" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            {% elif s == 'flagged' %}
+              <svg width="11" height="11" fill="{{ dot_color }}" viewBox="0 0 20 20"><path d="M3 4v13M3 4l8 3 6-3v9l-6 3-8-3"/></svg>
+            {% elif s == 'current' %}
+              <div style="width:8px;height:8px;border-radius:50%;background:{{ dot_color }};"></div>
+            {% elif s == 'rejected' %}
+              <svg width="11" height="11" fill="none" stroke="{{ dot_color }}" viewBox="0 0 24 24" stroke-width="3"><path d="M6 18L18 6M6 6l12 12"/></svg>
+            {% else %}
+              <div style="width:7px;height:7px;border-radius:50%;background:#D1D5DB;"></div>
+            {% endif %}
+          </div>
+
+          <!-- Content -->
+          <div style="flex:1;min-width:0;padding-top:4px;">
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+              <span style="font-size:12.5px;font-weight:700;color:{{ label_color }};">{{ stage.label }}</span>
+              {% if s == 'current' %}
+                <span style="font-size:9.5px;font-weight:700;background:#EEF4FF;color:var(--c-primary);border:1px solid #C7D7FF;border-radius:999px;padding:1px 6px;letter-spacing:0.04em;">CURRENT</span>
+              {% elif s == 'rejected' %}
+                <span style="font-size:9.5px;font-weight:700;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:999px;padding:1px 6px;letter-spacing:0.04em;">REJECTED</span>
+              {% elif s == 'flagged' %}
+                <span style="font-size:9.5px;font-weight:700;background:#FFF7ED;color:#D97706;border:1px solid #FCD34D;border-radius:999px;padding:1px 6px;letter-spacing:0.04em;">FLAGGED</span>
+              {% endif %}
+            </div>
+
+            {% if s == 'current' %}
+            <div style="font-size:11px;color:var(--c-primary);font-weight:600;margin-top:1px;">Awaiting action</div>
+            {% endif %}
+
+            {% if stage.actor_name and s not in ('upcoming', 'current') %}
+            <div style="margin-top:2px;">
+              <span style="font-size:11.5px;font-weight:600;color:var(--c-text-2);">{{ stage.actor_name }}</span>
+              <span style="font-size:10.5px;color:var(--c-text-4);"> · {{ stage.actor_role_label }}</span>
+            </div>
+            {% if stage.acted_at %}
+            <div style="font-size:10.5px;color:var(--c-text-5);margin-top:1px;">{{ stage.acted_at | ist }}</div>
+            {% endif %}
+            {% endif %}
+
+            {% if stage.remark %}
+            <div style="margin-top:6px;padding:6px 9px;background:var(--c-bg);border-radius:7px;border-left:3px solid {% if s == 'rejected' %}#FCA5A5{% elif s == 'flagged' %}#FCD34D{% else %}#6EE7B7{% endif %};">
+              <p style="margin:0;font-size:11px;color:var(--c-text-3);font-style:italic;line-height:1.5;">"{{ stage.remark }}"</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endmacro %}
+
+        {# ── Render each round ── #}
+        {% set multi = workflow_rounds | length > 1 %}
+
+        {% for rnd in workflow_rounds %}
+
+          {# Round header — only when there are multiple rounds #}
+          {% if multi %}
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:12px;{% if not loop.first %}margin-top:4px;{% endif %}">
+            <span style="font-size:11px;font-weight:700;color:{% if rnd.is_rejected %}#DC2626{% elif rnd.is_current %}#ef8354{% else %}#059669{% endif %};text-transform:uppercase;letter-spacing:0.06em;">
+              Attempt {{ rnd.number }}{% if rnd.is_current %} (Current){% endif %}
+            </span>
+            {% if rnd.is_rejected %}
+            <span style="font-size:9.5px;font-weight:700;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;border-radius:999px;padding:1px 7px;">Rejected</span>
+            {% elif not rnd.is_current %}
+            <span style="font-size:9.5px;font-weight:700;background:#ECFDF3;color:#059669;border:1px solid #6EE7B7;border-radius:999px;padding:1px 7px;">Approved</span>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {# Stages for this round #}
+          <div style="position:relative;">
+            <!-- Vertical track -->
+            {% set total_stages = rnd.stages | length + 1 %}
+            <div style="position:absolute;left:13px;top:8px;bottom:8px;width:2px;background:var(--c-bg-2);z-index:0;"></div>
+
+            {# Submit / Resubmit marker #}
+            {{ stage_row(rnd.submit_stage, false) }}
+
+            {# Approval stages #}
+            {% for stage in rnd.stages %}
+            {{ stage_row(stage, loop.last and rnd.is_current) }}
+            {% endfor %}
+          </div>
+
+          {# Separator between rounds #}
+          {% if not loop.last %}
+          <div style="display:flex;align-items:center;gap:8px;margin:12px 0 16px;">
+            <div style="flex:1;height:1px;background:var(--c-bg-2);"></div>
+            <div style="display:flex;align-items:center;gap:5px;padding:4px 10px;background:#FFF7ED;border:1px solid #FDE68A;border-radius:999px;">
+              <svg width="10" height="10" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <span style="font-size:10px;font-weight:700;color:#D97706;">Resubmitted by Initiator</span>
+            </div>
+            <div style="flex:1;height:1px;background:var(--c-bg-2);"></div>
+          </div>
+          {% endif %}
+
+        {% endfor %}
+
+        <!-- Next step / status footer -->
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--c-bg-2);">
+          {% if next_role %}
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#F5F7FF;border:1.5px solid #C7D7FF;border-radius:9px;">
+            <svg width="14" height="14" fill="none" stroke="var(--c-primary)" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div>
+              <div style="font-size:10.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.06em;">Next Action By</div>
+              <div style="font-size:13px;font-weight:700;color:var(--c-primary);">{{ next_role }}</div>
+            </div>
+          </div>
+          {% elif req.status.value == 'ACTIVE' %}
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#ECFDF3;border:1.5px solid #6EE7B7;border-radius:9px;">
+            <svg width="14" height="14" fill="none" stroke="#059669" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <div style="font-size:13px;font-weight:700;color:#059669;">Onboarding Complete</div>
+          </div>
+          {% if req.truein_dropped_list %}
+          <div style="margin-top:10px;padding:12px 14px;background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:9px;">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+              <svg width="15" height="15" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>
+              <div style="font-size:12px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:0.05em;">Incomplete Truein Sync</div>
+            </div>
+            <div style="font-size:12px;color:#92400E;line-height:1.55;margin-bottom:8px;">
+              The employee was pushed to Truein, but these field(s) could not be sent and must be entered manually in the Truein dashboard:
+            </div>
+            <ul style="margin:0;padding-left:18px;font-size:12.5px;color:#92400E;font-weight:600;">
+              {% for f in req.truein_dropped_list %}
+              <li style="margin-bottom:2px;">{{ f }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+          {% elif req.status.value in ('REJECTED_BH','REJECTED_DR_BHOON','REJECTED_HRM','REJECTED_HEAD_HR') %}
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:#FEF2F2;border:1.5px solid #FECACA;border-radius:9px;">
+            <svg width="14" height="14" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>
+            <div>
+              <div style="font-size:10.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.06em;">Rejected</div>
+              <div style="font-size:12px;font-weight:600;color:#DC2626;">Initiator can edit &amp; resubmit</div>
+            </div>
+          </div>
+          {% elif req.status.value == 'DRAFT' %}
+          <div style="font-size:12px;color:var(--c-text-4);text-align:center;">Draft — not yet submitted</div>
+          {% endif %}
+
+          <!-- Meta info -->
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--c-text-4);">
+            <div>Created: <span style="color:var(--c-text-2);font-weight:500;">{{ req.created_at | ist }}</span></div>
+            <div>By: <span style="color:var(--c-text-2);font-weight:500;">{{ req.initiator.name }}</span></div>
+            {% if req.company_code %}<div>Company: <span style="color:var(--c-text-2);font-weight:500;">{{ req.company_code }}</span></div>{% endif %}
+            {% if req.plant_location %}<div>Plant: <span style="color:var(--c-text-2);font-weight:500;">{{ req.plant_location | plant_name }}</span></div>{% endif %}
+            {% if req.retry_count > 0 %}<div>Resubmissions: <span style="color:#C96B1D;font-weight:600;">{{ req.retry_count }}</span></div>{% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Approve modal -->
+<div id="approve-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:32px;height:32px;background:#ECFDF3;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" fill="none" stroke="#046C4E" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h3 style="font-size:17px;font-weight:700;color:var(--c-text-1);margin:0;">Approve Request</h3>
+    </div>
+    {% if req.is_special_case %}
+    <p style="font-size:12.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin:0 0 14px;">
+      This is an over-norm hiring request (outside staffing norms). Your justification is required and recorded.
+    </p>
+    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Reason for approving hiring outside norms (min 20 characters, required).</p>
+    <form method="POST" action="{{ url_for('requests_bp.approve_request', token=req.public_token) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <textarea name="remark" rows="3" minlength="20" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="Explain why this hire is justified despite being outside staffing norms..."></textarea>
+    {% else %}
+    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Add a comment confirming your approval (min 5 characters).</p>
+    <form method="POST" action="{{ url_for('requests_bp.approve_request', token=req.public_token) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <textarea name="remark" rows="3" minlength="5" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="e.g. Verified — all documents in order. Approved."></textarea>
+    {% endif %}
+      <div style="display:flex;gap:10px;">
+        <button type="button" data-close-modal="approve-modal" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</button>
+        <button type="submit" class="btn btn-success" style="flex:1;justify-content:center;">Confirm Approval</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reject modal -->
+<div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:32px;height:32px;background:#FEF2F2;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" fill="none" stroke="var(--c-danger)" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </div>
+      <h3 style="font-size:17px;font-weight:700;color:var(--c-text-1);margin:0;">Reject Request</h3>
+    </div>
+    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Provide a mandatory rejection reason (min 10 characters).</p>
+    <form method="POST" action="{{ url_for('requests_bp.reject_request', token=req.public_token) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <textarea name="remark" rows="4" minlength="10" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="Explain the reason for rejection..."></textarea>
+      <div style="display:flex;gap:10px;">
+        <button type="button" data-close-modal="reject-modal" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</button>
+        <button type="submit" class="btn btn-danger" style="flex:1;justify-content:center;">Confirm Rejection</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Truein pre-flight warning modal — pops BEFORE the final approver commits
+     to an approval that would trigger the live Truein push, if a likely
+     problem (missing required field, bad mobile format) can already be
+     seen locally. Lets them continue anyway (Truein's own fallback chain
+     still runs) or go back without approving. -->
+<div id="truein-preflight-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:32px;height:32px;background:#FFFBEB;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>
+      </div>
+      <h3 style="font-size:17px;font-weight:700;color:var(--c-text-1);margin:0;">Heads Up — Truein Push May Have Issues</h3>
+    </div>
+    <p style="font-size:13px;color:var(--c-text-3);line-height:1.55;margin:0 0 12px;">
+      Approving this now will push the employee to Truein. Before you do, here's what we can already tell won't go through cleanly:
+    </p>
+    <div style="padding:12px 14px;background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:9px;margin-bottom:14px;">
+      <ul id="truein-preflight-issue-list" style="margin:0;padding-left:18px;font-size:12.5px;color:#92400E;font-weight:600;line-height:1.6;"></ul>
+    </div>
+    <p style="font-size:11.5px;color:var(--c-text-4);line-height:1.5;margin:0 0 18px;">
+      You can still continue — the affected field(s) will be skipped and HR Manager notified to complete them manually in Truein, same as always. Or go back and fix the data first.
+    </p>
+    <div style="display:flex;gap:10px;">
+      <button type="button" data-close-modal="truein-preflight-modal" class="btn btn-secondary" style="flex:1;justify-content:center;">Go Back</button>
+      <button type="button" id="truein-preflight-continue" class="btn btn-success" style="flex:1;justify-content:center;">Continue to Approve</button>
+    </div>
+  </div>
+</div>
+
+<!-- Truein push issue modal — pops immediately when the approval that just
+     happened triggered a Truein push with a problem, instead of only a
+     flash banner + a delayed email to HR Manager. -->
+<div id="truein-issue-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+    {% if req.truein_push_error %}
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:32px;height:32px;background:#FEF2F2;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" fill="none" stroke="var(--c-danger)" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>
+      </div>
+      <h3 style="font-size:17px;font-weight:700;color:var(--c-text-1);margin:0;">Truein Push Failed</h3>
+    </div>
+    <p style="font-size:13px;color:var(--c-text-3);line-height:1.55;margin:0 0 14px;">
+      {% if req.truein_retry_stopped %}
+      The employee record was NOT created in Truein, and this will <strong>not</strong> be retried automatically — the error below means this exact data already belongs to a different employee in Truein, so retrying would just fail the same way again. HR Manager, Head HR and Admin have been notified by email — the underlying data needs to be corrected before pushing again manually. Here's exactly what went wrong:
+      {% else %}
+      The employee record was NOT created in Truein. This is being retried automatically in the background, and HR Manager, Head HR and Admin have been notified by email — but here's exactly what went wrong:
+      {% endif %}
+    </p>
+    <div style="padding:12px 14px;background:#FEF2F2;border:1.5px solid #FECACA;border-radius:9px;font-size:12.5px;color:#991B1B;font-weight:600;line-height:1.5;margin-bottom:18px;word-break:break-word;">
+      {{ req.truein_push_error }}
+    </div>
+    {% else %}
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <div style="width:32px;height:32px;background:#FFFBEB;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>
+      </div>
+      <h3 style="font-size:17px;font-weight:700;color:var(--c-text-1);margin:0;">Pushed to Truein — Some Fields Missing</h3>
+    </div>
+    <p style="font-size:13px;color:var(--c-text-3);line-height:1.55;margin:0 0 12px;">
+      The employee record was created in Truein, but the field(s) below could not be sent and need to be entered manually. HR Manager has also been notified by email.
+    </p>
+    <div style="padding:12px 14px;background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:9px;margin-bottom:18px;">
+      <ul style="margin:0;padding-left:18px;font-size:12.5px;color:#92400E;font-weight:600;line-height:1.6;">
+        {% for f in req.truein_dropped_list %}
+        <li>{{ f }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <button type="button" data-close-modal="truein-issue-modal" class="btn btn-secondary" style="width:100%;justify-content:center;">OK</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+@keyframes wfPulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(99,91,255,0.12); }
+  50%       { box-shadow: 0 0 0 8px rgba(99,91,255,0.06); }
+}
+</style>
+<script>
+(function () {
+  var MODALS = ['approve-modal', 'reject-modal', 'truein-issue-modal', 'truein-preflight-modal'];
+
+  function openModal(id) {
+    var modal = document.getElementById(id);
+    if (!modal) return;
+    modal.style.display = 'flex';
+    var panel = modal.querySelector('div');
+    if (panel) {
+      panel.style.animation = 'none';
+      panel.offsetHeight; /* reflow */
+      panel.style.animation = 'scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both';
+    }
+    var ta = modal.querySelector('textarea');
+    if (ta) ta.focus();
+  }
+
+  function closeModal(id) {
+    var modal = document.getElementById(id);
+    if (modal) modal.style.display = 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    // Open modal buttons
+    document.querySelectorAll('[data-open-modal]').forEach(function (btn) {
+      btn.addEventListener('click', function () { openModal(this.dataset.openModal); });
+    });
+
+    // Close modal buttons
+    document.querySelectorAll('[data-close-modal]').forEach(function (btn) {
+      btn.addEventListener('click', function () { closeModal(this.dataset.closeModal); });
+    });
+
+    // Backdrop click to close
+    MODALS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', function (e) {
+        if (e.target === el) closeModal(id);
+      });
+    });
+
+    // Approve button — pre-flight check first. If this approval would
+    // trigger the live Truein push AND we can already tell locally that
+    // something (missing required field, bad mobile format) won't go
+    // through cleanly, warn the approver before they commit rather than
+    // only after. Golden path (nothing wrong, or this isn't the approval
+    // that triggers a push) skips straight to the normal approve modal —
+    // no extra click when there's nothing to warn about.
+    var approveBtn = document.getElementById('approve-btn');
+    if (approveBtn) {
+      approveBtn.addEventListener('click', function () {
+        var label = document.getElementById('approve-btn-label');
+        var originalLabel = label ? label.textContent : null;
+        if (label) label.textContent = 'Checking...';
+        approveBtn.disabled = true;
+        fetch('/requests/' + approveBtn.dataset.token + '/truein-preflight', {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.applicable && data.issues && data.issues.length > 0) {
+              var list = document.getElementById('truein-preflight-issue-list');
+              list.innerHTML = '';
+              data.issues.forEach(function (issue) {
+                var li = document.createElement('li');
+                li.textContent = issue.label;
+                list.appendChild(li);
+              });
+              openModal('truein-preflight-modal');
+            } else {
+              openModal('approve-modal');
+            }
+          })
+          .catch(function () {
+            // Fail open — never let a pre-flight-check problem block a real approval.
+            openModal('approve-modal');
+          })
+          .finally(function () {
+            if (label && originalLabel) label.textContent = originalLabel;
+            approveBtn.disabled = false;
+          });
+      });
+    }
+
+    var preflightContinue = document.getElementById('truein-preflight-continue');
+    if (preflightContinue) {
+      preflightContinue.addEventListener('click', function () {
+        closeModal('truein-preflight-modal');
+        openModal('approve-modal');
+      });
+    }
+
+    {% if request.args.get('push_issue') and (req.truein_push_error or req.truein_dropped_list) %}
+    // We just landed here right after an approval triggered a Truein push
+    // that had a problem — pop it immediately instead of making HR wait
+    // for the notification email or notice a passive banner.
+    openModal('truein-issue-modal');
+    if (window.history && window.history.replaceState) {
+      var url = new URL(window.location.href);
+      url.searchParams.delete('push_issue');
+      window.history.replaceState({}, '', url);
+    }
+    {% endif %}
+  });
+
+  // Close on Escape
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') MODALS.forEach(closeModal);
+  });
+})();
+</script>
+{% endblock %}

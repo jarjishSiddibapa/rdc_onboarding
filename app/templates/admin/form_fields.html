@@ -1,0 +1,243 @@
+{% from '_macros.html' import render_list_search %}
+{% extends "base.html" %}
+{% block title %}Form Fields — TeamLease Admin{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;">
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;">
+    <div>
+      <h1 class="page-title">Form Fields</h1>
+      <p class="page-sub">{{ fields|length }} fields &mdash; drag rows to reorder, toggle visibility, or add custom fields</p>
+    </div>
+    <a href="{{ url_for('admin.new_form_field') }}" class="btn btn-primary">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+      Add Field
+    </a>
+  </div>
+
+  <div class="card" style="margin-bottom:20px;">
+    {{ render_list_search('field-search', '.sortable-body tr', 'Search fields by label or key…') }}
+  </div>
+
+  <!-- Save order notice (hidden until drag happens) -->
+  <div id="reorder-banner" style="display:none;background:#EEF4FF;border:1.5px solid #C7D7F4;border-radius:10px;padding:12px 18px;margin-bottom:16px;align-items:center;gap:12px;">
+    <span style="font-size:13px;color:#3A5CCC;flex:1;">Order changed — save to apply to the form.</span>
+    <button class="btn btn-primary btn-sm" id="save-order-btn">Save Order</button>
+    <button class="btn btn-secondary btn-sm" id="discard-order-btn">Discard</button>
+  </div>
+
+  {% set step_labels = {1: 'Personal Info', 2: 'Employment Details', 3: 'Bank & Documents'} %}
+  {% set step_colors = {1: '#ef8354', 2: '#09825D', 3: '#C96B1D'} %}
+
+  {% for step_num in [1, 2, 3] %}
+  {% set step_fields = fields | selectattr('step', 'equalto', step_num) | list %}
+  {% if step_fields %}
+  <div style="margin-bottom:32px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <div style="width:22px;height:22px;border-radius:6px;background:{{ step_colors[step_num] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <span style="color:#fff;font-size:10.5px;font-weight:800;">{{ step_num }}</span>
+      </div>
+      <h2 style="font-size:13px;font-weight:700;color:var(--c-text-1);margin:0;text-transform:uppercase;letter-spacing:0.07em;">Step {{ step_num }} — {{ step_labels[step_num] }}</h2>
+      <span class="badge badge-draft">{{ step_fields|length }} fields</span>
+      <span style="font-size:11.5px;color:var(--c-text-5);margin-left:4px;">
+        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" style="vertical-align:-1px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        Drag rows to reorder
+      </span>
+    </div>
+
+    <div class="card" style="overflow:hidden;">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th style="width:28px;"></th>
+            <th>Label</th>
+            <th>Key</th>
+            <th>Type</th>
+            <th>Required</th>
+            <th>Options / Constraints</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody class="sortable-body" data-step="{{ step_num }}">
+          {% for f in step_fields %}
+          <tr data-id="{{ f.id }}" style="{% if not f.is_active %}background:#FAFAFA;{% endif %}cursor:grab;">
+            <!-- Drag handle -->
+            <td style="padding:10px 8px;color:var(--c-text-5);text-align:center;cursor:grab;" title="Drag to reorder">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" class="drag-handle" style="pointer-events:none;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+              </svg>
+            </td>
+            <td style="font-weight:500;color:{% if True %}var(--c-text-1){% else %}var(--c-text-5){% endif %};">
+              {{ f.field_label }}
+              {% if not f.is_active %}
+              <span style="margin-left:7px;font-size:10.5px;font-weight:600;color:var(--c-text-5);background:var(--c-bg-2);border:1px solid var(--c-border);border-radius:4px;padding:1px 6px;vertical-align:middle;">hidden</span>
+              {% endif %}
+            </td>
+            <td style="{% if not f.is_active %}opacity:0.45;{% endif %}">
+              <span class="mono" style="font-size:11.5px;color:var(--c-text-3);background:var(--c-bg);padding:2px 8px;border-radius:5px;border:1px solid var(--c-border);">
+                {{ f.field_key }}
+              </span>
+            </td>
+            <td style="{% if not f.is_active %}opacity:0.45;{% endif %}">
+              {% set tc = {'text':'badge-blue','email':'badge-indigo','tel':'badge-teal','number':'badge-orange','date':'badge-purple','dropdown':'badge-yellow','radio':'badge-pink','file':'badge-draft','textarea':'badge-draft'} %}
+              <span class="badge {{ tc.get(f.field_type.value, 'badge-draft') }}">{{ f.field_type.value }}</span>
+            </td>
+            <td style="{% if not f.is_active %}opacity:0.45;{% endif %}">
+              {% if f.is_required %}
+              <svg width="16" height="16" fill="none" stroke="#046C4E" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              {% else %}
+              <span style="color:#D1D5DB;font-size:13px;">—</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12.5px;color:var(--c-text-3);{% if not f.is_active %}opacity:0.45;{% endif %}">
+              {% if f.field_type.value in ('dropdown', 'radio') %}
+                {% if f.options_source.value == 'inline' %}
+                  {{ f.active_options|length }} option{{ 's' if f.active_options|length != 1 else '' }}{% if f.allow_other %} + Other{% endif %}
+                {% elif f.options_source.value == 'designation' %}
+                  <span style="color:var(--c-primary);font-weight:500;">Designations (auto)</span>
+                {% else %}
+                  <span style="color:var(--c-primary);font-weight:500;">Plant Locations (auto)</span>
+                {% endif %}
+              {% elif f.field_type.value in ('text', 'textarea', 'tel') and (f.input_pattern or f.min_length or f.max_length) %}
+                <span style="color:var(--c-primary);font-weight:500;">
+                  {%- if f.input_pattern == 'alpha' %}Letters only
+                  {%- elif f.input_pattern == 'alphanumeric' %}Alphanumeric
+                  {%- elif f.input_pattern == 'numeric' %}Digits only
+                  {%- endif %}
+                  {%- if f.input_pattern and (f.min_length or f.max_length) %} · {% endif %}
+                  {%- if f.min_length and f.max_length %}{{ f.min_length }}–{{ f.max_length }} chars
+                  {%- elif f.min_length %}≥{{ f.min_length }} chars
+                  {%- elif f.max_length %}≤{{ f.max_length }} chars
+                  {%- endif %}
+                </span>
+              {% else %}
+              <span style="color:#D1D5DB;">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if f.is_active %}
+              <span class="badge badge-green">Active</span>
+              {% else %}
+              <span class="badge badge-draft">Hidden</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right;">
+              <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
+                <a href="{{ url_for('admin.edit_form_field', field_id=f.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+                <form method="POST" action="{{ url_for('admin.toggle_form_field', field_id=f.id) }}" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                  {% if f.is_active %}
+                  <button type="submit" class="btn btn-sm btn-ghost" style="color:var(--c-danger);" title="Hide this field from the form">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                    Hide
+                  </button>
+                  {% else %}
+                  <button type="submit" class="btn btn-sm btn-success" title="Make this field visible on the form">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    Show
+                  </button>
+                  {% endif %}
+                </form>
+                <form method="POST" action="{{ url_for('admin.delete_form_field', field_id=f.id) }}" style="display:inline;" class="js-confirm-form" data-confirm-title="Remove Form Field?" data-confirm-body="This field will be hidden from new requests. Existing submitted data is preserved." data-confirm-label="Remove">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                  <button type="submit" class="btn btn-sm btn-ghost" style="color:var(--c-danger);" title="Remove field">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- SortableJS, vendored locally under app/static/js/ — the app's CSP
+     (script-src 'self' 'unsafe-inline') blocks any external CDN script, so
+     loading this from jsdelivr silently failed with "Sortable is not
+     defined" and drag-to-reorder never worked at all. -->
+<script src="{{ url_for('static', filename='js/Sortable.min.js') }}"></script>
+<script>
+var dirty = false;
+
+// Wire banner buttons
+document.addEventListener('DOMContentLoaded', function () {
+  var saveBtn    = document.getElementById('save-order-btn');
+  var discardBtn = document.getElementById('discard-order-btn');
+  if (saveBtn)    saveBtn.addEventListener('click', saveOrder);
+  if (discardBtn) discardBtn.addEventListener('click', function () { location.reload(); });
+});
+
+// Initialise Sortable on every tbody.sortable-body
+document.querySelectorAll('tbody.sortable-body').forEach(function(tbody) {
+  Sortable.create(tbody, {
+    animation: 150,
+    // No `handle` — the whole row is draggable. (Sortable's `handle` option
+    // restricts drag-start to a DESCENDANT matching that selector; setting
+    // it to 'tr' looked for a nested <tr> inside each row, which never
+    // exists, so no drag could ever start anywhere on the row.)
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    onEnd: function() {
+      dirty = true;
+      document.getElementById('reorder-banner').style.display = 'flex';
+    }
+  });
+});
+
+function saveOrder() {
+  // Collect all field IDs in their new order across all steps
+  var ids = [];
+  document.querySelectorAll('tbody.sortable-body tr[data-id]').forEach(function(tr) {
+    ids.push(parseInt(tr.getAttribute('data-id')));
+  });
+
+  var btn = document.getElementById('save-order-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  fetch('{{ url_for("admin.reorder_form_fields") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: ids }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.ok) {
+      dirty = false;
+      location.reload();
+    } else {
+      alert('Save failed. Please try again.');
+      btn.disabled = false;
+      btn.textContent = 'Save Order';
+    }
+  })
+  .catch(function() {
+    alert('Network error. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Save Order';
+  });
+}
+
+// Warn if leaving with unsaved order
+window.addEventListener('beforeunload', function(e) {
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+</script>
+
+<style>
+.sortable-ghost { opacity: 0.4; background: #EEF4FF !important; }
+.sortable-chosen { box-shadow: 0 4px 18px rgba(239,131,84,0.18); }
+tbody.sortable-body tr { cursor: grab; }
+tbody.sortable-body tr:active { cursor: grabbing; }
+</style>
+{% endblock %}

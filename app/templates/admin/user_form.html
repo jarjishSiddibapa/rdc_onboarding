@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit User' if user else 'New User' }} — TeamLease Admin{% endblock %}
+
+{% block content %}
+<div style="max-width:520px;">
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('admin.users_list') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="page-title">{{ 'Edit User' if user else 'New User' }}</h1>
+      <p class="page-sub">{{ 'Update account details' if user else 'Create a new portal account' }}</p>
+    </div>
+  </div>
+
+  <div class="card" style="padding:32px;">
+    <form method="POST" id="user-form" style="display:flex;flex-direction:column;gap:20px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+      <!-- Full Name -->
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Full Name <span style="color:var(--c-danger);">*</span></label>
+        <input class="inp" type="text" name="name" required value="{{ user.name if user else '' }}" placeholder="Full name"/>
+      </div>
+
+      <!-- Email -->
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Email Address <span style="color:var(--c-danger);">*</span></label>
+        <div style="position:relative;">
+          <input class="inp" type="email" name="email" id="email-input" required
+            value="{{ user.email if user else '' }}"
+            placeholder="user@teamlease.in"
+            autocomplete="off"
+"/>
+          <span id="email-status" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;"></span>
+        </div>
+        <p id="email-msg" style="font-size:11.5px;margin-top:5px;display:none;"></p>
+      </div>
+
+      <!-- Employee Code -->
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Employee Code <span style="color:var(--c-danger);">*</span></label>
+        <input class="inp mono" type="text" name="employee_code" required
+          value="{{ user.employee_code if user and user.employee_code else '' }}"
+          placeholder="e.g. EMP-001 or RDC-HR-042"
+          style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"/>
+        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">Unique employee code assigned by HR. Used in reports to track who handled each onboarding.</p>
+      </div>
+
+      <!-- Username -->
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">
+          Username
+          <span style="font-weight:400;color:var(--c-text-4);">(optional — for login without email)</span>
+        </label>
+        <div style="position:relative;">
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13.5px;color:var(--c-text-5);font-weight:500;pointer-events:none;">@</span>
+          <input class="inp mono" type="text" name="username" id="username-input"
+            value="{{ user.username if user and user.username else '' }}"
+            placeholder="e.g. john_doe"
+            style="padding-left:28px;padding-right:100px;"
+            autocomplete="off"/>
+          <span id="username-status" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;"></span>
+        </div>
+        <p id="username-msg" style="font-size:11.5px;margin-top:5px;color:var(--c-text-4);">Lowercase letters, numbers and underscores only. Leave blank to use email only.</p>
+      </div>
+
+      <!-- Password -->
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">
+          Password
+          {% if user %}
+          <span style="font-weight:400;color:var(--c-text-4);">(leave blank to keep current)</span>
+          {% else %}
+          <span style="color:var(--c-danger);">*</span>
+          {% endif %}
+        </label>
+        <input class="inp" type="password" name="password" id="pwd-input"
+          {% if not user %}required{% endif %} minlength="8"
+          placeholder="{% if user %}New password (optional){% else %}Min 8 characters{% endif %}"
+"/>
+        <!-- Strength bar (only shown when user starts typing) -->
+        <div id="pwd-strength-wrap" style="display:none;margin-top:7px;">
+          <div style="height:5px;border-radius:4px;background:var(--c-border);overflow:hidden;">
+            <div id="pwd-strength-bar" style="height:100%;width:0;border-radius:4px;transition:width 0.35s,background 0.35s;"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+            <span id="pwd-strength-label" style="font-size:11px;font-weight:600;min-width:38px;"></span>
+            <span id="pwd-strength-tips" style="font-size:11px;color:var(--c-text-4);"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Role -->
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Role <span style="color:var(--c-danger);">*</span></label>
+        <select class="inp inp-select" name="role" id="role-select" required>
+          {% for role in UserRole %}
+          <option value="{{ role.value }}" {% if user and user.role == role %}selected{% endif %}>
+            {{ role.value.replace('_', ' ').title() }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <!-- Region assignment — shown for BUSINESS_HEAD and INITIATOR roles.
+           Both pick from the same region list; routing between them is
+           purely region-overlap based (see app/utils.py::bh_ids_for_initiator). -->
+      <div id="regions-section" style="display:none;background:#EEF4FF;border:1.5px solid #C7D7F4;border-radius:10px;padding:16px 18px;">
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:9px;">
+          <svg width="13" height="13" fill="none" stroke="#3A5CCC" viewBox="0 0 24 24" stroke-width="2.5" style="vertical-align:-2px;margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Assigned Region(s)
+        </label>
+        {% if not clusters %}
+        <p style="font-size:12px;color:var(--c-danger);margin:0;">
+          ⚠ No regions found. Regions come from Admin → Cluster Mappings.
+        </p>
+        {% else %}
+        <div style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto;">
+          {% for c in clusters %}
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--c-text-1);cursor:pointer;">
+            <input type="checkbox" name="regions" value="{{ c.id }}" {% if c.id in current_region_ids %}checked{% endif %}/>
+            {{ c.canonical_cluster_name }}
+          </label>
+          {% endfor %}
+        </div>
+        <p id="regions-help-bh" style="font-size:11.5px;color:var(--c-text-3);margin:10px 0 0;display:none;">
+          This Business Head will only see the RDC Staffing Status dashboard, and requests from Initiators sharing at least one of these regions, for the region(s) checked here. Leaving all unchecked means they see nothing region-specific (only unassigned/unmatched initiators).
+        </p>
+        <p id="regions-help-init" style="font-size:11.5px;color:var(--c-text-3);margin:10px 0 0;display:none;">
+          This Initiator's requests route to every active Business Head who shares at least one of these regions. Leaving all unchecked routes requests to every active Business Head.
+        </p>
+        {% endif %}
+      </div>
+
+      <hr class="divider" style="margin:4px 0;"/>
+
+      <div style="display:flex;gap:10px;">
+        <a href="{{ url_for('admin.users_list') }}" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</a>
+        <button type="submit" id="submit-btn" class="btn btn-primary" style="flex:1;justify-content:center;">
+          {{ 'Save Changes' if user else 'Create User' }}
+        </button>
+      </div>
+
+    </form>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Config ─────────────────────────────────────────────────────────────────── */
+var CURRENT_USER_ID = {{ user.id if user else 'null' }};
+var EMAIL_CHECK_URL    = "{{ url_for('admin.check_email') }}";
+var USERNAME_CHECK_URL = "{{ url_for('admin.check_username') }}";
+
+/* Track validity so submit guard knows both passed */
+var emailOk    = {{ 'true' if user else 'false' }};   // existing user: pre-filled email is fine
+var usernameOk = true;                                 // blank username always ok
+
+var timers = {};
+
+/* ── Debounced check scheduler ──────────────────────────────────────────────── */
+function scheduleCheck(field) {
+  clearTimeout(timers[field]);
+  timers[field] = setTimeout(function() { doCheck(field); }, 420);
+}
+
+/* ── Live availability check ────────────────────────────────────────────────── */
+function doCheck(field) {
+  var input, statusEl, msgEl, url, paramKey;
+
+  if (field === 'email') {
+    input     = document.getElementById('email-input');
+    statusEl  = document.getElementById('email-status');
+    msgEl     = document.getElementById('email-msg');
+    url       = EMAIL_CHECK_URL;
+    paramKey  = 'email';
+  } else {
+    input     = document.getElementById('username-input');
+    statusEl  = document.getElementById('username-status');
+    msgEl     = document.getElementById('username-msg');
+    url       = USERNAME_CHECK_URL;
+    paramKey  = 'username';
+  }
+
+  var val = input.value.trim();
+
+  /* Username is optional — blank means "no username", always valid */
+  if (field === 'username' && val === '') {
+    setStatus(statusEl, msgEl, 'idle', '');
+    usernameOk = true;
+    updateSubmitBtn();
+    return;
+  }
+
+  /* Email must not be empty */
+  if (field === 'email' && val === '') {
+    setStatus(statusEl, msgEl, 'error', 'Email is required.');
+    emailOk = false;
+    updateSubmitBtn();
+    return;
+  }
+
+  setStatus(statusEl, msgEl, 'checking', '');
+
+  var qs = paramKey + '=' + encodeURIComponent(val);
+  if (CURRENT_USER_ID) qs += '&exclude_id=' + CURRENT_USER_ID;
+
+  fetch(url + '?' + qs)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.available) {
+        setStatus(statusEl, msgEl, 'ok',
+          field === 'email' ? 'Email is available.' : 'Username is available.');
+        if (field === 'email') emailOk = true;
+        else usernameOk = true;
+      } else {
+        setStatus(statusEl, msgEl, 'error',
+          field === 'email'
+            ? 'This email is already registered to another account.'
+            : 'This username is already taken.');
+        if (field === 'email') emailOk = false;
+        else usernameOk = false;
+      }
+      updateSubmitBtn();
+    })
+    .catch(function() {
+      setStatus(statusEl, msgEl, 'idle', '');
+    });
+}
+
+/* ── Render status indicator ────────────────────────────────────────────────── */
+function setStatus(statusEl, msgEl, state, message) {
+  var icons = {
+    checking: '<svg width="14" height="14" fill="none" stroke="var(--c-text-4)" viewBox="0 0 24 24" stroke-width="2" style="animation:spin 0.8s linear infinite;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>',
+    ok:       '<svg width="14" height="14" fill="none" stroke="#046C4E" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>',
+    error:    '<svg width="14" height="14" fill="none" stroke="var(--c-danger)" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>',
+    idle:     ''
+  };
+  statusEl.innerHTML = icons[state] || '';
+  if (message) {
+    msgEl.style.display = '';
+    msgEl.style.color = state === 'ok' ? '#046C4E' : '#C81E1E';
+    msgEl.textContent = message;
+  } else {
+    msgEl.style.display = 'none';
+    msgEl.textContent = '';
+  }
+}
+
+/* ── Enable/disable submit ──────────────────────────────────────────────────── */
+function updateSubmitBtn() {
+  var btn = document.getElementById('submit-btn');
+  var ok  = emailOk && usernameOk;
+  btn.disabled = !ok;
+  btn.style.opacity = ok ? '' : '0.5';
+  btn.style.cursor  = ok ? '' : 'not-allowed';
+}
+
+/* ── Final guard on submit (catches edge cases) ─────────────────────────────── */
+function guardSubmit(e) {
+  if (!emailOk) {
+    document.getElementById('email-input').focus();
+    return false;
+  }
+  if (!usernameOk) {
+    document.getElementById('username-input').focus();
+    return false;
+  }
+  return true;
+}
+
+/* ── Username sanitiser ─────────────────────────────────────────────────────── */
+function sanitizeUsername(input) {
+  input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+}
+
+/* ── Region section toggle — shown for both BUSINESS_HEAD and INITIATOR ──────── */
+function updateBHSection() {
+  var role = document.getElementById('role-select').value;
+  var regionsSection = document.getElementById('regions-section');
+  var showRegions = (role === 'BUSINESS_HEAD' || role === 'INITIATOR');
+  if (regionsSection) regionsSection.style.display = showRegions ? '' : 'none';
+  var bhHelp   = document.getElementById('regions-help-bh');
+  var initHelp = document.getElementById('regions-help-init');
+  if (bhHelp)   bhHelp.style.display   = (role === 'BUSINESS_HEAD') ? '' : 'none';
+  if (initHelp) initHelp.style.display = (role === 'INITIATOR') ? '' : 'none';
+}
+
+/* ── Password strength ───────────────────────────────────────────────────────── */
+function checkPwdStrength(val) {
+  var wrap  = document.getElementById('pwd-strength-wrap');
+  var bar   = document.getElementById('pwd-strength-bar');
+  var lbl   = document.getElementById('pwd-strength-label');
+  var tips  = document.getElementById('pwd-strength-tips');
+  if (!val) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  var score = 0;
+  var missing = [];
+  if (val.length >= 8)               { score++; } else { missing.push('8+ chars'); }
+  if (val.length >= 12)              { score++; } else if (val.length >= 8) { missing.push('12+ for extra strength'); }
+  if (/[A-Z]/.test(val))            { score++; } else { missing.push('uppercase'); }
+  if (/[0-9]/.test(val))            { score++; } else { missing.push('number'); }
+  if (/[^A-Za-z0-9]/.test(val))     { score++; } else { missing.push('special char'); }
+  var colors = ['#E3E8EE','#DF1B41','#F59E0B','#F59E0B','#09825D','#09825D'];
+  var labels = ['','Weak','Fair','Fair','Good','Strong'];
+  bar.style.width      = ((score / 5) * 100) + '%';
+  bar.style.background = colors[score];
+  lbl.textContent      = labels[score] || '';
+  lbl.style.color      = colors[score];
+  tips.textContent     = (missing.length && score < 5) ? ('Add: ' + missing.slice(0,2).join(', ')) : '';
+}
+
+/* ── Wire up all event listeners (replaces inline handlers) ─────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+  var emailInp = document.getElementById('email-input');
+  var unameInp = document.getElementById('username-input');
+  var pwdInp   = document.getElementById('pwd-input');
+  var rolesel  = document.getElementById('role-select');
+  var form     = document.getElementById('user-form');
+
+  if (emailInp) {
+    emailInp.addEventListener('input', function() {
+      emailOk = false; updateSubmitBtn(); scheduleCheck('email');
+    });
+  }
+  if (unameInp) {
+    unameInp.addEventListener('input', function() {
+      sanitizeUsername(this); scheduleCheck('username');
+    });
+  }
+  if (pwdInp) {
+    pwdInp.addEventListener('input', function() { checkPwdStrength(this.value); });
+  }
+  if (rolesel) {
+    rolesel.addEventListener('change', updateBHSection);
+  }
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      if (!guardSubmit(e)) e.preventDefault();
+    });
+  }
+
+  /* Init */
+  updateBHSection();
+  updateSubmitBtn();
+});
+</script>
+
+<style>
+@keyframes spin {
+  from { transform: translateY(-50%) rotate(0deg); }
+  to   { transform: translateY(-50%) rotate(360deg); }
+}
+/* override the spin for the icon inside the absolute span */
+#email-status svg, #username-status svg { vertical-align: middle; }
+</style>
+{% endblock %}

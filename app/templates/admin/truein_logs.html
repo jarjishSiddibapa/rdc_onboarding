@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Truein Push Logs — Request #{{ req.id }}{% endblock %}
+
+{% block content %}
+<div style="max-width:1100px;">
+
+  {# ── Back nav ── #}
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('admin.requests_list') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;" aria-label="Back">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="page-title" style="margin:0;">Truein Push Logs</h1>
+      <p class="page-sub" style="margin-top:4px;">
+        Request #{{ req.id }}{% if req.candidate_name %} — {{ req.candidate_name }}{% endif %}
+        &nbsp;·&nbsp; {{ logs|length }} attempt{{ 's' if logs|length != 1 else '' }} recorded
+      </p>
+    </div>
+  </div>
+
+  {# ── Current sync state banner ── #}
+  {% if req.truein_pushed_at %}
+  <div style="display:flex;align-items:center;gap:12px;background:#ECFDF5;border:1.5px solid #6EE7B7;border-radius:10px;padding:14px 18px;margin-bottom:20px;">
+    <svg width="18" height="18" fill="none" stroke="#046C4E" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    <span style="font-size:13.5px;font-weight:600;color:#065F46;">
+      Synced to Truein on {{ req.truein_pushed_at | ist('%d %b %Y at %H:%M') }}
+      {% if logs and logs|selectattr('success')|list %}
+        — empId: <code style="font-size:12px;background:#D1FAE5;padding:1px 6px;border-radius:4px;">{{ (logs|selectattr('success')|list)[0].emp_id or '—' }}</code>
+      {% endif %}
+    </span>
+  </div>
+  {% elif req.truein_retry_stopped %}
+  <div style="display:flex;align-items:center;gap:12px;background:#F9FAFB;border:1.5px solid #D1D5DB;border-radius:10px;padding:14px 18px;margin-bottom:20px;">
+    <svg width="18" height="18" fill="none" stroke="#6B7280" viewBox="0 0 24 24" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+    <span style="font-size:13.5px;font-weight:600;color:#374151;">
+      Retries stopped manually after {{ req.truein_retry_count }} attempt{{ 's' if req.truein_retry_count != 1 else '' }}.
+      Last error: <span style="color:#B91C1C;">{{ req.truein_push_error or '—' }}</span>
+    </span>
+  </div>
+  {% elif req.truein_push_error %}
+  <div style="display:flex;align-items:flex-start;gap:12px;background:#FEF2F2;border:1.5px solid #FECACA;border-radius:10px;padding:14px 18px;margin-bottom:20px;">
+    <svg width="18" height="18" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2" style="flex-shrink:0;margin-top:1px;"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+    <div>
+      <div style="font-size:13.5px;font-weight:700;color:#991B1B;margin-bottom:3px;">
+        Retrying in background (attempt {{ req.truein_retry_count }})
+      </div>
+      <div style="font-size:13px;color:#B91C1C;">Last error: {{ req.truein_push_error }}</div>
+    </div>
+  </div>
+  {% else %}
+  <div style="display:flex;align-items:center;gap:12px;background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:10px;padding:14px 18px;margin-bottom:20px;">
+    <svg width="18" height="18" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span style="font-size:13.5px;font-weight:600;color:#92400E;">Pending — no push attempts yet.</span>
+  </div>
+  {% endif %}
+
+  {# ── Log table ── #}
+  {% if logs %}
+  <div class="card" style="overflow-x:auto;">
+    <table class="tbl" style="min-width:900px;">
+      <thead>
+        <tr>
+          <th style="width:60px;">#</th>
+          <th style="width:90px;">Source</th>
+          <th style="width:80px;">Status</th>
+          <th style="width:80px;">HTTP</th>
+          <th style="width:110px;">empId</th>
+          <th>Error / Message</th>
+          <th style="width:150px;">Time</th>
+          <th style="width:90px;text-align:center;">Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr id="log-row-{{ log.id }}">
+          <td><span class="mono" style="color:var(--c-text-4);font-size:12.5px;">{{ log.attempt_number }}</span></td>
+          <td>
+            {% if log.triggered_by == 'manual' %}
+              <span style="display:inline-flex;align-items:center;gap:4px;background:#EEF4FF;color:#3A5CCC;border:1px solid #C7D7F4;border-radius:5px;padding:2px 8px;font-size:11.5px;font-weight:600;">
+                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                Manual
+              </span>
+            {% else %}
+              <span style="display:inline-flex;align-items:center;gap:4px;background:#F3F4F6;color:#374151;border:1px solid #E5E7EB;border-radius:5px;padding:2px 8px;font-size:11.5px;font-weight:600;">
+                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Auto
+              </span>
+            {% endif %}
+          </td>
+          <td>
+            {% if log.success %}
+              <span class="badge badge-green">Success</span>
+            {% else %}
+              <span class="badge badge-red">Failed</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if log.http_status %}
+              <span class="mono" style="font-size:12.5px;color:{% if log.http_status == 200 %}var(--c-success){% elif log.http_status >= 500 %}#DC2626{% else %}#D97706{% endif %};">
+                {{ log.http_status }}
+              </span>
+            {% else %}
+              <span style="color:var(--c-text-5);">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if log.emp_id %}
+              <code style="font-size:12px;color:var(--c-primary);background:var(--c-bg);padding:2px 6px;border-radius:4px;border:1px solid var(--c-border);">{{ log.emp_id }}</code>
+            {% else %}
+              <span style="color:var(--c-text-5);">—</span>
+            {% endif %}
+          </td>
+          <td style="font-size:12.5px;color:{% if log.success %}var(--c-text-3){% else %}#B91C1C{% endif %};">
+            {{ log.error_message or '—' }}
+          </td>
+          <td style="color:var(--c-text-4);font-size:12px;">
+            {{ log.attempted_at | ist('%d %b %Y') }}<br>
+            <span style="color:var(--c-text-5);">{{ log.attempted_at | ist('%H:%M:%S') }}</span>
+          </td>
+          <td style="text-align:center;">
+            <button type="button" class="btn btn-ghost btn-sm"
+                    style="font-size:11px;padding:4px 8px;"
+                    onclick="toggleDetail({{ log.id }})">
+              Expand
+            </button>
+          </td>
+        </tr>
+        {# ── Expandable detail row ── #}
+        <tr id="log-detail-{{ log.id }}" style="display:none;">
+          <td colspan="8" style="padding:0;border-top:none;">
+            <div style="background:var(--c-bg);border-top:1px dashed var(--c-border);padding:16px 20px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+                {# Payload sent #}
+                <div>
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--c-text-4);margin-bottom:8px;">
+                    Payload Sent
+                  </div>
+                  <pre style="background:#1E293B;color:#E2E8F0;border-radius:8px;padding:12px;font-size:11.5px;font-family:'JetBrains Mono',ui-monospace,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:260px;overflow-y:auto;margin:0;line-height:1.55;">{{ log.payload_sent or '{}' }}</pre>
+                </div>
+
+                {# Response received #}
+                <div>
+                  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--c-text-4);margin-bottom:8px;">
+                    Response Received
+                  </div>
+                  <pre style="background:#1E293B;color:#E2E8F0;border-radius:8px;padding:12px;font-size:11.5px;font-family:'JetBrains Mono',ui-monospace,monospace;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:260px;overflow-y:auto;margin:0;line-height:1.55;">{{ log.response_received or '{}' }}</pre>
+                </div>
+
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="card" style="text-align:center;padding:64px 24px;">
+    <div style="width:48px;height:48px;background:var(--c-bg);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+      <svg width="22" height="22" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+    </div>
+    <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 4px;">No push attempts recorded yet</p>
+    <p style="font-size:13px;color:var(--c-text-4);margin:0;">
+      Logs appear here once the first push is triggered (automatically on ACTIVE, or manually via Push).
+    </p>
+  </div>
+  {% endif %}
+
+  {# ── Actions ── #}
+  <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+    <a href="{{ url_for('admin.requests_list') }}" class="btn btn-secondary">← Back to Requests</a>
+    <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-ghost">View Request #{{ req.id }}</a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleDetail(logId) {
+  var row = document.getElementById('log-detail-' + logId);
+  var btn = document.querySelector('#log-row-' + logId + ' button');
+  if (!row) return;
+  var hidden = (row.style.display === 'none' || row.style.display === '');
+  row.style.display = hidden ? 'table-row' : 'none';
+  if (btn) btn.textContent = hidden ? 'Collapse' : 'Expand';
+}
+</script>
+{% endblock %}

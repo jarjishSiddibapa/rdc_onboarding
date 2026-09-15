@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Location' if plant else 'Add Location' }} — TeamLease Admin{% endblock %}
+{% block content %}
+<div style="max-width:480px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('admin.plants_list', company=plant.company if plant else default_company) }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="page-title">{{ 'Edit Location' if plant else 'Add Plant Location' }}</h1>
+    </div>
+  </div>
+  <div class="card" style="padding:28px;">
+    <form method="POST" style="display:flex;flex-direction:column;gap:20px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Company <span style="color:var(--c-danger);">*</span></label>
+        <select class="inp inp-select" name="company">
+          {% for c in companies %}
+          <option value="{{ c }}" {% if (plant.company if plant else default_company) == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Location Name <span style="color:var(--c-danger);">*</span></label>
+        <input class="inp" type="text" name="name" required value="{{ plant.name if plant else '' }}" placeholder="e.g. BG-Whitefield"/>
+      </div>
+      <hr class="divider"/>
+      <div style="display:flex;gap:10px;">
+        <a href="{{ url_for('admin.plants_list', company=plant.company if plant else default_company) }}" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</a>
+        <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center;">
+          {{ 'Save Changes' if plant else 'Add Location' }}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

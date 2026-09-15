@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}All Employees — RDC Staffing Status{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('requests_bp.staffing_status') }}" class="bc-item">RDC Staffing Status</a>
+  <span class="bc-sep" aria-hidden="true">/</span>
+  <span class="bc-item bc-current">All Employees</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;">
+  <div style="margin-bottom:20px;">
+    <h1 class="page-title">All Employees</h1>
+    <p class="page-sub">
+      {% if cluster_filter %}Every ZingHR &amp; Truein employee resolved to <strong>{{ cluster_filter }}</strong>.
+        <a href="{{ url_for('requests_bp.staffing_status_employees') }}">Clear region filter ✕</a>
+      {% else %}Every ZingHR &amp; Truein employee from the latest snapshot, including anyone not yet resolved to a plant or cluster.{% endif %}
+    </p>
+  </div>
+
+  <div class="card" style="padding:16px 20px;margin-bottom:20px;">
+    <form method="GET" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+      {% if cluster_filter %}<input type="hidden" name="cluster" value="{{ cluster_filter }}"/>{% endif %}
+      <div style="min-width:160px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Source</label>
+        <select name="source" class="inp inp-select">
+          <option value="">Both</option>
+          <option value="ZINGHR" {% if source == 'ZINGHR' %}selected{% endif %}>ZingHR</option>
+          <option value="TRUEIN" {% if source == 'TRUEIN' %}selected{% endif %}>Truein</option>
+        </select>
+      </div>
+      <div style="min-width:160px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Resolved?</label>
+        <select name="resolved" class="inp inp-select">
+          <option value="">Any</option>
+          <option value="yes" {% if resolved == 'yes' %}selected{% endif %}>Resolved (has a plant/cluster)</option>
+          <option value="no" {% if resolved == 'no' %}selected{% endif %}>Unresolved (invisible elsewhere)</option>
+        </select>
+      </div>
+      <div style="min-width:180px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Designation</label>
+        <input class="inp" type="text" name="designation" value="{{ designation or '' }}" placeholder="exact designation"/>
+      </div>
+      <div style="min-width:180px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Department</label>
+        <input class="inp" type="text" name="department" value="{{ department or '' }}" placeholder="exact department"/>
+      </div>
+      <div style="min-width:180px;flex:1;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Search name / code</label>
+        <input class="inp" type="text" name="q" value="{{ search or '' }}" placeholder="e.g. Ramesh or R00302"/>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="{{ url_for('requests_bp.staffing_status_employees') }}" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <p style="font-size:12.5px;color:var(--c-text-4);margin:0 0 10px;">
+    {{ total }} matching employee(s){% if total > employees|length %} — showing the first {{ employees|length }}, narrow your filters to see the rest{% endif %}.
+  </p>
+
+  <div class="card" style="overflow:hidden;">
+    {% if not employees %}
+    <div style="padding:40px;text-align:center;color:var(--c-text-4);">No employees match these filters.</div>
+    {% else %}
+    <table class="tbl">
+      <thead>
+        <tr><th>Name</th><th>Source</th><th>Code</th><th>Designation</th><th>Department</th><th>Plant</th><th>Cluster</th><th>Role Bucket</th><th>Joined</th></tr>
+      </thead>
+      <tbody>
+        {% for e in employees %}
+        <tr>
+          <td style="font-weight:500;color:var(--c-text-1);">{{ e.employee_name or '—' }}</td>
+          <td class="mono" style="font-size:11px;color:var(--c-text-4);">{{ e.source.value }}</td>
+          <td class="mono" style="font-size:11px;color:var(--c-text-4);">{{ e.employee_code or '—' }}</td>
+          <td style="font-size:13px;">{{ e.designation or '—' }}</td>
+          <td style="font-size:13px;color:var(--c-text-3);">{{ e.department or '—' }}</td>
+          <td style="font-size:13px;">
+            {% if e.plant_location_key %}<a href="{{ url_for('requests_bp.staffing_status_plant', plant_name=e.plant_location_key) }}">{{ plant_display_names.get(e.plant_location_key, e.plant_location_key) }}</a>
+            {% else %}<span style="color:var(--c-text-4);">— unresolved</span>{% endif %}
+          </td>
+          <td style="font-size:13px;">
+            {% if e.cluster_location_key %}<a href="{{ url_for('requests_bp.staffing_status_cluster', cluster_name=e.cluster_location_key) }}">{{ e.cluster_location_key }}</a>
+            {% else %}<span style="color:var(--c-text-4);">—</span>{% endif %}
+          </td>
+          <td style="font-size:13px;">{{ e.norm_role_category.name if e.norm_role_category else '—' }}</td>
+          <td style="font-size:12px;color:var(--c-text-4);">{{ e.date_of_joining or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

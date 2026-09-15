@@ -1,0 +1,318 @@
+{% from '_macros.html' import render_pagination %}
+{% extends "base.html" %}
+{% block title %}Audit Log — RDC Teamlease Admin{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;">
+
+  {# ── Human-readable labels & badge colours for every action type ── #}
+  {% set ACTION_META = {
+    'LOGIN_SUCCESS':              ('Logged In',                  'badge-green'),
+    'LOGIN_FAILED':               ('Login Failed',               'badge-red'),
+    'LOGIN_BLOCKED':              ('Login Blocked',              'badge-red'),
+    'ACCOUNT_LOCKED':             ('Account Locked',             'badge-red'),
+    'LOGOUT':                     ('Logged Out',                 'badge-draft'),
+    'PASSWORD_RESET_REQUESTED':   ('Password Reset Requested',  'badge-yellow'),
+    'PASSWORD_RESET_COMPLETED':   ('Password Reset Completed',  'badge-green'),
+    'USER_CREATED':               ('User Created',              'badge-green'),
+    'USER_EDITED':                ('User Edited',               'badge-blue'),
+    'USER_ROLE_CHANGED':          ('Role Changed',              'badge-yellow'),
+    'USER_ENABLED':               ('User Enabled',              'badge-green'),
+    'USER_DISABLED':              ('User Disabled',             'badge-red'),
+    'USER_PASSWORD_CHANGED_BY_ADMIN': ('Admin Password Change', 'badge-yellow'),
+    'REQUEST_CREATED':            ('Request Created',           'badge-blue'),
+    'REQUEST_DRAFT_UPDATED':      ('Draft Updated',             'badge-draft'),
+    'REQUEST_FILE_UPLOADED':      ('File Uploaded',             'badge-blue'),
+    'REQUEST_SUBMITTED':          ('Request Submitted',         'badge-blue'),
+    'REQUEST_RESUBMITTED':        ('Request Resubmitted',       'badge-yellow'),
+    'REQUEST_APPROVED':           ('Approved',                  'badge-green'),
+    'REQUEST_REJECTED':           ('Rejected',                  'badge-red'),
+    'REQUEST_FLAGGED_FOR_DR_BHOON':('Flagged for Dr. Bhoon',   'badge-yellow'),
+    'REQUEST_ACTIVATED':          ('Employee Activated',        'badge-green'),
+    'REQUEST_DELETED':            ('Request Deleted',           'badge-red'),
+    'PLANT_CREATED':              ('Plant Added',               'badge-green'),
+    'PLANT_EDITED':               ('Plant Edited',              'badge-blue'),
+    'PLANT_ENABLED':              ('Plant Enabled',             'badge-green'),
+    'PLANT_DISABLED':             ('Plant Disabled',            'badge-red'),
+    'PLANT_DELETED':              ('Plant Deleted',             'badge-red'),
+    'DESIGNATION_CREATED':        ('Designation Added',         'badge-green'),
+    'DESIGNATION_EDITED':         ('Designation Edited',        'badge-blue'),
+    'DESIGNATION_ENABLED':        ('Designation Enabled',       'badge-green'),
+    'DESIGNATION_DISABLED':       ('Designation Disabled',      'badge-red'),
+    'DESIGNATION_DELETED':        ('Designation Deleted',       'badge-red'),
+    'FORM_FIELD_CREATED':         ('Field Added',               'badge-green'),
+    'FORM_FIELD_EDITED':          ('Field Edited',              'badge-blue'),
+    'FORM_FIELD_OPTIONS_UPDATED': ('Options Updated',           'badge-blue'),
+    'FORM_FIELD_ENABLED':         ('Field Enabled',             'badge-green'),
+    'FORM_FIELD_DISABLED':        ('Field Disabled',            'badge-red'),
+    'FORM_FIELD_DELETED':         ('Field Deleted',             'badge-red'),
+    'FORM_FIELDS_REORDERED':      ('Fields Reordered',          'badge-draft'),
+    'PROFILE_NAME_CHANGED':       ('Name Changed',              'badge-blue'),
+    'PROFILE_USERNAME_CHANGED':   ('Username Changed',          'badge-blue'),
+    'PROFILE_PICTURE_UPLOADED':   ('Picture Uploaded',          'badge-blue'),
+    'PROFILE_PICTURE_REMOVED':    ('Picture Removed',           'badge-draft'),
+    'PASSWORD_CHANGED_BY_SELF':   ('Password Changed',          'badge-green'),
+    'EXPORT_DOWNLOADED':          ('Report Downloaded',         'badge-blue'),
+    'NOTIFICATIONS_VIEWED':       ('Notifications Viewed',      'badge-draft'),
+    'NOTIFICATION_MARKED_READ':   ('Notification Read',         'badge-draft'),
+  } %}
+
+  {# ── Category labels & accent colours ── #}
+  {% set CAT_META = {
+    'AUTH':         ('🔐', '#4f5d75', 'Authentication'),
+    'USER_MGMT':    ('👤', '#f59e0b', 'User Management'),
+    'REQUEST':      ('📋', 'var(--c-primary)', 'Requests'),
+    'ADMIN_PLANT':  ('🏭', '#6b7280', 'Plant Locations'),
+    'ADMIN_DESIG':  ('💼', '#6b7280', 'Designations'),
+    'ADMIN_FIELD':  ('📝', '#6b7280', 'Form Fields'),
+    'PROFILE':      ('🖼️',  '#8b5cf6', 'Profile'),
+    'EXPORT':       ('📊', 'var(--c-success)', 'Exports'),
+    'NOTIFICATION': ('🔔', '#6b7280', 'Notifications'),
+  } %}
+
+  <!-- Page header -->
+  <div style="margin-bottom:28px;">
+    <h1 class="page-title">Audit Log</h1>
+    <p class="page-sub">Complete, immutable record of every action across the portal</p>
+  </div>
+
+  <!-- Stats row -->
+  {% if pagination %}
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;">
+    <div class="card stat-card" style="padding:16px 20px;cursor:default;">
+      <div style="font-size:11px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Total Entries</div>
+      <div style="font-size:28px;font-weight:700;color:var(--c-text-1);">{{ "{:,}".format(pagination.total) }}</div>
+    </div>
+    <div class="card stat-card" style="padding:16px 20px;cursor:default;">
+      <div style="font-size:11px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Showing Page</div>
+      <div style="font-size:28px;font-weight:700;color:var(--c-text-1);">{{ pagination.page }} <span style="font-size:14px;color:var(--c-text-4);">/ {{ pagination.pages }}</span></div>
+    </div>
+    <div class="card stat-card" style="padding:16px 20px;cursor:default;">
+      <div style="font-size:11px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Per Page</div>
+      <div style="font-size:28px;font-weight:700;color:var(--c-text-1);">50</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Filters -->
+  <div class="card" style="padding:18px 20px;margin-bottom:20px;">
+    <form method="GET" id="audit-filter-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Actor</label>
+          <select name="actor_id" class="inp inp-select" style="font-size:13px;">
+            <option value="">All actors</option>
+            {% for actor in actors %}
+            <option value="{{ actor.id }}" {% if selected_actor == actor.id %}selected{% endif %}>
+              {{ actor.name }} ({{ actor.role_label }})
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Category</label>
+          <select name="category" class="inp inp-select" style="font-size:13px;">
+            <option value="">All categories</option>
+            {% for cat in categories %}
+            {% set cm = CAT_META.get(cat.value, ('', '#888', cat.value)) %}
+            <option value="{{ cat.value }}" {% if selected_category == cat.value %}selected{% endif %}>
+              {{ cm[2] }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Action Type</label>
+          <input type="text" name="action" value="{{ selected_action or '' }}" class="inp" placeholder="e.g. LOGIN, USER_EDITED" style="font-size:13px;"/>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Date From</label>
+          <input type="date" name="date_from" value="{{ date_from or '' }}" class="inp" style="font-size:13px;"/>
+        </div>
+
+        <div>
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Date To</label>
+          <input type="date" name="date_to" value="{{ date_to or '' }}" class="inp" style="font-size:13px;"/>
+        </div>
+
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button type="submit" class="btn btn-primary btn-sm">Apply Filters</button>
+        <a href="{{ url_for('admin.audit_log') }}" class="btn btn-secondary btn-sm">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Table -->
+  <div class="card" style="overflow-x:auto;">
+    {% if entries %}
+    <table class="tbl" style="min-width:960px;">
+      <thead>
+        <tr>
+          <th style="width:140px;">Timestamp</th>
+          <th style="width:160px;">Actor</th>
+          <th style="width:120px;">Category</th>
+          <th style="width:180px;">Action</th>
+          <th>Resource</th>
+          <th style="width:260px;">Details</th>
+          <th style="width:96px;">IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in entries %}
+        {% set am = ACTION_META.get(entry.action_type, (entry.action_type, 'badge-draft')) %}
+        {% set cm = CAT_META.get(entry.action_category.value, ('', '#888', entry.action_category.value)) %}
+        <tr>
+
+          {# Timestamp #}
+          <td style="white-space:nowrap;color:var(--c-text-4);font-size:12px;">
+            {{ entry.created_at | ist('%d %b %Y') }}<br>
+            <span style="color:var(--c-text-5);font-size:11px;">{{ entry.created_at | ist('%H:%M:%S') }}</span>
+          </td>
+
+          {# Actor #}
+          <td>
+            {% if entry.actor %}
+            <div style="font-weight:600;color:var(--c-text-1);font-size:13px;">{{ entry.actor.name }}</div>
+            <div style="font-size:11px;color:var(--c-text-4);margin-top:1px;">{{ entry.actor.role_label }}</div>
+            {% else %}
+            <span style="color:var(--c-text-5);font-size:12px;font-style:italic;">System / Guest</span>
+            {% endif %}
+          </td>
+
+          {# Category chip #}
+          <td>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+                         color:{{ cm[1] }};background:color-mix(in srgb, {{ cm[1] }} 10%, transparent);
+                         padding:3px 8px;border-radius:20px;border:1px solid color-mix(in srgb, {{ cm[1] }} 22%, transparent);">
+              <span>{{ cm[0] }}</span>
+              {{ cm[2] }}
+            </span>
+          </td>
+
+          {# Action badge #}
+          <td>
+            <span class="badge {{ am[1] }}" style="font-size:11.5px;">{{ am[0] }}</span>
+          </td>
+
+          {# Resource #}
+          <td>
+            {% if entry.resource_label %}
+            <span style="font-size:12.5px;color:var(--c-text-2);">{{ entry.resource_label }}</span>
+            {% else %}
+            <span style="color:var(--c-text-5);">—</span>
+            {% endif %}
+          </td>
+
+          {# Detail — collapsible JSON #}
+          <td>
+            {% if entry.detail %}
+            {% set detail_id = "detail-" ~ entry.id %}
+            <div>
+              <button type="button"
+                      class="detail-toggle-btn"
+                      data-detail-id="{{ detail_id }}"
+                      style="font-size:11.5px;color:var(--c-primary);background:none;border:none;
+                             cursor:pointer;padding:0;font-weight:600;text-decoration:underline;
+                             text-decoration-style:dotted;text-underline-offset:2px;">
+                View details
+              </button>
+              <div id="{{ detail_id }}"
+                   style="display:none;margin-top:8px;background:var(--c-bg);
+                          border:1px solid var(--c-border);border-radius:6px;
+                          padding:10px 12px;font-size:11.5px;color:var(--c-text-3);
+                          font-family:'JetBrains Mono',ui-monospace,monospace;
+                          white-space:pre-wrap;word-break:break-all;max-width:280px;
+                          line-height:1.5;max-height:220px;overflow-y:auto;">{{ entry.detail }}</div>
+            </div>
+            {% else %}
+            <span style="color:var(--c-text-5);font-size:12px;">—</span>
+            {% endif %}
+          </td>
+
+          {# IP #}
+          <td style="font-size:11.5px;color:var(--c-text-5);font-family:ui-monospace,monospace;">
+            {{ entry.ip_address or '—' }}
+          </td>
+
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {{ render_pagination(pagination, pg_base) }}
+
+    {% else %}
+    <!-- Empty state -->
+    <div style="text-align:center;padding:72px 24px;">
+      <div style="width:56px;height:56px;background:var(--c-bg);border-radius:14px;
+                  display:flex;align-items:center;justify-content:center;
+                  margin:0 auto 16px;border:1px solid var(--c-border);">
+        <svg width="26" height="26" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
+                   M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+      </div>
+      {% if selected_actor or selected_category or selected_action or date_from or date_to %}
+      <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No entries match your filters</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 20px;">Try broadening your filter criteria.</p>
+      <a href="{{ url_for('admin.audit_log') }}" class="btn btn-secondary">Clear filters</a>
+      {% else %}
+      <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No audit entries yet</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0;">
+        Entries will appear here as soon as users log in and take actions in the portal.
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Action type legend -->
+  <div class="card" style="padding:20px 24px;margin-top:20px;">
+    <h3 style="font-size:13px;font-weight:700;color:var(--c-text-2);margin:0 0 16px;
+               text-transform:uppercase;letter-spacing:0.07em;">All Tracked Action Types</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px;">
+      {% for code, (label, badge) in ACTION_META.items() %}
+      <div style="display:flex;align-items:center;gap:7px;padding:3px 0;">
+        <span class="badge {{ badge }}" style="font-size:10.5px;flex-shrink:0;">{{ label }}</span>
+        <code style="font-size:10px;color:var(--c-text-5);">{{ code }}</code>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  function toggleDetail(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var btn = el.previousElementSibling;
+    if (el.style.display === 'none') {
+      el.style.display = 'block';
+      if (btn) btn.textContent = 'Hide details';
+      try {
+        var raw    = el.textContent.trim();
+        var parsed = JSON.parse(raw);
+        el.textContent = JSON.stringify(parsed, null, 2);
+      } catch (e) {}
+    } else {
+      el.style.display = 'none';
+      if (btn) btn.textContent = 'View details';
+    }
+  }
+
+  // Event delegation — works for all rows (including paginated ones added later)
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.detail-toggle-btn');
+    if (btn) toggleDetail(btn.dataset.detailId);
+  });
+})();
+</script>
+{% endblock %}

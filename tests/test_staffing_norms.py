@@ -1,0 +1,448 @@
+"""
+Unit tests for app/services/staffing_norms.py — the RDC hiring-gate logic.
+
+Everything here is DB-only (StaffingSnapshot rows seeded directly) plus a
+mocked dvt.get_plant_volume()/get_cluster_total_volume() — no live API
+calls, matching how check_rdc_staffing_gate() actually behaves at request
+time (it never calls ZingHR/Truein/DVT synchronously except the one DVT
+volume lookup, which we mock here).
+"""
+from datetime import datetime
+from unittest.mock import patch
+
+import pytest
+
+from app.models import (
+    OnboardingRequest, RequestStatus, Designation, NormRoleCategory, NormTier,
+    NormRequirement, NormScope, NormSheet, NormRequirementType,
+    PlantDvtMapping, ClusterNameMapping, StaffingSnapshot, MatchConfidence,
+    BusinessHeadRegion, UserRole, EmployeeLocationSnapshot, ExternalDesignationSource,
+    PlantLocation,
+)
+from app.services import staffing_norms
+from .conftest import _make_user, login
+
+
+def _make_request(db, initiator, designation, plant_location):
+    req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.DRAFT)
+    db.session.add(req)
+    db.session.flush()
+    req.form_data = {
+        "company_code": "RDC",
+        "designation": designation,
+        "plant_location": plant_location,
+    }
+    db.session.flush()
+    return req
+
+
+def _seed_plant_norm(db, role_name="Batchers/Production Officer", tier_key="3000_5000",
+                      min_v=3000, max_v=5000, req_type=NormRequirementType.FIXED,
+                      fixed_count=2, rate_per_unit=None, unit_volume=None):
+    cat = NormRoleCategory(name=role_name, scope=NormScope.PLANT, sheet=NormSheet.SHEET1)
+    db.session.add(cat)
+    db.session.flush()
+    tier = NormTier(sheet=NormSheet.SHEET1, scope=NormScope.PLANT, tier_key=tier_key,
+                     tier_label=tier_key, min_value=min_v, max_value=max_v)
+    db.session.add(tier)
+    db.session.flush()
+    req = NormRequirement(tier_id=tier.id, norm_role_category_id=cat.id,
+                           requirement_type=req_type, fixed_count=fixed_count,
+                           rate_per_unit=rate_per_unit, unit_volume=unit_volume)
+    db.session.add(req)
+    db.session.flush()
+    return cat, tier, req
+
+
+class TestNotCoveredAndUnmapped:
+    def test_designation_not_in_master_allows(self, db, initiator):
+        req = _make_request(db, initiator, "Some Unknown Role", "PlantX")
+        result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "not_covered"
+
+    def test_designation_with_no_norm_category_allows(self, db, initiator):
+        desig = Designation(name="HR Executive", norm_category_id=None)
+        db.session.add(desig)
+        db.session.flush()
+        req = _make_request(db, initiator, "HR Executive", "PlantX")
+        result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "not_covered"
+
+    def test_plant_not_mapped_allows(self, db, initiator):
+        cat, tier, norm_req = _seed_plant_norm(db)
+        desig = Designation(name="Batcher", norm_category_id=cat.id)
+        db.session.add(desig)
+        db.session.flush()
+        req = _make_request(db, initiator, "Batcher", "Unmapped Plant")
+        result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "plant_not_mapped"
+
+
+class TestPlantScopeFixed:
+    def _setup(self, db, initiator, current_headcount):
+        cat, tier, norm_req = _seed_plant_norm(db, fixed_count=2)
+        desig = Designation(name="Batcher", norm_category_id=cat.id)
+        db.session.add(desig)
+        plant_map = PlantDvtMapping(plant_location_name="PlantX", dvt_plant_code="PX1")
+        db.session.add(plant_map)
+        db.session.flush()
+        db.session.add(StaffingSnapshot(
+            scope=NormScope.PLANT, location_key="PlantX", norm_role_category_id=cat.id,
+            current_headcount=current_headcount, zinghr_count=current_headcount, truein_count=0,
+        ))
+        db.session.flush()
+        return _make_request(db, initiator, "Batcher", "PlantX")
+
+    def test_under_norm_allows(self, db, initiator):
+        req = self._setup(db, initiator, current_headcount=1)
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4000.0):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "ok"
+        assert result["details"]["current_headcount"] == 1
+        assert result["details"]["allowed_headcount"] == 2
+        assert result["details"]["would_be_headcount"] == 2
+
+    def test_at_norm_blocks(self, db, initiator):
+        req = self._setup(db, initiator, current_headcount=2)
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4000.0):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is False
+        assert result["reason"] == "at_or_over_norm"
+        assert result["details"]["would_be_headcount"] == 3
+        assert result["details"]["allowed_headcount"] == 2
+
+    def test_no_snapshot_yet_allows(self, db, initiator):
+        cat, tier, norm_req = _seed_plant_norm(db, fixed_count=2)
+        desig = Designation(name="Batcher", norm_category_id=cat.id)
+        db.session.add(desig)
+        plant_map = PlantDvtMapping(plant_location_name="PlantX", dvt_plant_code="PX1")
+        db.session.add(plant_map)
+        db.session.flush()
+        req = _make_request(db, initiator, "Batcher", "PlantX")
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4000.0):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "no_snapshot_yet"
+
+
+class TestRateBasedRounding:
+    def test_rounds_to_nearest(self, db, initiator):
+        # tier is 3000-5000 m3 (see _seed_plant_norm defaults); 1 per 900 m3,
+        # volume=4200 -> 4200/900 = 4.666... -> rounds to 5 (nearest, not floor)
+        cat, tier, norm_req = _seed_plant_norm(
+            db, role_name="FTs/LT/TO", req_type=NormRequirementType.RATE_PER_VOLUME,
+            fixed_count=None, rate_per_unit=1, unit_volume=900,
+        )
+        desig = Designation(name="TM Driver", norm_category_id=cat.id)
+        db.session.add(desig)
+        plant_map = PlantDvtMapping(plant_location_name="PlantX", dvt_plant_code="PX1")
+        db.session.add(plant_map)
+        db.session.flush()
+        db.session.add(StaffingSnapshot(
+            scope=NormScope.PLANT, location_key="PlantX", norm_role_category_id=cat.id,
+            current_headcount=4, zinghr_count=4, truein_count=0,
+        ))
+        db.session.flush()
+        req = _make_request(db, initiator, "TM Driver", "PlantX")
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4200.0):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["details"]["allowed_headcount"] == 5  # rounds up from 4.6667, not floors to 4
+        assert result["allowed"] is True  # 4 current + 1 = 5 <= 5 allowed
+
+    def test_compute_allowed_headcount_rounds_down_case(self):
+        # 1 per 900, volume=2200 -> 2.44 -> rounds to nearest = 2
+        req = NormRequirement(requirement_type=NormRequirementType.RATE_PER_VOLUME,
+                               rate_per_unit=1, unit_volume=900)
+        assert staffing_norms.compute_allowed_headcount(req, 2200.0) == 2
+
+
+class TestClusterScopePerBusinessHead:
+    def test_per_business_head_skips_gate(self, db, initiator):
+        cluster = ClusterNameMapping(canonical_cluster_name="DELHI NCR")
+        db.session.add(cluster)
+        db.session.flush()
+        cat = NormRoleCategory(name="EA", scope=NormScope.CLUSTER, sheet=NormSheet.SHEET1)
+        db.session.add(cat)
+        db.session.flush()
+        tier = NormTier(sheet=NormSheet.SHEET1, scope=NormScope.CLUSTER, tier_key="GT_4_PLANTS",
+                         tier_label="> 4 Plants", min_value=5, max_value=None)
+        db.session.add(tier)
+        db.session.flush()
+        norm_req = NormRequirement(tier_id=tier.id, norm_role_category_id=cat.id,
+                                    requirement_type=NormRequirementType.PER_BUSINESS_HEAD)
+        db.session.add(norm_req)
+        desig = Designation(name="EA to BH", norm_category_id=cat.id)
+        db.session.add(desig)
+        # 5 plants in the cluster so it resolves to the >4 tier
+        for i in range(5):
+            db.session.add(PlantDvtMapping(plant_location_name=f"Plant{i}", dvt_plant_code=f"P{i}", cluster_id=cluster.id))
+        db.session.flush()
+        req = _make_request(db, initiator, "EA to BH", "Plant0")
+        result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "per_business_head_not_supported"
+
+
+class TestErrorHandling:
+    def test_dvt_exception_with_no_cached_volume_fails_open(self, db, initiator):
+        """
+        DVT raises AND there's no prior StaffingSnapshot volume to fall back
+        to (e.g. right after a fresh deploy, before any snapshot has ever
+        run) — genuinely no volume data available, so this fails open with
+        the specific "no_volume_data" reason, same as a clean DVT None
+        response would. See test_dvt_exception_falls_back_to_last_known_volume
+        for the case where a fallback IS available.
+        """
+        cat, tier, norm_req = _seed_plant_norm(db)
+        desig = Designation(name="Batcher", norm_category_id=cat.id)
+        db.session.add(desig)
+        plant_map = PlantDvtMapping(plant_location_name="PlantX", dvt_plant_code="PX1")
+        db.session.add(plant_map)
+        db.session.flush()
+        req = _make_request(db, initiator, "Batcher", "PlantX")
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", side_effect=RuntimeError("DVT down")):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is True
+        assert result["reason"] == "no_volume_data"
+
+    def test_dvt_exception_falls_back_to_last_known_volume(self, db, initiator):
+        """
+        A transient DVT outage (confirmed happening for real against the
+        live DVT server) must not silently skip a genuine capacity block —
+        check_rdc_staffing_gate() should fall back to the last known-good
+        volume from a prior StaffingSnapshot run rather than failing open.
+        """
+        cat, tier, norm_req = _seed_plant_norm(db, fixed_count=1)
+        desig = Designation(name="Batcher", norm_category_id=cat.id)
+        db.session.add(desig)
+        plant_map = PlantDvtMapping(plant_location_name="PlantX", dvt_plant_code="PX1")
+        db.session.add(plant_map)
+        db.session.add(StaffingSnapshot(
+            scope=NormScope.PLANT, location_key="PlantX", norm_role_category_id=cat.id,
+            current_headcount=1, zinghr_count=1, truein_count=0, deduped_count=0,
+            unclassified_count=0, allowed_headcount=1, tier_label=tier.tier_label,
+            volume_used=4000.0, production_volume=4000.0,
+        ))
+        db.session.flush()
+        req = _make_request(db, initiator, "Batcher", "PlantX")
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", side_effect=RuntimeError("DVT down")):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["allowed"] is False
+        assert result["reason"] == "at_or_over_norm"
+        assert result["details"]["volume_used"] == 4000.0
+
+
+class TestStaffingStatusDownload:
+    """
+    Excel download of the RDC Staffing Status dashboard (added 2026-09-10) —
+    same data source and Business-Head region scoping as the on-screen
+    staffing_status()/staffing_status_cluster()/staffing_status_plant() views.
+    """
+
+    def _seed(self, db):
+        cluster = ClusterNameMapping(canonical_cluster_name="Bangalore")
+        db.session.add(cluster)
+        db.session.flush()
+        cat, tier, norm_req = _seed_plant_norm(db, fixed_count=2)
+        plant_map = PlantDvtMapping(
+            plant_location_name="PlantX", dvt_plant_code="PX1",
+            cluster_id=cluster.id, match_confidence=MatchConfidence.AUTO_EXACT,
+        )
+        db.session.add(plant_map)
+        db.session.flush()
+        # get_snapshot_rows_for_location() matches on computed_at == MAX(computed_at)
+        # across ALL snapshot rows — both rows of a real "run" share one timestamp,
+        # so seed them with the same explicit value rather than relying on two
+        # separate datetime.utcnow() defaults (which can differ by microseconds
+        # and silently exclude one of the two from "the latest run").
+        run_time = datetime.utcnow()
+        db.session.add(StaffingSnapshot(
+            scope=NormScope.PLANT, location_key="PlantX", norm_role_category_id=cat.id,
+            current_headcount=1, allowed_headcount=2, tier_label=tier.tier_label,
+            production_volume=4000.0, can_hire=True, computed_at=run_time,
+        ))
+        db.session.add(StaffingSnapshot(
+            scope=NormScope.CLUSTER, location_key="Bangalore", norm_role_category_id=cat.id,
+            current_headcount=1, allowed_headcount=2, tier_label=tier.tier_label,
+            production_volume=4000.0, can_hire=True, computed_at=run_time,
+        ))
+        db.session.flush()
+        return cluster
+
+    def test_super_admin_download_has_both_sheets_with_expected_rows(self, client, db, app):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        self._seed(db)
+        admin = _make_user("DlAdmin", "dladmin@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/download")
+        assert resp.status_code == 200
+        assert resp.headers["Content-Type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        wb = load_workbook(BytesIO(resp.data))
+        assert wb.sheetnames == ["By Cluster", "By Plant"]
+        cluster_rows = list(wb["By Cluster"].iter_rows(min_row=2, values_only=True))
+        plant_rows = list(wb["By Plant"].iter_rows(min_row=2, values_only=True))
+        assert len(cluster_rows) == 1
+        assert cluster_rows[0][0] == "Bangalore"
+        assert len(plant_rows) == 1
+        assert plant_rows[0][0] == "Bangalore"
+
+    def test_business_head_only_sees_own_region(self, client, db, app):
+        self._seed(db)
+        other_cluster = ClusterNameMapping(canonical_cluster_name="Chennai")
+        db.session.add(other_cluster)
+        db.session.flush()
+        bh = _make_user("DlBh", "dlbh@t.com", UserRole.BUSINESS_HEAD, db)
+        db.session.add(BusinessHeadRegion(business_head_id=bh.id, cluster_id=other_cluster.id))
+        db.session.commit()
+        with app.app_context():
+            login(client, bh.email)
+            resp = client.get("/requests/staffing-status/download")
+        assert resp.status_code == 200
+        from io import BytesIO
+        from openpyxl import load_workbook
+        wb = load_workbook(BytesIO(resp.data))
+        cluster_rows = list(wb["By Cluster"].iter_rows(min_row=2, values_only=True))
+        # BH is scoped to Chennai only, which has no snapshot rows -> no rows at all
+        # (definitely not Bangalore's).
+        assert all(r[0] != "Bangalore" for r in cluster_rows)
+
+
+class TestStaffingStatusRegionEmployeePanel:
+    """
+    Coverage for the 2026-09-10 addition: the region (cluster) staffing page
+    now shows every employee resolved anywhere in that region — every plant
+    plus cluster-only staff — not just the narrower "cluster-only, not tied
+    to a specific plant" table that was already there.
+    """
+
+    def _seed(self, db):
+        cluster = ClusterNameMapping(canonical_cluster_name="Bangalore")
+        db.session.add(cluster)
+        db.session.flush()
+        plant_map = PlantDvtMapping(
+            plant_location_name="PlantX", dvt_plant_code="PX1",
+            cluster_id=cluster.id, match_confidence=MatchConfidence.AUTO_EXACT,
+        )
+        db.session.add(plant_map)
+        db.session.flush()
+        db.session.add(EmployeeLocationSnapshot(
+            source=ExternalDesignationSource.TRUEIN, employee_code="T001",
+            employee_name="Region Panel Test Employee", designation="Operator",
+            plant_location_key="PlantX", cluster_location_key="Bangalore",
+            computed_at=datetime.utcnow(),
+        ))
+        db.session.flush()
+        return cluster
+
+    def test_plant_level_employee_appears_in_region_panel(self, client, db, app):
+        self._seed(db)
+        admin = _make_user("RegPanelAdmin", "regpaneladmin@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/cluster/Bangalore")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "Region Panel Test Employee" in html
+        assert "Every Employee in Bangalore" in html
+
+    def test_full_directory_link_pre_filters_by_region(self, client, db, app):
+        self._seed(db)
+        admin = _make_user("RegPanelAdmin2", "regpaneladmin2@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/employees?cluster=Bangalore")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "Region Panel Test Employee" in html
+
+
+class TestStaffingStatusCompanyTabs:
+    """
+    Coverage for the 2026-09-15 multi-company fix: the Staffing Status page
+    is now a 3-tab page (RDC / Ultrafine / ROBO). RDC's own tab content is
+    completely unchanged (still tested by every other class in this file);
+    these confirm the new tabs render and the Ultrafine/ROBO plant-detail
+    route works and is properly isolated from RDC.
+    """
+
+    def test_page_renders_all_three_company_tabs(self, client, db, app):
+        admin = _make_user("CompanyTabAdmin", "companytabadmin@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert 'id="ctab-btn-rdc"' in html
+        assert 'id="ctab-btn-ultrafine"' in html
+        assert 'id="ctab-btn-robo"' in html
+
+    def test_ultrafine_tab_shows_its_plants_with_headcount(self, client, db, app):
+        admin = _make_user("CompanyTabAdmin2", "companytabadmin2@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.add(PlantLocation(name="UF Tab Plant", company="Ultrafine", is_active=True))
+        db.session.commit()
+        db.session.add(EmployeeLocationSnapshot(
+            computed_at=datetime.utcnow(), source=ExternalDesignationSource.ZINGHR,
+            employee_code="UFTAB1", employee_name="UF Tab Employee",
+            plant_location_key="UF Tab Plant", company="Ultrafine",
+        ))
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status")
+        html = resp.get_data(as_text=True)
+        assert "UF Tab Plant" in html
+
+    def test_company_plant_detail_shows_only_that_companys_employees(self, client, db, app):
+        admin = _make_user("CompanyTabAdmin3", "companytabadmin3@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.add_all([
+            PlantLocation(name="ROBO Detail Plant", company="ROBO", is_active=True),
+            PlantLocation(name="UF Other Plant", company="Ultrafine", is_active=True),
+        ])
+        db.session.commit()
+        shared_now = datetime.utcnow()
+        db.session.add_all([
+            EmployeeLocationSnapshot(
+                computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
+                employee_code="ROBODET1", employee_name="Robo Detail Employee",
+                plant_location_key="ROBO Detail Plant", company="ROBO",
+            ),
+            EmployeeLocationSnapshot(
+                computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
+                employee_code="UFOTHER1", employee_name="UF Other Employee",
+                plant_location_key="UF Other Plant", company="Ultrafine",
+            ),
+        ])
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/company/ROBO/plant/ROBO%20Detail%20Plant")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "Robo Detail Employee" in html
+        assert "UF Other Employee" not in html
+
+    def test_rdc_rejected_as_company_in_company_plant_route(self, client, db, app):
+        admin = _make_user("CompanyTabAdmin4", "companytabadmin4@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/company/RDC/plant/Anything")
+        assert resp.status_code == 404
+
+    def test_invalid_company_404s(self, client, db, app):
+        admin = _make_user("CompanyTabAdmin5", "companytabadmin5@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/company/NotAThing/plant/Anything")
+        assert resp.status_code == 404

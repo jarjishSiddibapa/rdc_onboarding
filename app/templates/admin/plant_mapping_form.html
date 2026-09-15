@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Edit Plant Mapping — TeamLease Admin{% endblock %}
+{% block content %}
+<div style="max-width:480px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('admin.plant_mappings_list') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div>
+      <h1 class="page-title">Edit Plant Mapping</h1>
+      <p class="page-sub">{{ row.plant_location_name }}</p>
+    </div>
+  </div>
+  <div class="card" style="padding:28px;">
+    <form method="POST" style="display:flex;flex-direction:column;gap:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">DVT Plant</label>
+        {% if dvt_error %}
+        <p style="font-size:12px;color:var(--c-danger,#dc2626);margin-bottom:8px;">Could not reach the Daily Volume Tracker ({{ dvt_error }}). Existing mapping is unchanged below; try again shortly.</p>
+        <input class="inp" type="text" value="{{ row.dvt_plant_code or '' }}{% if row.dvt_erp_name %} — {{ row.dvt_erp_name }}{% endif %}" disabled/>
+        {% else %}
+        <select class="inp" name="dvt_plant_code">
+          <option value="">— None —</option>
+          {% for p in dvt_plants %}
+          <option value="{{ p.plant_code }}" {% if row.dvt_plant_code == p.plant_code %}selected{% endif %}>{{ p.plant_code }} — {{ p.erp_name or p.daily_tracker_name or p.plant_name }}</option>
+          {% endfor %}
+        </select>
+        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:6px;">Sourced live from the Daily Volume Tracker — the system of record for plants. Daily Tracker Name and ERP Name are filled in automatically from your selection.</p>
+        {% endif %}
+      </div>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Truein Site Point (sub_site)</label>
+        {% if truein_sub_sites is none %}
+        <input class="inp" type="text" name="truein_sub_site" value="{{ row.truein_sub_site or '' }}" placeholder="Truein cache is cold — enter the exact sub_site value manually"/>
+        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:6px;">The Truein employee cache isn't warm yet (refreshes every 2 hours), so this can't be a dropdown right now. Without this set, employees from Truein for this plant will only be counted at the cluster level, never the plant level.</p>
+        {% else %}
+        <select class="inp" name="truein_sub_site">
+          <option value="">— None —</option>
+          {% for s in truein_sub_sites %}
+          <option value="{{ s }}" {% if row.truein_sub_site == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:6px;">The plant-level field on Truein employee records (distinct from Truein's cluster-level "category"). Without this set, employees from Truein for this plant will only be counted at the cluster level, never the plant level.</p>
+        {% endif %}
+      </div>
+      <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Cluster</label>
+        <select class="inp" name="cluster_id">
+          <option value="">— None —</option>
+          {% for c in clusters %}
+          <option value="{{ c.id }}" {% if row.cluster_id == c.id %}selected{% endif %}>{{ c.canonical_cluster_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if row.match_score is not none %}
+      <p style="font-size:12px;color:var(--c-text-4);">Last auto-match score: {{ "%.0f"|format(row.match_score) }}/100</p>
+      {% endif %}
+      <p style="font-size:12px;color:var(--c-text-4);">Saving marks this mapping "Manual" — future auto-match runs will never overwrite it.</p>
+      <hr class="divider"/>
+      <div style="display:flex;gap:10px;">
+        <a href="{{ url_for('admin.plant_mappings_list') }}" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</a>
+        <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center;">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

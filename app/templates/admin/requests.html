@@ -1,0 +1,248 @@
+{% from '_macros.html' import render_pagination %}
+{% extends "base.html" %}
+{% block title %}All Requests — TeamLease Admin{% endblock %}
+
+{% block content %}
+{# ── Macros must be defined INSIDE the block in child templates ── #}
+
+{% macro _empty(msg) %}
+<div style="text-align:center;padding:52px 24px;">
+  <div style="width:44px;height:44px;background:var(--c-bg);border-radius:11px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+    <svg width="20" height="20" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+    </svg>
+  </div>
+  <p style="font-size:13.5px;font-weight:600;color:var(--c-text-2);margin:0 0 3px;">{{ msg }}</p>
+</div>
+{% endmacro %}
+
+{% macro _req_table(reqs) %}
+<table class="tbl" style="min-width:860px;">
+  <thead>
+    <tr>
+      <th>ID</th><th>Candidate</th><th>Designation</th><th>Company</th>
+      <th>Initiated By</th><th>Status</th><th>Updated</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for req in reqs %}
+    {% set sc = req.status_color %}
+    {% set badge_cls = {'green':'badge-green','blue':'badge-blue','red':'badge-red','yellow':'badge-yellow','gray':'badge-draft'}.get(sc,'badge-draft') %}
+    <tr>
+      <td><span class="mono" style="color:var(--c-text-4);font-size:12.5px;">#{{ req.id }}</span></td>
+      <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
+      <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
+      <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
+      <td style="color:var(--c-text-3);">{{ req.initiator.name }}</td>
+      <td><span class="badge {{ badge_cls }}">{{ req.status_label }}</span></td>
+      <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.updated_at | ist('%d %b %Y') }}</td>
+      <td style="text-align:right;">
+        <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
+          <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-secondary btn-sm">View</a>
+          {% if req.status.value == 'ACTIVE' %}
+          <div style="display:flex;align-items:center;gap:5px;">
+            {% if req.truein_pushed_at and req.truein_dropped_list %}
+              <span title="Synced {{ req.truein_pushed_at | ist }} — but missing in Truein: {{ req.truein_dropped_list | join(', ') }}. Enter manually in Truein dashboard."
+                    style="display:inline-flex;align-items:center;gap:4px;background:#FFFBEB;color:#92400E;border:1.5px solid #FCD34D;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">
+                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>Synced ⚠ {{ req.truein_dropped_list | length }}
+              </span>
+            {% elif req.truein_pushed_at %}
+              <span title="Pushed {{ req.truein_pushed_at | ist }}"
+                    style="display:inline-flex;align-items:center;gap:4px;background:#ECFDF5;color:#065F46;border:1.5px solid #6EE7B7;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">
+                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Synced
+              </span>
+            {% elif req.truein_retry_stopped %}
+              <span style="display:inline-flex;align-items:center;gap:4px;background:#F3F4F6;color:#374151;border:1.5px solid #D1D5DB;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">Stopped</span>
+            {% elif req.truein_push_error %}
+              <span title="Attempt {{ req.truein_retry_count }}: {{ req.truein_push_error }}"
+                    style="display:inline-flex;align-items:center;gap:4px;background:#FEF2F2;color:#991B1B;border:1.5px solid #FECACA;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">
+                <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Retrying #{{ req.truein_retry_count }}
+              </span>
+            {% else %}
+              <span style="display:inline-flex;align-items:center;gap:4px;background:#FFFBEB;color:#92400E;border:1.5px solid #FCD34D;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">Pending</span>
+            {% endif %}
+            {% if not req.truein_pushed_at %}
+              <form method="POST" action="{{ url_for('admin.truein_push', token=req.public_token) }}" style="display:inline;"
+                    onsubmit="return confirm('Push to Truein now?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-sm" style="background:#EEF4FF;color:#3A5CCC;border:1.5px solid #C7D7F4;font-weight:600;">
+                  {{ "Push" if not req.truein_push_error else "Force" }}
+                </button>
+              </form>
+              {% if req.truein_push_error and not req.truein_retry_stopped %}
+              <form method="POST" action="{{ url_for('admin.truein_stop_retry', token=req.public_token) }}" style="display:inline;"
+                    onsubmit="return confirm('Stop retries?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-sm btn-ghost" style="font-size:11px;padding:4px 7px;color:#6B7280;">Stop</button>
+              </form>
+              {% endif %}
+            {% endif %}
+            <form method="POST" action="{{ url_for('admin.truein_dryrun', token=req.public_token) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <button type="submit" class="btn btn-sm btn-ghost" style="font-size:11px;padding:4px 7px;">Preview</button>
+            </form>
+            {% if req.truein_retry_count %}
+            <a href="{{ url_for('admin.truein_logs', token=req.public_token) }}" class="btn btn-sm btn-ghost" style="font-size:11px;padding:4px 7px;">
+              Logs ({{ req.truein_retry_count }})
+            </a>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro _pane_nav(pg, page_key) %}
+{% if pg.pages > 1 %}
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--c-border);font-size:13px;color:var(--c-text-4);">
+  <span>{{ ((pg.page-1)*pg.per_page)+1 }}–{{ [pg.page*pg.per_page, pg.total]|min }} of {{ pg.total }}</span>
+  <div style="display:flex;gap:6px;align-items:center;">
+    {% if pg.has_prev %}<a href="?{{ page_key }}={{ pg.page-1 }}" class="btn btn-secondary btn-sm">← Prev</a>
+    {% else %}<button class="btn btn-secondary btn-sm" disabled style="opacity:0.35;">← Prev</button>{% endif %}
+    <span style="padding:4px 10px;font-weight:600;color:var(--c-text-2);">{{ pg.page }}/{{ pg.pages }}</span>
+    {% if pg.has_next %}<a href="?{{ page_key }}={{ pg.page+1 }}" class="btn btn-secondary btn-sm">Next →</a>
+    {% else %}<button class="btn btn-secondary btn-sm" disabled style="opacity:0.35;">Next →</button>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{# ═══════════════════════════════════════════════════════════ #}
+
+<div style="max-width:1200px;">
+
+  {# Header #}
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;">
+    <div>
+      <h1 class="page-title">All Requests</h1>
+      {% if two_pane %}
+      <p class="page-sub" style="display:flex;align-items:center;gap:10px;">
+        <span><strong>{{ ongoing_pg.total }}</strong> ongoing</span>
+        <span style="color:var(--c-text-5);">·</span>
+        <span><strong>{{ completed_pg.total }}</strong> completed</span>
+      </p>
+      {% else %}
+      <p class="page-sub">{{ pagination.total }} requests</p>
+      {% endif %}
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      {% include "_sync_now_widget.html" %}
+      <a href="{{ url_for('exports.active_employees') }}" class="btn btn-success">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Export Report
+      </a>
+    </div>
+  </div>
+
+  {# Filters #}
+  <div class="card" style="padding:16px 20px;margin-bottom:20px;">
+    <form method="GET" style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+      <div style="flex:1;min-width:180px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Status</label>
+        <select name="status" class="inp inp-select">
+          <option value="">All statuses</option>
+          {% for s in statuses %}<option value="{{ s.value }}" {% if selected_status == s.value %}selected{% endif %}>{{ s.value.replace('_',' ').title() }}</option>{% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;min-width:180px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Company</label>
+        <select name="company" class="inp inp-select">
+          <option value="">All companies</option>
+          {% for co in companies %}<option value="{{ co }}" {% if selected_company == co %}selected{% endif %}>{{ co }}</option>{% endfor %}
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="{{ url_for('admin.requests_list') }}" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  {# ── TWO-PANE TAB VIEW ── #}
+  {% if two_pane %}
+
+  <div class="card" style="overflow-x:auto;">
+    {# Tab bar #}
+    <div style="display:flex;border-bottom:2px solid var(--c-border);padding:0 4px;">
+      <button id="tab-btn-ongoing" onclick="switchTab('ongoing')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);display:flex;align-items:center;gap:8px;transition:color .15s;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#F59E0B;display:inline-block;"></span>
+        Ongoing
+        <span id="tab-badge-ongoing" style="font-size:11px;font-weight:700;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:20px;padding:1px 8px;">{{ ongoing_pg.total }}</span>
+      </button>
+      <button id="tab-btn-completed" onclick="switchTab('completed')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);display:flex;align-items:center;gap:8px;transition:color .15s;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#10B981;display:inline-block;"></span>
+        Completed
+        <span id="tab-badge-completed" style="font-size:11px;font-weight:700;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;border-radius:20px;padding:1px 8px;">{{ completed_pg.total }}</span>
+      </button>
+    </div>
+
+    {# Ongoing panel #}
+    <div id="tab-panel-ongoing">
+      {% if ongoing %}
+        {{ _req_table(ongoing) }}
+        {{ _pane_nav(ongoing_pg, 'page_o') }}
+      {% else %}
+        {{ _empty("No ongoing requests — all caught up!") }}
+      {% endif %}
+    </div>
+
+    {# Completed panel #}
+    <div id="tab-panel-completed" style="display:none;">
+      {% if completed %}
+        {{ _req_table(completed) }}
+        {{ _pane_nav(completed_pg, 'page_c') }}
+      {% else %}
+        {{ _empty("No completed requests yet.") }}
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── FILTERED SINGLE-TABLE VIEW ── #}
+  {% else %}
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+    <span style="font-size:13px;color:var(--c-text-3);">Filtered by:</span>
+    <span style="font-size:12.5px;font-weight:700;color:var(--c-primary);background:#EEF4FF;border:1px solid #C7D7F4;border-radius:5px;padding:2px 10px;">{{ selected_status.replace('_',' ').title() }}</span>
+    <a href="{{ url_for('admin.requests_list') }}" style="font-size:12px;color:var(--c-text-4);">✕ Clear</a>
+  </div>
+  <div class="card" style="overflow-x:auto;">
+    {% if requests %}
+      {{ _req_table(requests) }}
+      {{ render_pagination(pagination, pg_base) }}
+    {% else %}
+      {{ _empty("No requests match this filter.") }}
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(tab) {
+  var tabs = ['ongoing', 'completed'];
+  tabs.forEach(function(t) {
+    var btn   = document.getElementById('tab-btn-' + t);
+    var panel = document.getElementById('tab-panel-' + t);
+    var active = (t === tab);
+    panel.style.display = active ? 'block' : 'none';
+    btn.style.color        = active ? 'var(--c-primary)' : 'var(--c-text-3)';
+    btn.style.borderBottomColor = active ? 'var(--c-primary)' : 'transparent';
+  });
+  try { sessionStorage.setItem('req_tab', tab); } catch(e) {}
+}
+// Restore last active tab or default to ongoing
+(function() {
+  var saved = '';
+  try { saved = sessionStorage.getItem('req_tab') || ''; } catch(e) {}
+  switchTab(saved === 'completed' ? 'completed' : 'ongoing');
+})();
+</script>
+{% endblock %}

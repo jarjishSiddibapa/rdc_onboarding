@@ -1,0 +1,1313 @@
+{% extends "base.html" %}
+{% block title %}{% if req.candidate_name %}Edit Request{% else %}New Request{% endif %} — RDC Teamlease Employee Onboarding Portal{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">
+    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </a>
+  <span class="bc-sep" aria-hidden="true">/</span>
+  <span class="bc-item bc-current">{% if req.candidate_name %}Edit Request{% else %}New Request{% endif %} — Step {{ step }}/3</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;">
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-ghost btn-sm" style="padding:6px 8px;">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+    </a>
+    <div style="flex:1;">
+      <h1 class="page-title">New Onboarding Request</h1>
+    </div>
+    <span class="mono" style="font-size:12px;color:var(--c-text-4);background:var(--c-bg);border:1px solid var(--c-border);border-radius:6px;padding:4px 10px;">#{{ req.id }}</span>
+  </div>
+
+  <!-- Step indicator -->
+  <div style="display:flex;align-items:center;margin-bottom:28px;">
+    {% for i, label in [(1,'Personal Info'),(2,'Employment'),(3,'Bank & Docs')] %}
+    <div style="display:flex;align-items:center;{% if not loop.last %}flex:1;{% endif %}">
+      <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+        <div style="
+          width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+          font-size:12px;font-weight:700;flex-shrink:0;
+          {% if step > i %}background:var(--c-success);color:#fff;
+          {% elif step == i %}background:var(--c-primary);color:#fff;box-shadow:0 0 0 4px rgba(239,131,84,0.18);
+          {% else %}background:var(--c-bg-2);color:var(--c-text-4);border:1.5px solid var(--c-border);{% endif %}
+        ">
+          {% if step > i %}
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+          {% else %}{{ i }}{% endif %}
+        </div>
+        <span style="font-size:12.5px;font-weight:{% if step == i %}600{% else %}500{% endif %};color:{% if step > i %}var(--c-success){% elif step == i %}var(--c-primary){% else %}var(--c-text-4){% endif %};">{{ label }}</span>
+      </div>
+      {% if not loop.last %}
+      <div style="flex:1;height:1.5px;margin:0 12px;background:{% if step > i %}var(--c-success){% else %}var(--c-border){% endif %};"></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Form card -->
+  <div class="card" style="padding:32px;">
+    <form method="POST"
+          action="{{ url_for('requests_bp.new_request', step=step, token=req.public_token) }}"
+          enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <input type="hidden" name="_special_case_ack_pending" id="special-case-ack-pending" value=""/>
+
+      <div style="display:flex;flex-direction:column;gap:22px;">
+
+        {% for field in step_fields %}
+        {% set val = form_data.get(field.field_key, '') %}
+
+        <div class="field-wrapper" id="fw_{{ field.field_key }}">
+
+          <!-- Label -->
+          <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">
+            {{ field.field_label }}
+            {% if field.is_required and not field.is_readonly %}
+              <span style="color:var(--c-danger);">*</span>
+            {% else %}
+              <span style="color:var(--c-text-5);font-weight:400;font-size:11.5px;"> (optional)</span>
+            {% endif %}
+          </label>
+
+          <!-- ── TEXT ── -->
+          {% if field.field_type == FieldType.TEXT %}
+            {% if field.field_key in ('pan_number', 'pan_no') %}
+              <input class="inp mono" type="text" name="{{ field.field_key }}"
+                value="{{ val|upper }}"
+                {% if field.is_required %}required{% endif %}
+                maxlength="10" minlength="10"
+                placeholder="e.g. ABCDE1234F"
+                pattern="[A-Z]{5}[0-9]{4}[A-Z]"
+                title="5 letters + 4 digits + 1 letter (e.g. ABCDE1234F)"
+                style="text-transform:uppercase;letter-spacing:0.08em;"
+                oninput="this.value=this.value.toUpperCase()"/>
+            {% elif field.field_key == 'aadhar_no' %}
+              <input class="inp mono" type="text" name="aadhar_no" id="aadhar_no_input"
+                value="{{ val }}"
+                {% if field.is_required %}required{% endif %}
+                maxlength="12" minlength="12"
+                placeholder="12-digit Aadhar number"
+                pattern="[0-9]{12}"
+                title="Must be exactly 12 digits"
+                inputmode="numeric"
+                onblur="checkGovtIdDuplicate()"/>
+              <p id="aadhar-dup-feedback" style="font-size:12px;margin-top:5px;margin-bottom:0;"></p>
+            {% elif field.field_key == 'reporting_manager_name' %}
+              {# Typeahead backed by Truein employee list #}
+              <div style="position:relative;" id="manager-search-wrap">
+                <div style="display:flex;gap:8px;">
+                  <input class="inp" type="text" name="reporting_manager_name"
+                    id="manager-name-input" value="{{ val }}"
+                    {% if field.is_required %}required{% endif %}
+                    placeholder="Type name or employee code…"
+                    autocomplete="off"
+                    oninput="managerSearch(this.value)"/>
+                  <button type="button" class="btn btn-secondary btn-sm"
+                    onclick="managerSearch(document.getElementById('manager-name-input').value, true)"
+                    style="white-space:nowrap;flex-shrink:0;">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="margin-right:4px;"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/></svg>Search
+                  </button>
+                </div>
+                <div id="manager-dropdown"
+                  style="display:none;position:absolute;z-index:200;top:calc(100% + 4px);left:0;right:0;
+                         background:var(--c-surface);border:1.5px solid var(--c-border);border-radius:10px;
+                         box-shadow:0 6px 20px rgba(0,0,0,0.12);max-height:260px;overflow-y:auto;"></div>
+                <p id="manager-status" style="font-size:12px;color:var(--c-text-4);margin-top:5px;margin-bottom:0;"></p>
+              </div>
+
+            {% elif field.field_key == 'reporting_manager_code' %}
+              {# Readonly — populated by the manager typeahead above #}
+              <input class="inp mono" type="text" name="reporting_manager_code"
+                id="manager-code-input" value="{{ val }}"
+                readonly style="background:var(--c-surface-2);cursor:default;"
+                placeholder="Auto-filled when a manager is selected above"/>
+              <input type="hidden" name="l1_manager_emp_id" id="l1_manager_emp_id_input"
+                value="{{ form_data.get('l1_manager_emp_id', val) }}"/>
+              <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">
+                Filled automatically from the search above. The Truein employee ID is stored alongside.
+              </p>
+
+            {% else %}
+            {% set _pat = field.input_pattern %}
+            <input class="inp {% if field.is_readonly %}inp-select{% endif %}" type="text"
+              name="{{ field.field_key }}" value="{{ val }}"
+              {% if field.is_required and not field.is_readonly %}required{% endif %}
+              {% if field.is_readonly %}readonly{% endif %}
+              placeholder="{{ field.placeholder or '' }}"
+              {% if _pat == 'alpha' %}pattern="[A-Za-z\s]+" title="Letters and spaces only"
+              {% elif _pat == 'alphanumeric' %}pattern="[A-Za-z0-9\s]+" title="Letters, numbers and spaces only"
+              {% elif _pat == 'numeric' %}pattern="[0-9\s]+" title="Digits only"
+              {% endif %}
+              {% if field.min_length %}minlength="{{ field.min_length }}"{% endif %}
+              {% if field.max_length %}maxlength="{{ field.max_length }}"{% endif %}
+              {% if field.field_key == 'notice_period' %}id="notice_period_field"{% endif %}/>
+            {% endif %}
+
+          <!-- ── EMAIL ── -->
+          {% elif field.field_type == FieldType.EMAIL %}
+            {% if field.field_key == 'email_id' and step == 1 %}
+              {%- set _otp_ok = val and session.get('_email_otp_verified', '') == val -%}
+              <div style="display:flex;gap:8px;align-items:stretch;">
+                <input class="inp" type="email" name="{{ field.field_key }}" id="email_id_input" value="{{ val }}"
+                  {% if field.is_required %}required{% endif %}
+                  placeholder="{{ field.placeholder or '' }}" style="flex:1;"/>
+                <button type="button" id="otp-send-btn" onclick="sendEmailOTP()"
+                  class="btn btn-secondary btn-sm" style="white-space:nowrap;align-self:stretch;">
+                  {% if _otp_ok %}Resend OTP{% else %}Send OTP{% endif %}
+                </button>
+              </div>
+              <div id="otp-status-bar" style="margin-top:6px;">
+                {% if _otp_ok %}
+                <p style="font-size:12px;color:var(--c-success);display:flex;align-items:center;gap:4px;margin:0;">
+                  <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  Email verified
+                </p>
+                {% endif %}
+              </div>
+              <div id="otp-input-section" style="margin-top:8px;display:none;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <input class="inp mono" type="text" id="otp-code-input" placeholder="6-digit OTP"
+                    maxlength="6" inputmode="numeric"
+                    style="max-width:175px;letter-spacing:0.18em;font-size:15px;text-align:center;"/>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="verifyEmailOTP()">Verify</button>
+                </div>
+                <p id="otp-feedback" style="font-size:12px;margin-top:5px;margin-bottom:0;"></p>
+              </div>
+              <input type="hidden" id="email_verified_flag" name="_email_verified"
+                value="{{ '1' if _otp_ok else '' }}"/>
+            {% else %}
+              <input class="inp" type="email" name="{{ field.field_key }}" value="{{ val }}"
+                {% if field.is_required %}required{% endif %}
+                placeholder="{{ field.placeholder or '' }}"/>
+            {% endif %}
+
+          <!-- ── TEL ── -->
+          {% elif field.field_type == FieldType.TEL %}
+            {# Must match _clean_mobile() in app/integrations/truein.py exactly —
+               a real Indian mobile is 10 digits starting 6-9. Fixed 2026-09-10:
+               this used to only check digit count, so e.g. "1234567890" showed
+               as valid here and only failed much later, at the Truein push. #}
+            <input class="inp" type="tel" name="{{ field.field_key }}" value="{{ val }}"
+              {% if field.is_required %}required{% endif %}
+              pattern="[6-9][0-9]{9}" maxlength="10" title="Must be 10 digits, starting with 6, 7, 8, or 9"
+              placeholder="{{ field.placeholder or '10-digit mobile number' }}"/>
+
+          <!-- ── NUMBER ── -->
+          {% elif field.field_type == FieldType.NUMBER %}
+            <input class="inp" type="number" name="{{ field.field_key }}" value="{{ val }}"
+              {% if field.is_required %}required{% endif %}
+              step="any" min="0"
+              placeholder="{{ field.placeholder or '' }}"/>
+
+          <!-- ── DATE  (DD/MM/YYYY masked text input) ── -->
+          {% elif field.field_type == FieldType.DATE %}
+            {#
+              Visible input: user types in DD/MM/YYYY.
+              Hidden input : carries YYYY-MM-DD to the server (same key name).
+              Pre-fill     : existing val is YYYY-MM-DD → convert to DD/MM/YYYY for display.
+            #}
+            {%- if val and val|length == 10 and val[4:5] == '-' -%}
+              {%- set dp = val.split('-') -%}
+              {%- set display_val = dp[2] ~ '/' ~ dp[1] ~ '/' ~ dp[0] -%}
+            {%- else -%}
+              {%- set display_val = '' -%}
+            {%- endif -%}
+            <input class="inp date-mask-visible"
+                   type="text"
+                   inputmode="numeric"
+                   placeholder="DD/MM/YYYY"
+                   maxlength="10"
+                   autocomplete="off"
+                   value="{{ display_val }}"
+                   data-field-key="{{ field.field_key }}"
+                   {% if field.is_required %}required{% endif %}/>
+            <input type="hidden"
+                   name="{{ field.field_key }}"
+                   id="hidden_{{ field.field_key }}"
+                   value="{{ val }}"/>
+
+          <!-- ── TEXTAREA ── -->
+          {% elif field.field_type == FieldType.TEXTAREA %}
+            {% set _pat = field.input_pattern %}
+            <textarea class="inp" name="{{ field.field_key }}" rows="3"
+              {% if field.is_required %}required{% endif %}
+              style="resize:vertical;"
+              placeholder="{{ field.placeholder or '' }}"
+              {% if _pat == 'alpha' %}pattern="[A-Za-z\s]+" title="Letters and spaces only"
+              {% elif _pat == 'alphanumeric' %}pattern="[A-Za-z0-9\s]+" title="Letters, numbers and spaces only"
+              {% elif _pat == 'numeric' %}pattern="[0-9\s]+" title="Digits only"
+              {% endif %}
+              {% if field.min_length %}minlength="{{ field.min_length }}"{% endif %}
+              {% if field.max_length %}maxlength="{{ field.max_length }}"{% endif %}>{{ val }}</textarea>
+
+          <!-- ── RADIO ── -->
+          {% elif field.field_type == FieldType.RADIO %}
+            {% set opts = field.active_options if field.options_source == OptionsSource.INLINE else [] %}
+            <div style="display:flex;flex-wrap:wrap;gap:10px;">
+              {% for opt in opts %}
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 14px;border-radius:8px;border:1.5px solid {% if val == opt.option_value %}#ef8354{% else %}#D9DDE8{% endif %};background:{% if val == opt.option_value %}#F5F3FF{% else %}#fff{% endif %};transition:all 0.12s;">
+                <input type="radio" name="{{ field.field_key }}" value="{{ opt.option_value }}"
+                  {% if val == opt.option_value %}checked{% endif %}
+                  {% if field.is_required %}required{% endif %}
+                  {% if field.field_key == 'hiring_type' %}data-toggle-replacement="1"{% endif %}
+                  style="accent-color:var(--c-primary);width:14px;height:14px;"/>
+                <span style="font-size:13.5px;color:var(--c-text-2);font-weight:500;">{{ opt.option_label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+
+          <!-- ── DROPDOWN ── -->
+          {% elif field.field_type == FieldType.DROPDOWN %}
+            {% if field.options_source == OptionsSource.PLANT_LOCATION %}
+            {# Cluster/Region picker — pure UX filter, not submitted (no name=) —
+               narrows the Plant Location select below so the initiator picks
+               from a handful of plants instead of scrolling ~139 of them. #}
+            <select class="inp inp-select" id="cluster_select" style="margin-bottom:9px;">
+              <option value="">— Select Cluster / Region first —</option>
+            </select>
+            {% endif %}
+            <select class="inp inp-select" name="{{ field.field_key }}"
+              {% if field.is_required %}required{% endif %}
+              {% if field.field_key == 'designation' %}id="designation_select"{% endif %}
+              {% if field.options_source == OptionsSource.PLANT_LOCATION %}id="plant_location_select"{% endif %}>
+              <option value="">— Select {{ field.field_label }} —</option>
+
+              {% if field.options_source == OptionsSource.DESIGNATION %}
+                {% for d in designations %}
+                <option value="{{ d.name }}" data-id="{{ d.id }}" data-notice="{{ d.notice_period_days }}"
+                  data-app-attendance="{{ '1' if d.truein_app_attendance else '0' }}"
+                  {% if val == d.name %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+              {% elif field.options_source == OptionsSource.PLANT_LOCATION %}
+                {# Server-rendered from our DVT-matched plants (see requests_bp.plant_locations_api) —
+                   JS below re-fetches the same list on load only to pick up any change since page render,
+                   and drives the Cluster -> Plant filtering via data-cluster #}
+                {% for p in plants %}
+                <option class="plant-fallback" value="{{ p.value }}" data-cluster="{{ p.cluster }}" {% if val == p.value %}selected{% endif %}>{{ p.label }}</option>
+                {% endfor %}
+              {% else %}
+                {% for opt in field.active_options %}
+                <option value="{{ opt.option_value }}" {% if val == opt.option_value %}selected{% endif %}>
+                  {{ opt.option_label }}
+                </option>
+                {% endfor %}
+                {% if field.allow_other %}
+                <option value="Other" {% if val == 'Other' %}selected{% endif %}>Other</option>
+                {% endif %}
+              {% endif %}
+            </select>
+
+            {# Hidden field — captures truein_app_attendance from the selected designation #}
+            {% if field.options_source == OptionsSource.DESIGNATION %}
+            <input type="hidden" name="truein_app_attendance" id="truein_app_attendance_field"
+              value="{{ form_data.get('truein_app_attendance', '0') }}"/>
+            {% endif %}
+
+            {% if field.allow_other %}
+            <div id="other_{{ field.field_key }}" style="margin-top:8px;{% if val != 'Other' %}display:none;{% endif %}">
+              <input class="inp" type="text" name="{{ field.field_key }}_other"
+                value="{{ form_data.get(field.field_key ~ '_other', '') }}"
+                placeholder="Please specify..."/>
+            </div>
+            <script>
+              document.querySelector('[name="{{ field.field_key }}"]').addEventListener('change', function() {
+                var d = document.getElementById('other_{{ field.field_key }}');
+                var inp = d.querySelector('input');
+                if (this.value === 'Other') { d.style.display = ''; inp.required = true; }
+                else { d.style.display = 'none'; inp.required = false; }
+              });
+            </script>
+            {% endif %}
+
+          <!-- ── FILE ── -->
+          {% elif field.field_type == FieldType.FILE %}
+            {% set existing = req.documents | selectattr('type', 'equalto', field.field_key) | list %}
+            {% if existing %}
+            <div style="display:flex;align-items:center;gap:9px;padding:10px 14px;background:#ECFDF3;border:1px solid #A7F3D0;border-radius:8px;margin-bottom:8px;font-size:13px;color:#046C4E;">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+              <a href="{{ existing[0].url }}" target="_blank" style="color:#046C4E;font-weight:500;text-decoration:underline;">{{ existing[0].name }}</a>
+              <span style="color:#6EE7B7;font-size:12px;">— already uploaded. Upload again to replace.</span>
+            </div>
+            {% endif %}
+            <div style="border:1.5px dashed #D9DDE8;border-radius:8px;padding:16px;text-align:center;background:#FAFBFC;transition:border 0.15s;">
+              <input type="file" name="{{ field.field_key }}"
+                {% if field.is_required and not existing %}required{% endif %}
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                style="width:100%;font-size:13px;color:var(--c-text-3);cursor:pointer;"/>
+              <p style="font-size:11.5px;color:var(--c-text-5);margin-top:6px;">PDF, JPG, PNG, DOC up to 10MB</p>
+            </div>
+          {% endif %}
+
+          <!-- Constraint hint (auto-generated from input_pattern / min/max length) -->
+          {% if field.field_type.value in ('text', 'textarea', 'tel') and (field.input_pattern or field.min_length or field.max_length) %}
+          <p style="font-size:11.5px;color:var(--c-text-3);margin-top:5px;display:flex;align-items:center;gap:5px;">
+            <svg width="11" height="11" fill="none" stroke="var(--c-primary)" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0;"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span style="color:var(--c-primary);font-weight:500;">
+              {%- if field.input_pattern == 'alpha' %}Letters and spaces only
+              {%- elif field.input_pattern == 'alphanumeric' %}Letters, numbers and spaces only
+              {%- elif field.input_pattern == 'numeric' %}Digits only
+              {%- endif %}
+              {%- if field.input_pattern and (field.min_length or field.max_length) %} · {% endif %}
+              {%- if field.min_length and field.max_length %}{{ field.min_length }}–{{ field.max_length }} characters
+              {%- elif field.min_length %}Min {{ field.min_length }} characters
+              {%- elif field.max_length %}Max {{ field.max_length }} characters
+              {%- endif %}
+            </span>
+          </p>
+          {% endif %}
+
+          {% if field.help_text %}
+          <p style="font-size:12px;color:var(--c-text-4);margin-top:5px;">{{ field.help_text }}</p>
+          {% endif %}
+        </div>
+
+        {% if field.field_key == 'replacement_employee' %}
+        <script>
+          (function() {
+            var hv = {{ ('"' ~ form_data.get('hiring_type', '') ~ '"') | safe }};
+            var show = hv === 'Replacement';
+            var fw1 = document.getElementById('fw_replacement_employee');
+            var fw2 = document.getElementById('fw_replacement_employee_code');
+            if (fw1) fw1.style.display = show ? '' : 'none';
+            if (fw2) fw2.style.display = show ? '' : 'none';
+          })();
+        </script>
+        {% endif %}
+
+        {% if field.field_key == 'replacement_employee_code' %}
+        <script>
+          (function() {
+            var hv = {{ ('"' ~ form_data.get('hiring_type', '') ~ '"') | safe }};
+            var fw = document.getElementById('fw_replacement_employee_code');
+            if (fw) fw.style.display = (hv === 'Replacement') ? '' : 'none';
+          })();
+        </script>
+        {% endif %}
+
+        {% endfor %}
+      </div>
+
+      <!-- Blocking issues — shown when Continue can't proceed (missing required fields and/or
+           the plant is at hiring capacity). Each item is clickable to jump straight to it. -->
+      <div id="blocking-issues" style="display:none;margin-top:24px;padding:14px 16px;border-radius:10px;background:#FEF2F2;border:1.5px solid #FCA5A5;">
+        <p style="font-size:12.5px;font-weight:700;color:#991B1B;margin:0 0 8px;display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Can't continue yet — fix these first:
+        </p>
+        <div id="blocking-issues-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+
+      <!-- Navigation -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:32px;padding-top:24px;border-top:1px solid var(--c-border);">
+        {% if step > 1 %}
+        <button type="submit" name="action" value="back" class="btn btn-secondary">
+          ← Back
+        </button>
+        {% else %}
+        <div></div>
+        {% endif %}
+
+        <div style="display:flex;gap:10px;">
+          <button type="submit" name="action" value="save" class="btn btn-secondary">
+            Save Draft
+          </button>
+          {% if step < 3 %}
+          <button type="submit" name="action" value="next" id="continue-btn" class="btn btn-primary">
+            Continue →
+          </button>
+          {% else %}
+          <button type="submit" name="action" value="save" class="btn btn-success">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Save Draft
+          </button>
+          {% endif %}
+        </div>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- Hiring Capacity popup — RDC staffing gate live pre-check (see /requests/api/check-hiring-capacity) -->
+  <div id="capacity-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
+    <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="capacity-modal-overlay"></div>
+    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
+        <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div>
+          <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Hiring Not Possible Here</h3>
+          <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="capacity-modal-msg"></p>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+        In case you need extra manpower, please obtain <strong>SPECIAL approval</strong> from the Head Office
+        through your Business Head, providing detailed justification.
+      </p>
+      <div style="display:flex;gap:10px;">
+        <button type="button" class="btn btn-secondary" style="flex:1;justify-content:center;" id="capacity-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="capacity-modal-ok">OK, Proceed Anyway</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="duplicate-email-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
+    <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="duplicate-email-modal-overlay"></div>
+    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
+        <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div>
+          <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Email Already Registered?</h3>
+          <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="duplicate-email-modal-msg"></p>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+        This is an early best-effort check, not a guarantee — please double-check the email before continuing. If you're sure it's correct, you can still send the OTP again.
+      </p>
+      <div style="display:flex;gap:10px;">
+        <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="duplicate-email-modal-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="duplicate-govtid-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
+    <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="duplicate-govtid-modal-overlay"></div>
+    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
+        <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div>
+          <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Aadhar Number Already Registered?</h3>
+          <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="duplicate-govtid-modal-msg"></p>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+        This is an early best-effort check, not a guarantee — please double-check the number before continuing. If it's genuinely correct, fix the collision (with HR) before this request can be approved.
+      </p>
+      <div style="display:flex;gap:10px;">
+        <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="duplicate-govtid-modal-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── DD/MM/YYYY masked date inputs ── */
+(function() {
+  function isRealDate(dd, mm, yyyy) {
+    if (yyyy < 1900 || yyyy > 2100) return false;
+    var d = new Date(yyyy, mm - 1, dd);
+    return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd;
+  }
+
+  function setDateState(visible, key, ok) {
+    var wrap = visible.closest('.field-wrap') || visible.parentElement;
+    var msg  = wrap ? wrap.querySelector('.field-msg') : null;
+    if (ok === true) {
+      visible.style.borderColor = 'var(--c-success)';
+      if (msg) { msg.textContent = '✓ Looks good'; msg.style.color = 'var(--c-success)'; }
+    } else if (ok === false) {
+      visible.style.borderColor = 'var(--c-danger)';
+      if (msg) { msg.textContent = 'Enter a valid date (DD/MM/YYYY)'; msg.style.color = 'var(--c-danger)'; }
+    } else {
+      visible.style.borderColor = '';
+      if (msg) { msg.textContent = ''; }
+    }
+  }
+
+  function syncHidden(visible, key) {
+    var hidden = document.getElementById('hidden_' + key);
+    if (!hidden) return;
+    var raw = visible.value.replace(/\D/g, '');
+    if (raw.length === 8) {
+      var dd   = parseInt(raw.substring(0, 2), 10);
+      var mm   = parseInt(raw.substring(2, 4), 10);
+      var yyyy = parseInt(raw.substring(4, 8), 10);
+      if (isRealDate(dd, mm, yyyy)) {
+        var pad = function(n){ return String(n).padStart(2,'0'); };
+        // contract_from: must not be before today
+        if (key === 'contract_from') {
+          var today = new Date(); today.setHours(0,0,0,0);
+          var entered = new Date(yyyy, mm - 1, dd);
+          if (entered < today) {
+            hidden.value = '';
+            visible.style.borderColor = 'var(--c-danger)';
+            var errEl = visible.parentElement.querySelector('.date-min-err');
+            if (!errEl) {
+              errEl = document.createElement('p');
+              errEl.className = 'date-min-err';
+              errEl.style.cssText = 'font-size:12px;color:var(--c-danger);margin-top:5px;';
+              visible.after(errEl);
+            }
+            errEl.textContent = 'Contract From cannot be before today.';
+            return;
+          }
+          var oldErr = visible.parentElement.querySelector('.date-min-err');
+          if (oldErr) oldErr.remove();
+        }
+        hidden.value = yyyy + '-' + pad(mm) + '-' + pad(dd);
+        setDateState(visible, key, true);
+        return;
+      }
+    }
+    hidden.value = '';
+    if (raw.length === 8) setDateState(visible, key, false);
+    else if (raw.length === 0) setDateState(visible, key, null);
+  }
+
+  function initMasks() {
+    document.querySelectorAll('.date-mask-visible').forEach(function(input) {
+      var key = input.dataset.fieldKey;
+
+      input.addEventListener('keydown', function(e) {
+        // Allow: backspace, delete, tab, arrows, home, end
+        if ([8,9,35,36,37,38,39,40,46].indexOf(e.keyCode) !== -1) return;
+        // Block non-digits
+        if (e.key && e.key.length === 1 && !/[0-9]/.test(e.key)) e.preventDefault();
+      });
+
+      input.addEventListener('input', function() {
+        var pos    = this.selectionStart;
+        var raw    = this.value.replace(/\D/g, '').substring(0, 8);
+        var formatted = '';
+        if (raw.length > 0) formatted  = raw.substring(0, 2);
+        if (raw.length > 2) formatted += '/' + raw.substring(2, 4);
+        if (raw.length > 4) formatted += '/' + raw.substring(4, 8);
+
+        this.value = formatted;
+        // Restore cursor — nudge past auto-inserted slash
+        if (formatted.length >= pos && [3,6].indexOf(pos) !== -1) pos++;
+        this.setSelectionRange(pos, pos);
+
+        if (raw.length < 8) {
+          setDateState(this, key, null);
+          document.getElementById('hidden_' + key) && (document.getElementById('hidden_' + key).value = '');
+        }
+      });
+
+      input.addEventListener('blur', function() {
+        syncHidden(this, key);
+      });
+
+      // Sync on load (for pre-filled edit forms) without triggering validation
+      if (input.value.replace(/\D/g,'').length === 8) syncHidden(input, key);
+    });
+  }
+
+  // Run after DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMasks);
+  } else {
+    initMasks();
+  }
+})();
+
+/* ── Email OTP verification ─────────────────────────────────────────────────── */
+var _SEND_OTP_URL   = "{{ url_for('requests_bp.send_email_otp') }}";
+var _VERIFY_OTP_URL = "{{ url_for('requests_bp.verify_email_otp') }}";
+var _CSRF           = "{{ csrf_token() }}";
+var _REQ_TOKEN      = {{ (req.public_token | tojson) | safe }};
+
+function sendEmailOTP() {
+  var emailInp = document.getElementById('email_id_input');
+  if (!emailInp) return;
+  var email = emailInp.value.trim();
+  if (!email || email.indexOf('@') < 0) {
+    alert('Please enter a valid candidate email address first.');
+    emailInp.focus();
+    return;
+  }
+  var btn = document.getElementById('otp-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  fetch(_SEND_OTP_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent(_CSRF) + '&email=' + encodeURIComponent(email)
+        + '&token=' + encodeURIComponent(_REQ_TOKEN || ''),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Resend OTP'; }
+    var sec = document.getElementById('otp-input-section');
+    var fb  = document.getElementById('otp-feedback');
+    if (sec) sec.style.display = '';
+    if (fb) { fb.textContent = d.ok ? (d.msg || 'OTP sent.') : (d.error || 'Error.'); fb.style.color = d.ok ? 'var(--c-success)' : 'var(--c-danger)'; }
+    if (!d.ok && d.duplicate) {
+      var m = document.getElementById('duplicate-email-modal');
+      var mm = document.getElementById('duplicate-email-modal-msg');
+      if (mm) mm.textContent = d.error || 'This email appears to already be registered.';
+      if (m) { m.style.display = 'flex'; }
+    }
+  })
+  .catch(function() {
+    if (btn) { btn.disabled = false; btn.textContent = 'Resend OTP'; }
+    alert('Network error — please try again.');
+  });
+}
+
+(function() {
+  var modal = document.getElementById('duplicate-email-modal');
+  var overlay = document.getElementById('duplicate-email-modal-overlay');
+  var okBtn = document.getElementById('duplicate-email-modal-ok');
+  function close() {
+    if (modal) modal.style.display = 'none';
+    var emailInp = document.getElementById('email_id_input');
+    if (emailInp) emailInp.focus();
+  }
+  if (okBtn) okBtn.addEventListener('click', close);
+  if (overlay) overlay.addEventListener('click', close);
+})();
+
+/* ── Aadhar (Govt ID) duplicate check — fires on blur, same "show it
+   immediately" philosophy as the email check above, but no OTP concept:
+   this just flags a collision as soon as the initiator moves to the next
+   field, well before submission. ── */
+var _CHECK_GOVT_ID_URL = "{{ url_for('requests_bp.check_govt_id') }}";
+
+function checkGovtIdDuplicate() {
+  var inp = document.getElementById('aadhar_no_input');
+  var fb  = document.getElementById('aadhar-dup-feedback');
+  if (!inp) return;
+  var val = inp.value.trim();
+  inp.removeAttribute('data-govtid-dup');
+  if (fb) fb.textContent = '';
+  if (!/^[0-9]{12}$/.test(val)) return;   // incomplete/malformed — pattern validation covers this separately
+  fetch(_CHECK_GOVT_ID_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent(_CSRF) + '&aadhar_no=' + encodeURIComponent(val)
+        + '&token=' + encodeURIComponent(_REQ_TOKEN || ''),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (!d.ok && d.duplicate) {
+      inp.setAttribute('data-govtid-dup', '1');
+      if (fb) { fb.textContent = d.error || 'This Aadhar number appears to already be registered.'; fb.style.color = 'var(--c-danger)'; }
+      var m = document.getElementById('duplicate-govtid-modal');
+      var mm = document.getElementById('duplicate-govtid-modal-msg');
+      if (mm) mm.textContent = d.error || 'This Aadhar number appears to already be registered.';
+      if (m) { m.style.display = 'flex'; }
+    }
+    if (window.refreshBlockingIssues) window.refreshBlockingIssues(false);
+  })
+  .catch(function() { /* fail open — a network error must never block the form */ });
+}
+
+(function() {
+  var modal = document.getElementById('duplicate-govtid-modal');
+  var overlay = document.getElementById('duplicate-govtid-modal-overlay');
+  var okBtn = document.getElementById('duplicate-govtid-modal-ok');
+  function close() {
+    if (modal) modal.style.display = 'none';
+    var inp = document.getElementById('aadhar_no_input');
+    if (inp) inp.focus();
+  }
+  if (okBtn) okBtn.addEventListener('click', close);
+  if (overlay) overlay.addEventListener('click', close);
+})();
+
+function verifyEmailOTP() {
+  var emailInp = document.getElementById('email_id_input');
+  var otpInp   = document.getElementById('otp-code-input');
+  var fb       = document.getElementById('otp-feedback');
+  var flag     = document.getElementById('email_verified_flag');
+  var bar      = document.getElementById('otp-status-bar');
+  var sec      = document.getElementById('otp-input-section');
+  if (!emailInp || !otpInp) return;
+  fetch(_VERIFY_OTP_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent(_CSRF)
+        + '&email=' + encodeURIComponent(emailInp.value.trim())
+        + '&otp='   + encodeURIComponent(otpInp.value.trim()),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.ok) {
+      if (flag) flag.value = '1';
+      if (sec)  sec.style.display = 'none';
+      if (fb)   fb.textContent = '';
+      if (bar)  bar.innerHTML = '<p style="font-size:12px;color:var(--c-success);display:flex;align-items:center;gap:4px;margin:0;">'
+        + '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'
+        + ' Email verified</p>';
+    } else {
+      if (fb) { fb.textContent = d.error || 'Incorrect OTP.'; fb.style.color = 'var(--c-danger)'; }
+    }
+  })
+  .catch(function() {
+    if (fb) { fb.textContent = 'Network error — please try again.'; fb.style.color = 'var(--c-danger)'; }
+  });
+}
+
+/* ── Guard form submission — block "Continue" on step 1 if email unverified ── */
+document.addEventListener('DOMContentLoaded', function() {
+  var form = document.querySelector('form[method="POST"]');
+  if (!form) return;
+  form.addEventListener('submit', function(e) {
+    var flag = document.getElementById('email_verified_flag');
+    if (!flag) return;                          // not on a step with OTP
+    var action = (e.submitter || {}).value || '';
+    if (action === 'next' && flag.value !== '1') {
+      e.preventDefault();
+      var sec = document.getElementById('otp-input-section');
+      if (sec) sec.style.display = '';
+      var fb = document.getElementById('otp-feedback');
+      if (fb) { fb.textContent = 'Email must be verified before proceeding. Click "Send OTP".'; fb.style.color = 'var(--c-danger)'; }
+      var emailInp = document.getElementById('email_id_input');
+      if (emailInp) emailInp.focus();
+    }
+  });
+});
+
+(function() {
+  /* ── Notice period + Truein app attendance auto-fill on designation change ── */
+  function fetchNoticePeriod(sel) {
+    var opt = sel ? sel.options[sel.selectedIndex] : null;
+
+    // Notice period
+    var nf = document.getElementById('notice_period_field');
+    if (nf && opt) {
+      var days = opt.getAttribute('data-notice');
+      nf.value = days !== null ? days + ' day' + (parseInt(days) !== 1 ? 's' : '') : '';
+    }
+
+    // Truein app attendance — stored in hidden field, used when pushing to Truein
+    var af = document.getElementById('truein_app_attendance_field');
+    if (af && opt) {
+      af.value = opt.getAttribute('data-app-attendance') || '0';
+    }
+
+    // UAN mandatory/optional based on designation (trainees are exempt)
+    toggleUAN(opt ? opt.value : '');
+  }
+
+  /* ── UAN: required for all except trainees ── */
+  function toggleUAN(designationName) {
+    var uanInput = document.querySelector('input[name="uan_number"]');
+    if (!uanInput) return;
+    var wrapper = document.getElementById('fw_uan_number');
+    var isTrainee = designationName && designationName.toLowerCase().indexOf('trainee') !== -1;
+    uanInput.required = !isTrainee;
+    if (wrapper) {
+      var reqSpan = wrapper.querySelector('label span[style*="c-danger"]');
+      var optSpan = wrapper.querySelector('label span[style*="c-text-5"]');
+      if (isTrainee) {
+        if (reqSpan) reqSpan.style.display = 'none';
+        if (optSpan) optSpan.style.display = '';
+      } else {
+        if (reqSpan) reqSpan.style.display = '';
+        if (optSpan) optSpan.style.display = 'none';
+      }
+    }
+  }
+
+  /* ── Replacement field toggle (driven by data-toggle-replacement) ── */
+  function toggleReplacement(radio) {
+    var show = (radio.value === 'Replacement');
+    var fw1 = document.getElementById('fw_replacement_employee');
+    var fw2 = document.getElementById('fw_replacement_employee_code');
+    if (fw1) fw1.style.display = show ? '' : 'none';
+    if (fw2) {
+      fw2.style.display = show ? '' : 'none';
+      var inp = fw2.querySelector('input');
+      if (inp) inp.required = show;
+    }
+  }
+
+  /* ── Radio label highlight ── */
+  function refreshRadioStyles(name) {
+    document.querySelectorAll('input[name="' + name + '"]').forEach(function(inp) {
+      var lbl = inp.closest('label');
+      if (!lbl) return;
+      lbl.style.borderColor = inp.checked ? 'var(--c-primary)'  : 'var(--c-border)';
+      lbl.style.background  = inp.checked ? 'var(--c-primary-soft)' : 'var(--c-surface)';
+    });
+  }
+
+  /* ── Inline field validation (blur) ── */
+  function validateField(inp) {
+    var wrapper = inp.closest('.field-wrapper');
+    if (!wrapper) return;
+    var err = wrapper.querySelector('.field-err-msg');
+    var ok  = wrapper.querySelector('.field-ok-msg');
+    if (err) err.remove();
+    if (ok)  ok.remove();
+
+    var val = inp.value.trim();
+    var msgs = [];
+
+    if (inp.required && !val) {
+      msgs.push('This field is required.');
+    }
+    var min = parseInt(inp.getAttribute('minlength'));
+    var max = parseInt(inp.getAttribute('maxlength'));
+    if (val && !isNaN(min) && val.length < min) msgs.push('Min ' + min + ' characters.');
+    if (val && !isNaN(max) && val.length > max) msgs.push('Max ' + max + ' characters.');
+
+    var pat = inp.getAttribute('pattern');
+    if (val && pat) {
+      var re = new RegExp('^' + pat + '$');
+      if (!re.test(val)) msgs.push(inp.getAttribute('title') || 'Invalid format.');
+    }
+
+    if (msgs.length) {
+      var el = document.createElement('p');
+      el.className = 'field-err-msg';
+      el.style.cssText = 'font-size:var(--t-xs);color:var(--c-danger);margin-top:5px;display:flex;align-items:center;gap:4px;';
+      el.innerHTML = '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' + msgs[0];
+      inp.after(el);
+      inp.style.borderColor = 'var(--c-danger)';
+      inp.style.boxShadow   = '0 0 0 3px rgba(220,38,38,0.10)';
+    } else if (val) {
+      var el2 = document.createElement('p');
+      el2.className = 'field-ok-msg';
+      el2.style.cssText = 'font-size:var(--t-xs);color:var(--c-success);margin-top:5px;display:flex;align-items:center;gap:4px;';
+      el2.innerHTML = '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0"><polyline points="20 6 9 17 4 12"/></svg> Looks good';
+      inp.after(el2);
+      inp.style.borderColor = 'var(--c-success)';
+      inp.style.boxShadow   = '0 0 0 3px rgba(9,130,93,0.10)';
+    } else {
+      inp.style.borderColor = '';
+      inp.style.boxShadow   = '';
+    }
+  }
+
+  /* ── Wire up all events on DOMContentLoaded ── */
+  document.addEventListener('DOMContentLoaded', function() {
+    /* Designation onchange */
+    var desSel = document.getElementById('designation_select');
+    if (desSel) {
+      desSel.addEventListener('change', function() { fetchNoticePeriod(this); });
+      fetchNoticePeriod(desSel);
+    }
+
+    /* data-toggle-replacement radios */
+    document.querySelectorAll('input[data-toggle-replacement]').forEach(function(r) {
+      r.addEventListener('change', function() { toggleReplacement(this); });
+    });
+
+    /* All radios — highlight styling */
+    document.querySelectorAll('input[type="radio"]').forEach(function(r) {
+      r.addEventListener('change', function() { refreshRadioStyles(this.name); });
+      if (r.checked) refreshRadioStyles(r.name);
+    });
+
+    /* Blur validation on text/email/tel/number/textarea inputs */
+    document.querySelectorAll('.field-wrapper .inp:not([readonly])').forEach(function(inp) {
+      inp.addEventListener('blur', function() { validateField(this); });
+      /* Live char counter if maxlength exists */
+      var max = parseInt(inp.getAttribute('maxlength'));
+      if (!isNaN(max) && max > 0) {
+        var counter = document.createElement('p');
+        counter.className = 'char-counter';
+        counter.style.cssText = 'font-size:var(--t-xs);color:var(--c-text-5);margin-top:4px;text-align:right;';
+        inp.after(counter);
+        function updateCounter() {
+          var rem = max - inp.value.length;
+          counter.textContent = rem + ' / ' + max + ' chars remaining';
+          counter.style.color = rem < 10 ? 'var(--c-danger)' : 'var(--c-text-5)';
+        }
+        inp.addEventListener('input', updateCounter);
+        updateCounter();
+      }
+    });
+  });
+})();
+
+/* ── Plant Location: Cluster -> Plant cascading picker. Server-rendered from
+   our DVT-matched plants (see requests_bp.plant_locations_api /
+   _dvt_matched_plant_options), each <option> tagged data-cluster="..." —
+   re-fetch once on load only to pick up a mapping change made after this
+   page was rendered (e.g. an admin ran Auto-Match while the form was open).
+   On any failure, the server-rendered options (already correct) are left
+   exactly as they are — no fallback swap needed.
+
+   Company-reactive (added 2026-09-15, multi-company support): Ultrafine/ROBO
+   have no cluster/region concept at all (see _company_plant_options() in
+   requests_bp/routes.py — every row's `cluster` is null), so for those
+   companies the cluster dropdown is hidden entirely and the plant select
+   shows a flat list directly, instead of forcing an extra "pick a cluster"
+   click through a dropdown that would only ever have one meaningless
+   option. Switching Company Code re-fetches this company's plant list and
+   clears whatever plant was previously selected — a plant from one
+   company is never valid for another. ── */
+(function() {
+  var sel = document.getElementById('plant_location_select');
+  var clusterSel = document.getElementById('cluster_select');
+  var companySel = document.querySelector('select[name="company_code"]');
+  if (!sel || !clusterSel) return;
+  var currentVal = '{{ form_data.get("plant_location", "") | e }}';
+  var allPlants = []; // [{value, label, cluster}]
+  var flatMode = false; // true when every plant has cluster === null (non-RDC)
+
+  function rebuildClusters() {
+    var clusters = [];
+    allPlants.forEach(function(p) { if (clusters.indexOf(p.cluster) === -1) clusters.push(p.cluster); });
+    clusters.sort();
+    clusterSel.innerHTML = '<option value="">— Select Cluster / Region first —</option>';
+    clusters.forEach(function(c) {
+      var o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      clusterSel.appendChild(o);
+    });
+  }
+
+  function rebuildPlants(clusterName, selectVal) {
+    if (!flatMode && !clusterName) {
+      // No cluster picked yet — keep the plant list empty/disabled rather
+      // than falling back to the full ~139-plant list, so cluster-first is
+      // the only path (less scrolling is the whole point of this picker).
+      sel.innerHTML = '<option value="">— Select a Cluster first —</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">— Select Plant Location —</option>';
+    allPlants
+      .filter(function(p) { return flatMode || p.cluster === clusterName; })
+      .forEach(function(p) {
+        var o = document.createElement('option');
+        o.value = p.value; o.textContent = p.label;
+        if (selectVal && p.value === selectVal) o.selected = true;
+        sel.appendChild(o);
+      });
+  }
+
+  function applyPlants(plants) {
+    allPlants = plants;
+    flatMode = plants.length > 0 && plants.every(function(p) { return p.cluster === null; });
+    clusterSel.style.display = flatMode ? 'none' : '';
+    if (flatMode) {
+      rebuildPlants(null, currentVal);
+      return;
+    }
+    rebuildClusters();
+    var currentCluster = '';
+    if (currentVal) {
+      var match = allPlants.filter(function(p) { return p.value === currentVal; })[0];
+      if (match) currentCluster = match.cluster;
+    }
+    clusterSel.value = currentCluster;
+    rebuildPlants(currentCluster, currentVal);
+  }
+
+  clusterSel.addEventListener('change', function() {
+    rebuildPlants(this.value, null);
+  });
+
+  function fetchPlantsForCompany(company, clearSelection) {
+    if (clearSelection) currentVal = '';
+    fetch('/requests/api/plant-locations?company=' + encodeURIComponent(company || 'RDC'))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.ok || !d.data) return;
+        applyPlants(d.data);
+      })
+      .catch(function() { /* keep whatever's already shown as-is */ });
+  }
+
+  // Seed from the server-rendered options (data-cluster) so the cascading
+  // picker works even before/without the fetch below completing.
+  applyPlants(Array.prototype.map.call(sel.querySelectorAll('option.plant-fallback'), function(o) {
+    return { value: o.value, label: o.textContent, cluster: o.getAttribute('data-cluster') || 'Other' };
+  }));
+
+  fetchPlantsForCompany(companySel ? companySel.value : 'RDC', false);
+
+  if (companySel) {
+    companySel.addEventListener('change', function() {
+      fetchPlantsForCompany(this.value, true);
+    });
+  }
+})();
+
+/* ── RDC hiring-capacity live pre-check — fires the moment Plant Location is
+   picked (designation is chosen on step 1, already saved in form_data by
+   the time step 2 loads), and again on page load if a plant is already
+   selected (e.g. resuming a draft, or re-opening a draft that was already
+   marked as a special case). Mirrors the server-side gate at Submit
+   (check_rdc_staffing_gate), which is still the final authority. A block is
+   no longer a hard stop: the popup informs the initiator and lets them
+   either pick a different plant (Cancel) or acknowledge and proceed anyway
+   (OK), which POSTs to acknowledge-special-case and routes the request
+   through the over-norm approval chain on submit. window.RDCCapacityGate
+   is kept for display purposes only — it no longer feeds
+   refreshBlockingIssues()/Continue-button gating below. ── */
+window.RDCCapacityGate = { blocked: false, message: '', el: null };
+(function() {
+  var sel = document.querySelector('select[name="plant_location"]');
+  if (!sel) return;
+  var companyCode = {{ (form_data.get('company_code', '') | tojson) | safe }};
+  var designation = {{ (form_data.get('designation', '') | tojson) | safe }};
+  var token       = {{ (req.public_token | tojson) | safe }};
+  if (companyCode !== 'RDC' || !designation) return;
+
+  var modal       = document.getElementById('capacity-modal');
+  var modalMsg    = document.getElementById('capacity-modal-msg');
+  var modalOk     = document.getElementById('capacity-modal-ok');
+  var modalCancel = document.getElementById('capacity-modal-cancel');
+
+  function showCapacityModal(msg) {
+    modalMsg.textContent = msg;
+    modal.style.display = 'flex';
+  }
+  function closeCapacityModal() { modal.style.display = 'none'; }
+
+  modalOk.addEventListener('click', function() {
+    closeCapacityModal();
+    // Mark this exact selection as acknowledged so the step's own Continue/Save
+    // POST (which merges plant_location into the draft for the first time) does
+    // not immediately undo the flag via the "plant changed -> re-ack" reset
+    // below — the ack call above IS that re-ack, for this very value.
+    var ackField = document.getElementById('special-case-ack-pending');
+    if (ackField) ackField.value = '1';
+    fetch('/requests/' + encodeURIComponent(token) + '/acknowledge-special-case', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'csrf_token=' + encodeURIComponent(_CSRF)
+    }).catch(function() { /* Submit-time fallback (hiring_not_possible.html) still catches this */ });
+  });
+
+  modalCancel.addEventListener('click', function() {
+    closeCapacityModal();
+    sel.value = '';
+    sel.focus();
+    window.RDCCapacityGate = { blocked: false, message: '', el: sel };
+  });
+  document.getElementById('capacity-modal-overlay').addEventListener('click', closeCapacityModal);
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.style.display !== 'none') closeCapacityModal();
+  });
+
+  function runCheck(plantLocation, plantLabel, showPopup) {
+    if (!plantLocation) {
+      window.RDCCapacityGate = { blocked: false, message: '', el: sel };
+      return;
+    }
+    var params = new URLSearchParams({
+      company_code: companyCode, designation: designation, plant_location: plantLocation
+    });
+    fetch('/requests/api/check-hiring-capacity?' + params.toString())
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.ok) { window.RDCCapacityGate = { blocked: false, message: '', el: sel }; return; }
+        if (d.allowed) {
+          window.RDCCapacityGate = { blocked: false, message: '', el: sel };
+        } else {
+          var roleName = (d.details && d.details.norm_role_category_name) || designation;
+          var msg = roleName + ' is already full at ' + plantLabel + ' — hiring cannot proceed here.';
+          window.RDCCapacityGate = { blocked: true, message: msg, el: sel };
+          if (showPopup) showCapacityModal(msg);
+        }
+      })
+      .catch(function() { /* fail-open on a network hiccup — the Submit-time gate still catches this either way */ });
+  }
+
+  sel.addEventListener('change', function() {
+    // A new plant selection invalidates any previous acknowledgment — clear
+    // the marker so a fresh popup (if this plant is also blocked) is required.
+    var ackField = document.getElementById('special-case-ack-pending');
+    if (ackField) ackField.value = '';
+    var plantLabel = this.options[this.selectedIndex] ? this.options[this.selectedIndex].textContent : this.value;
+    runCheck(this.value, plantLabel, true);
+  });
+
+  // Re-check on load if a plant is already selected (resuming a draft) —
+  // and re-surface the popup too, so re-opening a blocked draft shows it
+  // again at the time of filling the form, not only at Submit.
+  if (sel.value) {
+    runCheck(sel.value, sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : sel.value, true);
+  }
+})();
+
+/* ── Manager typeahead backed by Truein employee list ── */
+(function() {
+  var _cache = null;
+  var _timer = null;
+
+  window.managerSearch = function(q, immediate) {
+    clearTimeout(_timer);
+    _timer = setTimeout(function() { _run(q); }, immediate ? 0 : 350);
+  };
+
+  function _run(q) {
+    var dropdown = document.getElementById('manager-dropdown');
+    var status   = document.getElementById('manager-status');
+    if (!dropdown) return;
+    q = (q || '').trim();
+    if (q.length < 2) { dropdown.style.display = 'none'; return; }
+
+    if (_cache) { _render(_cache, q); return; }
+    status.textContent = 'Searching Truein…';
+
+    fetch('/requests/api/truein/managers')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.ok) { status.textContent = 'Error: ' + d.error; return; }
+        if (d.data.length === 0) {
+          // Cache genuinely cold (e.g. right after a server restart, before
+          // the first background refresh has completed) — this is not the
+          // same as "no match for this search", so say so plainly rather
+          // than showing a misleading "No matching employees found".
+          status.textContent = 'Manager list hasn\'t loaded yet — try again in a few minutes.';
+          dropdown.style.display = 'none';
+          return;
+        }
+        status.textContent = '';
+        _cache = d.data;
+        _render(_cache, q);
+      })
+      .catch(function() {
+        status.textContent = 'Could not reach Truein — try again shortly.';
+      });
+  }
+
+  function _render(employees, q) {
+    var dropdown = document.getElementById('manager-dropdown');
+    var ql = q.toLowerCase();
+    var matches = employees.filter(function(e) {
+      return e.name.toLowerCase().includes(ql) || e.empId.toLowerCase().includes(ql);
+    }).slice(0, 40);
+
+    if (matches.length === 0) {
+      dropdown.innerHTML = '<div style="padding:12px 16px;font-size:13px;color:var(--c-text-4);">No matching employees found</div>';
+    } else {
+      dropdown.innerHTML = matches.map(function(e) {
+        var safeName  = e.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        var safeEmpId = e.empId.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+        return '<div class="mgr-opt" data-name="' + safeName + '" data-empid="' + safeEmpId + '" '
+             + 'style="padding:10px 16px;cursor:pointer;border-bottom:1px solid var(--c-border);">'
+             + '<span style="font-weight:500;font-size:13.5px;">' + safeName + '</span> '
+             + '<span style="font-size:11.5px;color:var(--c-text-4);font-family:monospace;">(' + safeEmpId + ')</span>'
+             + '</div>';
+      }).join('');
+      dropdown.querySelectorAll('.mgr-opt').forEach(function(el) {
+        el.addEventListener('mouseover', function() { this.style.background = 'var(--c-primary-soft)'; });
+        el.addEventListener('mouseout',  function() { this.style.background = ''; });
+        el.addEventListener('click',     function() { _pick(this.dataset.name, this.dataset.empid); });
+      });
+    }
+    dropdown.style.display = '';
+  }
+
+  function _pick(name, empId) {
+    var nameInp   = document.getElementById('manager-name-input');
+    var codeInp   = document.getElementById('manager-code-input');
+    var hiddenInp = document.getElementById('l1_manager_emp_id_input');
+    var status    = document.getElementById('manager-status');
+    var dropdown  = document.getElementById('manager-dropdown');
+    if (nameInp)   { nameInp.value   = name;  }
+    if (codeInp)   { codeInp.value   = empId; }
+    if (hiddenInp) { hiddenInp.value = empId; }
+    if (dropdown)  { dropdown.style.display = 'none'; }
+    if (status) {
+      status.textContent = '✓ Truein employee selected';
+      status.style.color = 'var(--c-success)';
+    }
+    if (window.refreshBlockingIssues) window.refreshBlockingIssues(false);
+  }
+
+  /* Close dropdown on outside click */
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('manager-search-wrap');
+    var dd   = document.getElementById('manager-dropdown');
+    if (wrap && dd && !wrap.contains(e.target)) dd.style.display = 'none';
+  });
+})();
+
+/* ── "Can't continue yet" summary — a real, visible reason Continue won't
+   advance, not just a silently-disabled button. Covers: any required field
+   the browser's own constraint validation currently considers invalid —
+   reused rather than reimplemented per field type, so DATE/RADIO/select/
+   text all work uniformly — plus the Reporting Manager typeahead check
+   below. The RDC hiring-capacity gate (window.RDCCapacityGate) is
+   deliberately NOT included here — a staffing-gate block is informational/
+   acknowledgeable via the popup above, not a submit-blocker; the
+   Submit-time server-side gate is what's actually authoritative. Each
+   listed issue is clickable: scrolls to and focuses the offending field. ── */
+(function() {
+  var form = document.querySelector('form[method="POST"]');
+  var continueBtn = document.getElementById('continue-btn');
+  var issuesBox  = document.getElementById('blocking-issues');
+  var issuesList = document.getElementById('blocking-issues-list');
+  if (!form || !issuesBox) return;
+
+  function fieldLabel(el) {
+    var wrap = el.closest('.field-wrapper');
+    var label = wrap ? wrap.querySelector('label') : null;
+    if (!label || !label.childNodes.length) return el.name || 'This field';
+    var text = label.childNodes[0].nodeValue;
+    return (text ? text.trim() : null) || el.name || 'This field';
+  }
+
+  window.refreshBlockingIssues = function(reveal) {
+    var issues = [];
+    var seen = {};
+
+    Array.prototype.forEach.call(form.querySelectorAll(':invalid'), function(el) {
+      if (el.type === 'hidden' || el.offsetParent === null) return;
+      var wrap = el.closest('.field-wrapper');
+      var key = wrap ? wrap.id : (el.name || el.id);
+      if (seen[key]) return; // one entry per field, even for multi-input radio groups
+      seen[key] = true;
+      issues.push({ label: fieldLabel(el) + ' is required', el: el });
+    });
+
+    // Reporting Manager: name typed but no real Truein match picked yet —
+    // not a native "required" gap (the code field is readonly, exempt from
+    // that check), but a real reason the request can't proceed.
+    var mgrNameInp = document.getElementById('manager-name-input');
+    var mgrHiddenInp = document.getElementById('l1_manager_emp_id_input');
+    if (mgrNameInp && mgrHiddenInp && mgrNameInp.value.trim() && !mgrHiddenInp.value.trim()) {
+      issues.push({ label: 'Reporting Manager — pick a match from the search results below', el: mgrNameInp });
+    }
+
+    // Aadhar Number: flagged as a duplicate by checkGovtIdDuplicate() on blur —
+    // not a native "required" gap, but a real reason this request can't proceed.
+    var aadharInp = document.getElementById('aadhar_no_input');
+    if (aadharInp && aadharInp.getAttribute('data-govtid-dup') === '1') {
+      issues.push({ label: 'Aadhar Number — appears to already be registered, please double-check', el: aadharInp });
+    }
+
+    issuesList.innerHTML = '';
+    issues.forEach(function(issue) {
+      var item = document.createElement('div');
+      item.textContent = '→ ' + issue.label;
+      item.style.cssText = 'font-size:12.5px;color:#991B1B;cursor:pointer;text-decoration:underline;width:fit-content;';
+      item.addEventListener('click', function() {
+        if (!issue.el) return;
+        issue.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (issue.el.focus) issue.el.focus();
+      });
+      issuesList.appendChild(item);
+    });
+    issuesBox.style.display = issues.length ? '' : 'none';
+    if (reveal && issues.length) issuesBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return issues;
+  };
+
+  if (continueBtn) {
+    continueBtn.addEventListener('click', function(e) {
+      var issues = window.refreshBlockingIssues(true);
+      if (issues.length > 0) e.preventDefault();
+    });
+  }
+
+  // Keep the summary live as the user fixes things, not just on click.
+  form.addEventListener('input', function() { window.refreshBlockingIssues(false); });
+  form.addEventListener('change', function() { window.refreshBlockingIssues(false); });
+})();
+</script>
+{% endblock %}

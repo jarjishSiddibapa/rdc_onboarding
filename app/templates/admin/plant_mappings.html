@@ -1,0 +1,58 @@
+{% from '_macros.html' import render_list_search %}
+{% extends "base.html" %}
+{% block title %}Plant ↔ Volume Tracker Mappings — TeamLease Admin{% endblock %}
+
+{% macro _badge(conf) %}
+{% if conf.value == 'unmatched' %}<span class="mono" style="font-size:11px;font-weight:700;background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5;border-radius:20px;padding:1px 8px;">Unmatched</span>
+{% elif conf.value == 'auto_fuzzy' %}<span class="mono" style="font-size:11px;font-weight:700;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:20px;padding:1px 8px;">Fuzzy match</span>
+{% elif conf.value == 'auto_exact' %}<span class="mono" style="font-size:11px;font-weight:700;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;border-radius:20px;padding:1px 8px;">Exact match</span>
+{% else %}<span class="mono" style="font-size:11px;font-weight:700;background:#DBEAFE;color:#1E40AF;border:1px solid #93C5FD;border-radius:20px;padding:1px 8px;">Manual</span>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<div style="max-width:1000px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
+    <div>
+      <h1 class="page-title">Plant ↔ Volume Tracker Mappings</h1>
+      <p class="page-sub">Maps our plant names to the Daily Volume Tracker's plant_code, so the RDC staffing gate can look up last month's production. <strong>{{ rows|length }}</strong> plant(s) tracked.</p>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <form method="POST" action="{{ url_for('admin.run_plant_auto_match') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-primary">Run Auto-Match</button>
+      </form>
+      <form method="POST" action="{{ url_for('admin.refresh_staffing_snapshot') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-secondary" title="Recomputes headcount now instead of waiting for the 2-hourly job. Fast if Truein's cache is warm, slow (several minutes) if not.">Refresh Snapshot Now</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card" style="overflow:hidden;">
+    {{ render_list_search('plant-mapping-search', '#plant-mapping-tbody tr', 'Search by plant name, DVT code, or cluster…') }}
+    <table class="tbl">
+      <thead>
+        <tr><th>Our Plant Name</th><th>DVT Plant Code</th><th>DVT Tracker Name</th><th>Cluster</th><th>Match</th><th>Matched On</th><th></th></tr>
+      </thead>
+      <tbody id="plant-mapping-tbody">
+        {% for row in rows %}
+        <tr>
+          <td style="font-weight:500;color:var(--c-text-1);">{{ row.plant_location_name }}</td>
+          <td class="mono" style="font-size:12.5px;">{{ row.dvt_plant_code or '—' }}</td>
+          <td style="font-size:12.5px;color:var(--c-text-3);">{{ row.dvt_daily_tracker_name or '—' }}</td>
+          <td style="font-size:12.5px;color:var(--c-text-3);">{{ row.cluster.canonical_cluster_name if row.cluster else '—' }}</td>
+          <td>{{ _badge(row.match_confidence) }}</td>
+          <td class="mono" style="font-size:11.5px;color:var(--c-text-4);">{{ row.matched_on or '—' }}</td>
+          <td style="text-align:right;">
+            <a href="{{ url_for('admin.edit_plant_mapping', mapping_id=row.id) }}" class="btn btn-secondary btn-sm">Edit</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--c-text-4);">No plant mappings yet — click "Run Auto-Match" to populate from known plant names.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

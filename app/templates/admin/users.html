@@ -1,0 +1,222 @@
+{% from '_macros.html' import render_pagination, render_list_search %}
+{% extends "base.html" %}
+{% block title %}User Management — TeamLease Admin{% endblock %}
+
+{% block content %}
+
+{# ── Macro must be inside block in child templates ── #}
+{% macro _user_table(user_list) %}
+<table class="tbl" style="width:100%;table-layout:auto;">
+  <thead>
+    <tr>
+      <th style="width:22%;">Name</th>
+      <th style="width:10%;">Emp Code</th>
+      <th style="width:20%;">Email</th>
+      <th style="width:13%;">Role</th>
+      <th style="width:16%;">Business Head / Region</th>
+      <th style="width:9%;">Created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for user in user_list %}
+    {% set role_badge = {
+      'SUPER_ADMIN':'badge-purple','INITIATOR':'badge-blue','BUSINESS_HEAD':'badge-orange',
+      'HR_MANAGER':'badge-teal','HEAD_HR':'badge-indigo','DR_BHOON':'badge-pink'
+    }.get(user.role.value,'badge-draft') %}
+    <tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px;">
+          {% if user.profile_pic %}
+          <img src="{{ url_for('static', filename='uploads/' ~ user.profile_pic) }}"
+               style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--c-border);flex-shrink:0;" alt=""/>
+          {% else %}
+          <div style="width:32px;height:32px;border-radius:50%;background:#EEF4FF;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span style="font-size:12px;font-weight:700;color:#3A5CCC;">{{ user.name[0].upper() }}</span>
+          </div>
+          {% endif %}
+          <div>
+            <span style="font-weight:600;color:var(--c-text-1);">{{ user.name }}</span>
+            {% if user.username %}<div style="font-size:11.5px;color:var(--c-text-4);font-family:monospace;margin-top:1px;">@{{ user.username }}</div>{% endif %}
+          </div>
+        </div>
+      </td>
+      <td>
+        {% if user.employee_code %}
+        <span class="mono" style="font-size:12px;font-weight:600;color:var(--c-text-2);background:var(--c-bg-2);border:1px solid var(--c-border);border-radius:5px;padding:2px 7px;">{{ user.employee_code }}</span>
+        {% else %}
+        <span style="font-size:12px;color:var(--c-text-5);">—</span>
+        {% endif %}
+      </td>
+      <td style="color:var(--c-text-3);max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ user.email }}">{{ user.email }}</td>
+      <td><span class="badge {{ role_badge }}">{{ user.role_label }}</span></td>
+      {% set bh_info = bh_map.get(user.id) %}
+      {% set init_regions = user.initiator_region_links|map(attribute='cluster.canonical_cluster_name')|list if user.role.value == 'INITIATOR' else [] %}
+      {% set bh_regions = user.region_links|map(attribute='cluster.canonical_cluster_name')|list if user.role.value == 'BUSINESS_HEAD' else [] %}
+      <td>
+        {% if user.role.value == 'INITIATOR' and init_regions %}
+          <span style="font-size:12.5px;color:#0891B2;font-weight:500;">{{ init_regions|sort|join(', ') }}</span>
+        {% elif user.role.value == 'INITIATOR' and bh_info %}
+          {# Legacy direct assignment — no longer settable via the UI, kept only so pre-2026-09-04 data still shows something meaningful. #}
+          <span style="font-size:12.5px;color:#3A5CCC;font-weight:500;">{{ bh_info.name }}</span>
+          <span style="font-size:10.5px;color:var(--c-text-5);background:var(--c-bg-2);border:1px solid var(--c-border);border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle;">legacy BH link</span>
+        {% elif user.role.value == 'INITIATOR' %}<span style="font-size:12px;color:var(--c-text-5);">Unassigned (all BHs see it)</span>
+        {% elif user.role.value == 'BUSINESS_HEAD' and bh_regions %}
+          <span style="font-size:12.5px;color:#0891B2;font-weight:500;">{{ bh_regions|sort|join(', ') }}</span>
+        {% elif user.role.value == 'BUSINESS_HEAD' %}<span style="font-size:12px;color:var(--c-text-5);">No regions</span>
+        {% else %}<span style="color:#D1D5DB;">—</span>{% endif %}
+      </td>
+      <td style="color:var(--c-text-4);font-size:12.5px;">{{ user.created_at | ist('%d %b %Y') }}</td>
+      <td style="text-align:right;white-space:nowrap;">
+        <div style="display:inline-flex;align-items:center;gap:6px;">
+          <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="btn btn-secondary btn-sm" style="padding:5px 10px;">Edit</a>
+          <button type="button" class="btn btn-secondary btn-sm" style="padding:5px 10px;" data-open-pwd="{{ user.id }}" data-open-pwd-name="{{ user.name|e }}">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+            Pwd
+          </button>
+          {% if user.id != current_user.id %}
+          <form method="POST" action="{{ url_for('admin.toggle_user_active', user_id=user.id) }}" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            {% if user.is_active %}
+            <button type="submit" class="btn btn-sm btn-ghost" style="color:var(--c-danger);padding:5px 10px;">Deactivate</button>
+            {% else %}
+            <button type="submit" class="btn btn-sm btn-success" style="padding:5px 10px;">Activate</button>
+            {% endif %}
+          </form>
+          {% endif %}
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{# ══════════════════════════════════════════════════════════ #}
+<div>
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;">
+    <div>
+      <h1 class="page-title">User Management</h1>
+      <p class="page-sub"><strong>{{ active_users|length }}</strong> active · <strong>{{ inactive_users|length }}</strong> inactive</p>
+    </div>
+    <a href="{{ url_for('admin.new_user') }}" class="btn btn-primary">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+      New User
+    </a>
+  </div>
+
+  <div class="card">
+    {# Tab bar #}
+    <div style="display:flex;border-bottom:2px solid var(--c-border);padding:0 4px;">
+      <button id="utab-btn-active" onclick="switchUTab('active')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);display:flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#10B981;display:inline-block;"></span>
+        Active
+        <span style="font-size:11px;font-weight:700;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;border-radius:20px;padding:1px 8px;">{{ active_users|length }}</span>
+      </button>
+      {% if inactive_users %}
+      <button id="utab-btn-inactive" onclick="switchUTab('inactive')"
+        style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);display:flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#9CA3AF;display:inline-block;"></span>
+        Inactive
+        <span style="font-size:11px;font-weight:700;background:#F3F4F6;color:#374151;border:1px solid #D1D5DB;border-radius:20px;padding:1px 8px;">{{ inactive_users|length }}</span>
+      </button>
+      {% endif %}
+    </div>
+
+    {{ render_list_search('user-search', '#utab-panel-active tbody tr, #utab-panel-inactive tbody tr', 'Search users by name, email, or code…') }}
+
+    {# Active panel #}
+    <div id="utab-panel-active">
+      {% if active_users %}{{ _user_table(active_users) }}
+      {% else %}<div style="text-align:center;padding:40px;color:var(--c-text-4);">No active users.</div>{% endif %}
+    </div>
+
+    {# Inactive panel #}
+    {% if inactive_users %}
+    <div id="utab-panel-inactive" style="display:none;">
+      {{ _user_table(inactive_users) }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Change Password Modal -->
+<div id="pwd-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
+  <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="pwd-modal-overlay"></div>
+  <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:400px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);animation:scaleIn 0.22s cubic-bezier(0.16,1,0.3,1);">
+    <div style="margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Change Password</h3>
+      <p style="font-size:13px;color:var(--c-text-3);margin:0;" id="pwd-modal-sub">Set a new password for this user</p>
+    </div>
+    <form method="POST" id="pwd-modal-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">New Password</label>
+        <input class="inp" type="password" name="new_password" required minlength="8" placeholder="Min 8 characters" id="modal-pwd"/>
+      </div>
+      <div style="margin-bottom:22px;">
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Confirm Password</label>
+        <input class="inp" type="password" name="confirm_password_display" required placeholder="Repeat password" id="modal-conf"/>
+        <div id="modal-match" style="font-size:var(--t-xs);margin-top:5px;color:var(--c-text-3);"></div>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button type="submit" class="btn btn-primary" style="flex:1;" id="pwd-modal-submit">Set Password</button>
+        <button type="button" class="btn btn-secondary" id="pwd-modal-cancel">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchUTab(tab) {
+  ['active','inactive'].forEach(function(t) {
+    var btn   = document.getElementById('utab-btn-' + t);
+    var panel = document.getElementById('utab-panel-' + t);
+    if (!btn) return;
+    var on = (t === tab);
+    if (panel) panel.style.display = on ? 'block' : 'none';
+    btn.style.color = on ? 'var(--c-primary)' : 'var(--c-text-3)';
+    btn.style.borderBottomColor = on ? 'var(--c-primary)' : 'transparent';
+  });
+}
+switchUTab('active');
+
+(function() {
+  var modal = document.getElementById('pwd-modal');
+  var form  = document.getElementById('pwd-modal-form');
+  var sub   = document.getElementById('pwd-modal-sub');
+  var pwd   = document.getElementById('modal-pwd');
+  var conf  = document.getElementById('modal-conf');
+  var match = document.getElementById('modal-match');
+  function openPwdModal(userId, userName) {
+    form.action = '/admin/users/' + userId + '/change-password';
+    sub.textContent = 'Setting new password for ' + userName;
+    pwd.value = ''; conf.value = ''; match.textContent = ''; match.style.color = '';
+    modal.style.display = 'flex';
+    setTimeout(function() { pwd.focus(); }, 80);
+  }
+  function closePwdModal() { modal.style.display = 'none'; }
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-open-pwd]');
+    if (btn) { openPwdModal(btn.dataset.openPwd, btn.dataset.openPwdName); return; }
+    if (e.target.id === 'pwd-modal-cancel' || e.target.id === 'pwd-modal-overlay') closePwdModal();
+  });
+  if (conf) conf.addEventListener('input', function() {
+    if (!this.value) { match.textContent = ''; match.style.color = ''; return; }
+    var ok = this.value === pwd.value;
+    match.textContent = ok ? '✓ Passwords match' : '✗ Do not match';
+    match.style.color = ok ? 'var(--c-success)' : 'var(--c-danger)';
+  });
+  if (form) form.addEventListener('submit', function(e) {
+    if (pwd.value !== conf.value) { e.preventDefault(); window.toast && window.toast('Passwords do not match.','danger'); }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal && modal.style.display !== 'none') closePwdModal();
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>ZingHR API — Developer Reference (RDC Onboarding Portal)</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f7f8fa; --border: #e2e5ea; --text: #1a1d23; --text-dim: #6b7280;
+    --accent: #b45309; --danger: #b91c1c; --danger-bg: #fef2f2; --ok-bg: #f0fdf4; --code-bg: #f3f4f6; --link: #1d4ed8;
+    --get: #047857; --post: #b45309; --mono-bg: #eef0f3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    line-height: 1.5; padding: 32px 20px 100px; font-size: 14.5px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); margin: 0 0 4px; font-size: 14px; }
+  .meta { color: var(--text-dim); font-size: 12px; margin: 0 0 24px; }
+  h2 { font-size: 18px; margin: 44px 0 4px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+  h2 .src { float: right; font-size: 11px; font-weight: 400; color: var(--text-dim); }
+  h3 { font-size: 14.5px; margin: 22px 0 8px; color: var(--accent); font-weight: 700; }
+  h4 { font-size: 13px; margin: 16px 0 6px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; }
+  p { color: #2c2f36; }
+  .warning {
+    background: var(--danger-bg); border: 1px solid #fca5a5; border-radius: 8px;
+    padding: 14px 18px; margin: 0 0 16px; font-size: 13.5px; color: #7f1d1d;
+  }
+  .warning strong { color: var(--danger); }
+  .ok-box {
+    background: var(--ok-bg); border: 1px solid #86efac; border-radius: 8px;
+    padding: 14px 18px; margin: 0 0 26px; font-size: 13.5px; color: #14532d;
+  }
+  .ok-box strong { color: #166534; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-dim); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; background: var(--mono-bg); }
+  code, .mono { font-family: "SF Mono", Consolas, "Courier New", monospace; font-size: 12.5px; }
+  td code, li code { background: var(--mono-bg); padding: 1px 5px; border-radius: 4px; }
+  .kv-key { color: var(--accent); font-weight: 700; }
+  .kv-val { word-break: break-all; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 14px; overflow-x: auto; font-size: 12px; margin: 8px 0;
+  }
+  pre code { background: none; padding: 0; color: #1a1d23; }
+  .method { display: inline-block; font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px; color: #fff; margin-right: 8px; }
+  .method.get { background: var(--get); }
+  .method.post { background: var(--post); }
+  .url { font-family: monospace; font-size: 13.5px; word-break: break-all; }
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-left: 5px; }
+  .badge.required { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .badge.optional { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+  .badge.derived { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+  a { color: var(--link); }
+  .toc { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 20px; margin-bottom: 26px; columns: 2; column-gap: 30px; }
+  .toc a { display: block; padding: 2px 0; font-size: 13px; break-inside: avoid; }
+  .field-grid { columns: 3; column-gap: 20px; font-size: 12px; margin: 8px 0; }
+  .field-grid div { break-inside: avoid; padding: 2px 0; }
+  .note { font-size: 12.5px; color: var(--text-dim); margin: 6px 0; }
+  .step { border-left: 3px solid var(--border); padding: 4px 0 4px 14px; margin: 10px 0; font-size: 13.5px; }
+  .step .num { display: inline-block; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; text-align: center; font-size: 11px; line-height: 20px; font-weight: 700; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>ZingHR API — Developer Reference</h1>
+  <p class="subtitle">Complete reference for the ZingHR integration in <code>app/integrations/zinghr.py</code> — RDC Teamlease Onboarding Portal.</p>
+  <p class="meta">Generated 2026-09-15 from the live source. Line numbers reference <code>app/integrations/zinghr.py</code> as of this date.</p>
+
+  <div class="ok-box">
+    <strong>No credentials embedded.</strong> This file has no API keys in it — the real <code>ZINGHR_CLIENT_ID</code> / <code>ZINGHR_CLIENT_SECRET</code> live only in your local <code>.env</code> file (gitignored). Every example below uses placeholders you fill in yourself from there.
+  </div>
+
+  <div class="warning">
+    <strong>Why this doc exists.</strong> Written so you can independently re-run the exact same queries the app runs — e.g. to verify a specific employee's raw ZingHR record for yourself, without needing to trust the app's own summary of it.
+  </div>
+
+  <div class="toc">
+    <a href="#credentials">1. Credentials</a>
+    <a href="#auth">2. Step 1 — get an access token</a>
+    <a href="#employees">3. Step 2 — fetch employees</a>
+    <a href="#pagination">4. Pagination</a>
+    <a href="#attributes">5. The <code>attributes[]</code> array — how Location/Company/etc. actually arrive</a>
+    <a href="#verify">6. Worked example — checking one employee's raw record</a>
+    <a href="#companies">7. Company values (RDC / Robo / Ultrafine)</a>
+    <a href="#gotchas">8. Known quirks</a>
+    <a href="#postman">9. Postman alternative</a>
+  </div>
+
+  <h2 id="credentials">1. Credentials</h2>
+  <p>Two values, both in your project's <code>.env</code> file (never in source code — see <code>app/integrations/zinghr.py</code> lines 19-20):</p>
+  <table>
+    <tr><th>Env var</th><th>Used as</th></tr>
+    <tr><td class="mono">ZINGHR_CLIENT_ID</td><td>HTTP Basic Auth username</td></tr>
+    <tr><td class="mono">ZINGHR_CLIENT_SECRET</td><td>HTTP Basic Auth password</td></tr>
+  </table>
+  <p class="note">Open your local <code>.env</code> and copy these two values out for the commands below — do not paste them into this file or anywhere shared.</p>
+
+  <h2 id="auth">2. Step 1 — get an access token</h2>
+  <div class="card">
+    <span class="method get">GET</span><span class="url">https://mservices.zinghr.com/etl/api/v2/Auth/GenerateJWTToken?apiPermission=GEMD</span>
+    <p class="note">Auth: HTTP Basic, username = <code>ZINGHR_CLIENT_ID</code>, password = <code>ZINGHR_CLIENT_SECRET</code>. No request body.</p>
+  </div>
+  <pre><code>curl -u "&lt;ZINGHR_CLIENT_ID&gt;:&lt;ZINGHR_CLIENT_SECRET&gt;" \
+  "https://mservices.zinghr.com/etl/api/v2/Auth/GenerateJWTToken?apiPermission=GEMD"</code></pre>
+  <p>Response shape:</p>
+  <pre><code>{ "data": "&lt;bearer-token-string&gt;", ... }</code></pre>
+  <p class="note">Save that token string — you'll pass it as <code>Authorization: Bearer &lt;token&gt;</code> on every call below. The app does not cache this token long-term; request a fresh one per session (<code>zinghr.py</code> line 33).</p>
+
+  <h2 id="employees">3. Step 2 — fetch employees</h2>
+  <div class="card">
+    <span class="method post">POST</span><span class="url">https://mservices.zinghr.com/etl/api/v2/Employee/GetEmployeeDetails</span>
+  </div>
+  <pre><code>curl -X POST "https://mservices.zinghr.com/etl/api/v2/Employee/GetEmployeeDetails" \
+  -H "Authorization: Bearer &lt;token-from-step-1&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"Pagesize": "500", "Pagenumber": "1", "employmentstatus": "Active"}'</code></pre>
+  <table>
+    <tr><th>Body field</th><th>Meaning</th></tr>
+    <tr><td class="mono">Pagesize</td><td>Rows per page. The app uses <code>500</code> (<code>zinghr.py</code> line 22).</td></tr>
+    <tr><td class="mono">Pagenumber</td><td>1-indexed page to fetch.</td></tr>
+    <tr><td class="mono">employmentstatus</td><td><code>"Active"</code> — server-side filter. This is the only status filter the ZingHR API itself supports; there's no separate "all employees" call.</td></tr>
+  </table>
+  <p>Response shape:</p>
+  <pre><code>{
+  "data": {
+    "employees": [ { ...one raw employee record, see section 5... }, ... ],
+    "employeesCount": 500
+  }
+}</code></pre>
+
+  <h2 id="pagination">4. Pagination</h2>
+  <div class="step"><span class="num">1</span>Start at <code>Pagenumber=1</code>.</div>
+  <div class="step"><span class="num">2</span>If <code>data.employees</code> is a non-empty list, collect it and request <code>Pagenumber+1</code>.</div>
+  <div class="step"><span class="num">3</span>Stop as soon as a page comes back with an empty <code>employees</code> list.</div>
+  <p class="note">The app also hard-stops after page 20 as a safety cap (<code>zinghr.py</code> line 110) — well beyond any realistic page count at ~1,280 active employees / 500 per page (3 pages in practice). No delay is required between pages (unlike Truein, ZingHR isn't rate-limited the same way) — the app fires each page request immediately after the previous one returns.</p>
+
+  <h2 id="attributes">5. The <code>attributes[]</code> array — how Location/Company/etc. actually arrive</h2>
+  <p>Each raw employee record looks like this:</p>
+  <pre><code>{
+  "employeeCode": "0001",
+  "employeeName": "SUBBARAO C V  ",
+  "email": "Robo@zinghr.com",
+  "mobileNo": "",
+  "gender": "Male",
+  "dateOfBirth": "01 Jan 1982",
+  "dateOfJoining": "12 May 2000",
+  "dateOfLeaving": "",
+  "employeeStatus": "Existing",
+  "addresses": [ {"city": ""}, {"city": ""}, {"city": ""} ],
+  "attributes": [
+    {
+      "attributeTypeDescription": "Company",
+      "attributeTypeUnitDescription": "Robo Silicon Pvt. Ltd.",
+      "attributeTypeID": 40,
+      "attributeTypeUnitID": 2298,
+      "attributeTypeCode": "Company",
+      "attributeTypeUnitCode": "ROBOSilico"
+    }
+  ]
+}</code></pre>
+  <p><strong>Critical thing to understand:</strong> <code>attributes</code> is a sparse list — it only contains an entry for whichever attribute types ZingHR actually has data for on that specific employee. There's no fixed schema forcing every attribute to appear. The app builds a lookup dict keyed by <code>attributeTypeCode</code> (<code>zinghr.py</code> line 50) and reads six of them:</p>
+  <div class="field-grid">
+    <div><code>City</code></div><div><code>Company</code></div><div><code>Cost Center</code></div>
+    <div><code>Department</code></div><div><code>Designation</code></div><div><code>Location</code></div>
+  </div>
+  <p><strong>If an <code>attributeTypeCode</code> is simply missing from an employee's <code>attributes</code> array — as in the example above, which has only <code>"Company"</code> — the app reads it as an empty string, because there is nothing there to read.</strong> This is not a parsing bug; it's the literal content ZingHR returned for that employee. The only way to independently confirm this for any employee is to look at their raw <code>attributes</code> array yourself, exactly as in the example above — if you only see a <code>Company</code> entry and nothing else, that's ZingHR's own data, not this app's interpretation of it.</p>
+
+  <h2 id="verify">6. Worked example — checking one employee's raw record</h2>
+  <p>To check whether a specific employee (say, ROBO employee code <code>0001</code>) really has no <code>Location</code> on file:</p>
+  <div class="step"><span class="num">1</span>Run the Step 1 auth call, get a token.</div>
+  <div class="step"><span class="num">2</span>Run the Step 2 employees call for each page (1, 2, 3, ...) until a page comes back empty.</div>
+  <div class="step"><span class="num">3</span>In the combined JSON, find the object where <code>"employeeCode": "0001"</code>.</div>
+  <div class="step"><span class="num">4</span>Look at that object's <code>attributes</code> array. Count how many entries it has and what each one's <code>attributeTypeCode</code> is.</div>
+  <p class="note">Tip: pipe the response through <code>jq</code> to jump straight to one employee, e.g.:</p>
+  <pre><code>curl ... | jq '.data.employees[] | select(.employeeCode == "0001")'</code></pre>
+
+  <h2 id="companies">7. Company values (RDC / Robo / Ultrafine)</h2>
+  <p>ZingHR is one shared tenant across all three companies — there's no server-side company filter on the employees endpoint. Every record carries its company in the <code>Company</code> attribute's <code>attributeTypeUnitDescription</code>. Exact strings currently in use (case-sensitive as ZingHR returns them):</p>
+  <table>
+    <tr><th>Raw value</th><th>Meaning</th></tr>
+    <tr><td class="mono">RDC Concrete India Ltd.</td><td>RDC</td></tr>
+    <tr><td class="mono">Robo Silicon Pvt. Ltd.</td><td>ROBO</td></tr>
+    <tr><td class="mono">Ultrafine Mineral and Admixtures Pvt Ltd</td><td>Ultrafine</td></tr>
+    <tr><td class="mono">Common</td><td>Unclassified — 1 record seen, not attributable to any single company</td></tr>
+    <tr><td class="mono">(blank / attribute missing)</td><td>Unclassified — kept as RDC by the main pipeline (can't confirm it's <em>not</em> RDC), excluded by the Robo/Ultrafine snapshot (can't confirm it <em>is</em> one of them either)</td></tr>
+  </table>
+  <p class="note">The app matches these case-insensitively and lowercased (see <code>_NON_RDC_COMPANIES</code> / <code>_ZINGHR_COMPANY_TO_CODE</code> in <code>app/services/headcount.py</code>) — but the raw values above are exactly what the API returns.</p>
+
+  <h2 id="gotchas">8. Known quirks</h2>
+  <table>
+    <tr><th>Quirk</th><th>Detail</th></tr>
+    <tr><td>Duplicate <code>employeeCode</code>s</td><td>A small number of employees appear twice in the raw pages — once with a full <code>attributes</code> array, once with it empty/missing. The app keeps whichever copy has more attributes (<code>_dedupe_by_employee_code()</code>, <code>zinghr.py</code> line 61) and discards the thinner one.</td></tr>
+    <tr><td>Face-attendance pseudo-employees</td><td>Records like <code>employeeCode="FACEBACHUPALLY"</code>, <code>employeeName="Face HYD Bachupally"</code> are attendance-device registrations, not real people — filtered out by checking whether "face" appears in either field (case-insensitive).</td></tr>
+    <tr><td>1-hour cache, per process</td><td>The running app caches the full employee pull for 1 hour in a module-level variable. A fresh script (like the curl commands above, or a standalone Python script) always starts cold — it will never see the running server's cached copy, and vice versa.</td></tr>
+    <tr><td>No live company filter</td><td>There's no request parameter to ask the API for only one company's employees — you always get everyone active across RDC/Robo/Ultrafine/Common/blank in one pull, and filter client-side afterward.</td></tr>
+  </table>
+
+  <h2 id="postman">9. Postman alternative</h2>
+  <p>If you'd rather use Postman than curl: create a GET request to the Step 1 URL with Basic Auth (username/password = your two env var values) to get the token, then a POST request to the Step 2 URL with an <code>Authorization: Bearer</code> header and the JSON body from section 3. No Postman collection file is checked into this repo for ZingHR (unlike Truein's) — the two requests above are the entire surface area.</p>
+
+</div>
+</body>
+</html>

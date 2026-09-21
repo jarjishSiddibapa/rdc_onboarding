@@ -126,27 +126,42 @@ def client(app):
 
 # ── User factory helpers ───────────────────────────────────────────────────────
 
-def _make_user(name, email, role, db_session, password="Test1234"):
+def _make_user(name, email, role, db_session, password="Test1234", companies=None):
+    """
+    companies: iterable of company strings (e.g. ["RDC"]) to tick via
+    UserCompanyScope — company scope is fail-closed (2026-09-21, see
+    app/models.py::UserCompanyScope), so any test giving this user an
+    approval/submit role must tick at least one company or it can act on/
+    submit nothing. The initiator/business_head/hr_manager fixtures below
+    default to ["RDC"] to match the real-world backfill
+    (backfill_company_scope.py) and keep existing RDC-focused tests
+    unaffected by this change.
+    """
     pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
     user = User(name=name, email=email, password_hash=pw_hash, role=role)
     db_session.session.add(user)
     db_session.session.flush()
+    if companies:
+        from app.models import UserCompanyScope
+        for c in companies:
+            db_session.session.add(UserCompanyScope(user_id=user.id, company=c))
+        db_session.session.flush()
     return user
 
 
 @pytest.fixture(scope="function")
 def initiator(db):
-    return _make_user("Alice Initiator", "alice@test.com", UserRole.INITIATOR, db)
+    return _make_user("Alice Initiator", "alice@test.com", UserRole.INITIATOR, db, companies=["RDC"])
 
 
 @pytest.fixture(scope="function")
 def business_head(db):
-    return _make_user("Bob BH", "bob@test.com", UserRole.BUSINESS_HEAD, db)
+    return _make_user("Bob BH", "bob@test.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
 
 
 @pytest.fixture(scope="function")
 def hr_manager(db):
-    return _make_user("Carol HRM", "carol@test.com", UserRole.HR_MANAGER, db)
+    return _make_user("Carol HRM", "carol@test.com", UserRole.HR_MANAGER, db, companies=["RDC"])
 
 
 @pytest.fixture(scope="function")

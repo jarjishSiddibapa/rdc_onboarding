@@ -18,18 +18,27 @@ from .conftest import login, _make_user
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _create_request(db, user, status=RequestStatus.DRAFT, candidate_name="Test Candidate",
-                     is_special_case=False):
+                     is_special_case=False, company_code="RDC"):
     req = OnboardingRequest(
         initiated_by=user.id,
         status=status,
         public_token=uuid.uuid4().hex,
         candidate_name=candidate_name,
-        company_code="TC",
+        company_code=company_code,
         plant_location="Plant A",
         designation="Engineer",
         is_special_case=is_special_case,
     )
     db.session.add(req)
+    db.session.flush()
+    # Real requests always have form_data['company_code'] in sync with the
+    # denormalized company_code column (_sync_quick_access() keeps them
+    # aligned during the multi-step form save) — submit_request()/
+    # resubmit_request() read company_code from form_data specifically, so
+    # this fixture must too, or their company-scope/approver-availability
+    # guards see an empty string instead of the real value.
+    req.form_data = {"company_code": company_code, "associate_name": candidate_name,
+                      "plant_location": "Plant A", "designation": "Engineer"}
     db.session.flush()
     return req
 
@@ -53,7 +62,7 @@ class TestNormalApprovalPath:
 
     def test_bh_approve_moves_to_hrm(self, client, db, app):
         initiator = _make_user("Init", "inita@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BH",   "bha@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BH",   "bha@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH)
         db.session.commit()
         with app.app_context():
@@ -67,7 +76,7 @@ class TestNormalApprovalPath:
 
     def test_hrm_approve_moves_to_head_hr(self, client, db, app):
         initiator = _make_user("Init2", "init2a@t.com", UserRole.INITIATOR, db)
-        hrm       = _make_user("HRM",   "hrma@t.com",   UserRole.HR_MANAGER, db)
+        hrm       = _make_user("HRM",   "hrma@t.com",   UserRole.HR_MANAGER, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_HR_MANAGER)
         db.session.commit()
         with app.app_context():
@@ -291,7 +300,7 @@ class TestTrueinPreflightRoute:
 
     def test_not_applicable_when_this_approval_is_not_final(self, client, db, app):
         initiator = _make_user("InitPF1", "initpf1@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BHpf1",   "bhpf1@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BHpf1",   "bhpf1@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH)
         db.session.commit()
         with app.app_context():
@@ -328,7 +337,7 @@ class TestTrueinPreflightRoute:
 
     def test_forbidden_for_actor_who_cannot_act_on_request(self, client, db, app):
         initiator = _make_user("InitPF4", "initpf4@t.com", UserRole.INITIATOR, db)
-        other_bh  = _make_user("BHpf4",   "bhpf4@t.com",   UserRole.BUSINESS_HEAD, db)
+        other_bh  = _make_user("BHpf4",   "bhpf4@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_HEAD_HR)
         db.session.commit()
         with app.app_context():
@@ -355,7 +364,7 @@ class TestTrueinPushFailureNotification:
         initiator = _make_user("InitTPF", "inittpf@t.com", UserRole.INITIATOR, db)
         hhr       = _make_user("HHRTpf",  "hhrtpf@t.com",  UserRole.HEAD_HR, db)
         admin     = _make_user("AdminTpf", "admintpf@t.com", UserRole.SUPER_ADMIN, db)
-        hrm       = _make_user("HRMTpf",  "hrmtpf@t.com",  UserRole.HR_MANAGER, db)
+        hrm       = _make_user("HRMTpf",  "hrmtpf@t.com",  UserRole.HR_MANAGER, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_HEAD_HR,
                                      candidate_name="Push Failure Candidate")
         db.session.commit()
@@ -405,7 +414,7 @@ class TestOverNormApprovalPath:
 
     def test_bh_approve_special_case_skips_hr_manager(self, client, db, app):
         initiator = _make_user("InitON1", "initon1@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BHon1",   "bhon1@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BHon1",   "bhon1@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH, is_special_case=True)
         db.session.commit()
         with app.app_context():
@@ -450,7 +459,7 @@ class TestOverNormApprovalPath:
 
     def test_special_case_approval_requires_20_char_remark(self, client, db, app):
         initiator = _make_user("InitON4", "initon4@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BHon4",   "bhon4@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BHon4",   "bhon4@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH, is_special_case=True)
         db.session.commit()
         with app.app_context():
@@ -486,7 +495,7 @@ class TestRejectionAndResubmit:
 
     def test_bh_reject_moves_to_rejected_bh(self, client, db, app):
         initiator = _make_user("Init6", "init6a@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BH3",   "bh3a@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BH3",   "bh3a@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH)
         db.session.commit()
         with app.app_context():
@@ -499,7 +508,12 @@ class TestRejectionAndResubmit:
             assert updated.status == RequestStatus.REJECTED_BH
 
     def test_initiator_resubmit_after_rejection(self, client, db, app):
-        initiator = _make_user("Init7", "init7a@t.com", UserRole.INITIATOR, db)
+        initiator = _make_user("Init7", "init7a@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        bh        = _make_user("BH7",   "bh7a@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        # _validate_approver_availability() (2026-09-21) requires at least
+        # one eligible HR Manager too, since this standard-path RDC request
+        # will eventually reach PENDING_HR_MANAGER.
+        hrm       = _make_user("HRM7",  "hrm7a@t.com",  UserRole.HR_MANAGER, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.REJECTED_BH)
         db.session.commit()
         with app.app_context():
@@ -527,7 +541,7 @@ class TestRejectionAndResubmit:
 
     def test_short_remark_rejected(self, client, db, app):
         initiator = _make_user("Init9", "init9a@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BH4",   "bh4a@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BH4",   "bh4a@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH)
         db.session.commit()
         with app.app_context():

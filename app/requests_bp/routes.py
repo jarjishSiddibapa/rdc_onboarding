@@ -114,7 +114,7 @@ def _finalize_submission(req):
                       "is_special_case": req.is_special_case})
     try:
         db.session.commit()
-        bh_users = _get_bh_recipients(db.session.get(User, req.initiated_by))
+        bh_users = _get_bh_recipients(db.session.get(User, req.initiated_by), req.company_code)
         notify_users(db, req, bh_users,
                      subject=f"New onboarding request: {req.candidate_name}",
                      body=f"A new onboarding request for {req.candidate_name} ({req.designation}) "
@@ -131,15 +131,39 @@ def _finalize_submission(req):
     return True
 
 
-def _get_bh_recipients(initiator_user):
-    """Return the list of BH users to notify for a given initiator — see
-    utils.bh_ids_for_initiator() for the direct-assignment/region/fail-open
-    priority order."""
+def _get_bh_recipients(initiator_user, company_code):
+    """Return the list of BH users to notify for a given initiator/company —
+    see utils.bh_ids_for_initiator() for the company-scope/region/fail-open
+    priority order. Fail-closed: an empty result means nobody is currently
+    ticked for this company — see _validate_approver_availability(), which
+    blocks the submission before it ever reaches this point."""
     from ..utils import bh_ids_for_initiator
-    ids = bh_ids_for_initiator(initiator_user)
-    if ids is None:
-        return User.query.filter_by(role=UserRole.BUSINESS_HEAD, is_active=True).all()
-    return User.query.filter(User.id.in_(ids)).all()
+    ids = bh_ids_for_initiator(initiator_user, company_code)
+    return User.query.filter(User.id.in_(ids)).all() if ids else []
+
+
+def _validate_approver_availability(req):
+    """
+    Fail-closed guard (company-scope tick marks default to NOTHING until an
+    admin explicitly configures them, 2026-09-21): block a submission that
+    would land in a PENDING_BH or PENDING_HR_MANAGER queue nobody can act
+    on, rather than silently creating a request no approver can ever see.
+    Call after req.is_special_case has been finalized by the RDC staffing
+    gate check (so the HR Manager check correctly skips an RDC special-case
+    request, which never visits PENDING_HR_MANAGER). Returns an error
+    string to flash, or None if the request is fully reachable.
+    """
+    from ..utils import bh_ids_for_initiator, hr_manager_ids_for_company
+    initiator = db.session.get(User, req.initiated_by)
+    company = req.form_data.get("company_code", "")
+    if not bh_ids_for_initiator(initiator, company):
+        return (f"No Business Head is currently configured for {company}. "
+                f"Contact your administrator before submitting this request.")
+    visits_hr_manager = (company != "RDC") or not req.is_special_case
+    if visits_hr_manager and not hr_manager_ids_for_company(company):
+        return (f"No HR Manager is currently configured for {company}. "
+                f"Contact your administrator before submitting this request.")
+    return None
 
 
 # ── RDC staffing gate helper ────────────────────────────────────────────────────
@@ -590,6 +614,7 @@ def new_request():
             flash("Draft saved.", "success")
             return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
+    from ..utils import company_scope_ids
     return render_template(
         "requests/form.html",
         req=req, step=step,
@@ -600,6 +625,7 @@ def new_request():
         FieldType=FieldType,
         OptionsSource=OptionsSource,
         form_data=req.form_data,
+        initiator_companies=company_scope_ids(current_user.id),
     )
 
 
@@ -635,6 +661,14 @@ def submit_request(token):
     missing = _validate_required(non_file_fields, req.form_data)
     if missing:
         flash(f"Missing required fields: {', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}.", "danger")
+        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
+    # Defense-in-depth: the form dropdown already filters Company Code to
+    # this initiator's ticked companies (see new_request()), but a crafted
+    # POST could still name an unticked company — reject it explicitly.
+    from ..utils import company_scope_ids
+    if req.form_data.get("company_code", "") not in company_scope_ids(current_user.id):
+        flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     # UAN: mandatory for non-trainee designations
@@ -682,6 +716,12 @@ def submit_request(token):
                       resource_label=f"Request #{req.id} — {req.candidate_name}",
                       detail=gate)
 
+    _approver_err = _validate_approver_availability(req)
+    if _approver_err:
+        db.session.commit()   # persist the gate-check row already added above, if any
+        flash(_approver_err, "danger")
+        return redirect(url_for("requests_bp.view_request", token=req.public_token))
+
     _finalize_submission(req)
     return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
@@ -698,6 +738,11 @@ def resubmit_request(token):
     if req.status not in REJECTED_STATUSES:
         flash("Only rejected requests can be resubmitted.", "warning")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
+
+    from ..utils import company_scope_ids
+    if req.form_data.get("company_code", "") not in company_scope_ids(current_user.id):
+        flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
+        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     if req.form_data.get("company_code") == "RDC":
         from ..services.staffing_norms import check_rdc_staffing_gate
@@ -723,6 +768,12 @@ def resubmit_request(token):
                       resource_label=f"Request #{req.id} — {req.candidate_name}",
                       detail=gate)
 
+    _approver_err = _validate_approver_availability(req)
+    if _approver_err:
+        db.session.commit()   # persist the gate-check row already added above, if any
+        flash(_approver_err, "danger")
+        return redirect(url_for("requests_bp.view_request", token=req.public_token))
+
     _prev_status = req.status.value
     req.status = RequestStatus.PENDING_BH
     req.retry_count += 1
@@ -736,7 +787,7 @@ def resubmit_request(token):
     try:
         db.session.commit()
         initiator = db.session.get(User, req.initiated_by)
-        bh_users = _get_bh_recipients(initiator)
+        bh_users = _get_bh_recipients(initiator, req.company_code)
         notify_users(db, req, bh_users,
                      subject=f"Resubmitted: {req.candidate_name}",
                      body=f"Resubmission #{req.retry_count} for {req.candidate_name}.")
@@ -1223,6 +1274,26 @@ def view_request(token):
         "PENDING_DR_BHOON": 3, "REJECTED_DR_BHOON": 3,
         "ACTIVE": 99,
     }
+    # Ultrafine/ROBO (2026-09-21): a third, fixed chain that always visits
+    # every role in order BH -> HR Manager -> Head HR -> Dr. Bhoon -> Active
+    # — never branches by is_special_case (no staffing gate exists for
+    # these companies to set it). Its own progress numbering since it has
+    # 4 real stages, one more than either RDC path.
+    _STAGE_PROGRESS_OTHER_COMPANY = {
+        "PENDING_BH":         1,
+        "PENDING_HR_MANAGER": 2,
+        "PENDING_HEAD_HR":    3,
+        "PENDING_DR_BHOON":   4,
+        "ACTIVE":             99,
+    }
+    _PROGRESS_OTHER_COMPANY = {
+        "DRAFT": 0,
+        "PENDING_BH": 1,          "REJECTED_BH": 1,
+        "PENDING_HR_MANAGER": 2,  "REJECTED_HRM": 2,
+        "PENDING_HEAD_HR": 3,     "REJECTED_HEAD_HR": 3,
+        "PENDING_DR_BHOON": 4,    "REJECTED_DR_BHOON": 4,
+        "ACTIVE": 99,
+    }
     _NEXT_ROLE_LABEL = {
         "PENDING_BH":        "Business Head",
         "PENDING_DR_BHOON":  "Dr. Bhoon",
@@ -1243,23 +1314,30 @@ def view_request(token):
 
     cur_progress = _PROGRESS.get(sv, 0)
     cur_progress_over_norm = _PROGRESS_OVER_NORM.get(sv, 0)
+    cur_progress_other_company = _PROGRESS_OTHER_COMPANY.get(sv, 0)
 
     def _build_round_stages(round_acts, is_last_round):
         """Build the stages list for one round of the workflow.
 
-        Two paths can be newly created: STANDARD (BH -> HR Manager -> Head HR)
-        and OVER_NORM (BH -> Head HR -> Dr. Bhoon, skipping HR Manager — the
-        staffing-gate "proceed anyway" chain). BH_BYPASS (BH manually flags
-        straight to Dr. Bhoon, skipping HR entirely) was a separate mechanism
-        that has been removed (its POST route/UI no longer exist) — this
-        branch is kept only to render the workflow map correctly for
-        requests that already went through it before removal.
+        Three paths can be newly created: STANDARD (BH -> HR Manager -> Head
+        HR, RDC only), OVER_NORM (BH -> Head HR -> Dr. Bhoon, skipping HR
+        Manager — the RDC staffing-gate "proceed anyway" chain), and
+        OTHER_COMPANY (BH -> HR Manager -> Head HR -> Dr. Bhoon, Ultrafine/
+        ROBO's own fixed chain, added 2026-09-21 — checked first since
+        company_code is a stable request attribute, unlike the other two
+        paths which must be inferred from action history). BH_BYPASS (BH
+        manually flags straight to Dr. Bhoon, skipping HR entirely) was a
+        separate mechanism that has been removed (its POST route/UI no
+        longer exist) — this branch is kept only to render the workflow map
+        correctly for requests that already went through it before removal.
         """
         has_flagged_special = any(a.action == ApprovalActionType.FLAGGED_SPECIAL for a in round_acts)
         has_hrm_action = any(a.actor.role == UserRole.HR_MANAGER for a in round_acts)
         has_head_hr_action = any(a.actor.role == UserRole.HEAD_HR for a in round_acts)
 
-        if has_flagged_special or (is_last_round and sv in ("PENDING_DR_BHOON", "REJECTED_DR_BHOON")
+        if req.company_code and req.company_code != "RDC":
+            path = "OTHER_COMPANY"
+        elif has_flagged_special or (is_last_round and sv in ("PENDING_DR_BHOON", "REJECTED_DR_BHOON")
                                     and not has_head_hr_action and not req.is_special_case):
             path = "BH_BYPASS"
         elif has_head_hr_action and not has_hrm_action:
@@ -1285,6 +1363,14 @@ def view_request(token):
                 ("PENDING_DR_BHOON",   "Dr. Bhoon — Over-Norm Approval"),
                 ("ACTIVE",             "Approved"),
             ]
+        elif path == "OTHER_COMPANY":
+            _stage_defs = [
+                ("PENDING_BH",         "Business Head Review"),
+                ("PENDING_HR_MANAGER", "HR Manager Review"),
+                ("PENDING_HEAD_HR",    "Head HR Review"),
+                ("PENDING_DR_BHOON",   "Dr. Bhoon Review"),
+                ("ACTIVE",             "Approved"),
+            ]
         else:
             _stage_defs = [
                 ("PENDING_BH",         "Business Head Review"),
@@ -1292,8 +1378,15 @@ def view_request(token):
                 ("PENDING_HEAD_HR",    "Head HR Review"),
                 ("ACTIVE",             "Approved"),
             ]
-        _stage_progress = _STAGE_PROGRESS_OVER_NORM if path == "OVER_NORM" else _STAGE_PROGRESS
-        _round_cur_progress = cur_progress_over_norm if path == "OVER_NORM" else cur_progress
+        if path == "OVER_NORM":
+            _stage_progress = _STAGE_PROGRESS_OVER_NORM
+            _round_cur_progress = cur_progress_over_norm
+        elif path == "OTHER_COMPANY":
+            _stage_progress = _STAGE_PROGRESS_OTHER_COMPANY
+            _round_cur_progress = cur_progress_other_company
+        else:
+            _stage_progress = _STAGE_PROGRESS
+            _round_cur_progress = cur_progress
 
         # Build action map for this round only
         round_action_at = {}
@@ -1618,12 +1711,19 @@ def delete_request(token):
 # ── Approval notification helpers ──────────────────────────────────────────────
 
 def _send_approval_notifications(db, req, new_status):
+    from ..utils import company_scope_ids
+
     if new_status == RequestStatus.PENDING_HR_MANAGER:
-        recipients = User.query.filter_by(role=UserRole.HR_MANAGER, is_active=True).all()
+        recipients = [u for u in User.query.filter_by(role=UserRole.HR_MANAGER, is_active=True).all()
+                      if req.company_code in company_scope_ids(u.id)]
         notify_users(db, req, recipients,
                      subject=f"Approved by Business Head: {req.candidate_name}",
                      body=f"Please review the request for {req.candidate_name}.")
     elif new_status == RequestStatus.PENDING_HEAD_HR:
+        # Unscoped — Head HR is never company-scoped. approved_by already
+        # reads correctly for non-RDC: is_special_case is always False for
+        # Ultrafine/ROBO (no staffing gate to set it), so this already says
+        # "HR Manager", which is accurate — they always visit that step.
         recipients = User.query.filter_by(role=UserRole.HEAD_HR, is_active=True).all()
         approved_by = "Business Head" if req.is_special_case else "HR Manager"
         notify_users(db, req, recipients,
@@ -1631,17 +1731,21 @@ def _send_approval_notifications(db, req, new_status):
                      body=f"{'Over-norm special approval' if req.is_special_case else 'Final approval'} "
                           f"needed for {req.candidate_name}.")
     elif new_status == RequestStatus.PENDING_DR_BHOON:
-        recipients = User.query.filter_by(role=UserRole.DR_BHOON, is_active=True).all()
+        recipients = User.query.filter_by(role=UserRole.DR_BHOON, is_active=True).all()  # unscoped
+        if req.company_code == "RDC":
+            body = (f"Approved by Head HR — over-norm hiring for {req.candidate_name} "
+                     f"needs your final approval.")
+        else:
+            body = (f"Approved by Head HR — {req.candidate_name} ({req.company_code}) "
+                     f"needs your final approval.")
         notify_users(db, req, recipients,
-                     subject=f"Special approval required: {req.candidate_name}",
-                     body=f"Approved by Head HR — over-norm hiring for {req.candidate_name} "
-                          f"needs your final approval.")
+                     subject=f"Final approval required: {req.candidate_name}",
+                     body=body)
     elif new_status == RequestStatus.ACTIVE:
         initiator = db.session.get(User, req.initiated_by)
-        hr_users = User.query.filter(
-            User.role.in_([UserRole.HR_MANAGER, UserRole.HEAD_HR]),
-            User.is_active == True,
-        ).all()
-        notify_users(db, req, [initiator] + hr_users,
+        hr_managers = [u for u in User.query.filter_by(role=UserRole.HR_MANAGER, is_active=True).all()
+                       if req.company_code in company_scope_ids(u.id)]
+        head_hrs = User.query.filter_by(role=UserRole.HEAD_HR, is_active=True).all()  # unscoped
+        notify_users(db, req, [initiator] + hr_managers + head_hrs,
                      subject=f"Employee ACTIVE: {req.candidate_name}",
                      body=f"{req.candidate_name} is now ACTIVE. Download the Excel from the dashboard.")

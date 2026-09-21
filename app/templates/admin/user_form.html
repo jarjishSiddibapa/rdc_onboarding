@@ -104,9 +104,37 @@
         </select>
       </div>
 
-      <!-- Region assignment — shown for BUSINESS_HEAD and INITIATOR roles.
-           Both pick from the same region list; routing between them is
-           purely region-overlap based (see app/utils.py::bh_ids_for_initiator). -->
+      <!-- Company scope — shown for BUSINESS_HEAD, INITIATOR and HR_MANAGER
+           roles. Fail-closed (see app/utils.py::company_scope_ids()): at
+           least one company must be ticked for these 3 roles — a
+           zero-tick account can act on/submit nothing at all. Whether the
+           Region section below applies at all depends on RDC being ticked
+           here (Ultrafine/ROBO have no region concept). -->
+      <div id="companies-section" style="display:none;background:#FFF7ED;border:1.5px solid #FDE0B4;border-radius:10px;padding:16px 18px;">
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:9px;">
+          Company Scope <span style="color:var(--c-danger);">*</span>
+        </label>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          {% for c in companies %}
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--c-text-1);cursor:pointer;">
+            <input type="checkbox" name="companies" value="{{ c }}" class="company-check" data-company="{{ c }}"
+              {% if c in current_companies %}checked{% endif %}/>
+            {{ c }}
+          </label>
+          {% endfor %}
+        </div>
+        <p style="font-size:11.5px;color:var(--c-text-3);margin:10px 0 0;">
+          Which company/companies this account can submit/approve requests for. At least one is required. RDC also
+          unlocks the Region section below (Ultrafine/ROBO have no region concept — a company tick alone is enough).
+        </p>
+      </div>
+
+      <!-- Region assignment — shown for BUSINESS_HEAD and INITIATOR roles,
+           and only when "RDC" is ticked above (HR_MANAGER never gets
+           region-narrowing, regardless of company — see
+           app/main/routes.py::dashboard()). Both pick from the same region
+           list; routing between them is purely region-overlap based (see
+           app/utils.py::bh_ids_for_initiator). -->
       <div id="regions-section" style="display:none;background:#EEF4FF;border:1.5px solid #C7D7F4;border-radius:10px;padding:16px 18px;">
         <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:9px;">
           <svg width="13" height="13" fill="none" stroke="#3A5CCC" viewBox="0 0 24 24" stroke-width="2.5" style="vertical-align:-2px;margin-right:4px;"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -270,6 +298,16 @@ function guardSubmit(e) {
     document.getElementById('username-input').focus();
     return false;
   }
+  var role = document.getElementById('role-select').value;
+  var scopedRoles = ['BUSINESS_HEAD', 'INITIATOR', 'HR_MANAGER'];
+  if (scopedRoles.indexOf(role) !== -1) {
+    var anyChecked = Array.prototype.some.call(
+      document.querySelectorAll('.company-check'), function(cb) { return cb.checked; });
+    if (!anyChecked) {
+      alert('Select at least one Company Scope tick mark for this role.');
+      return false;
+    }
+  }
   return true;
 }
 
@@ -278,11 +316,19 @@ function sanitizeUsername(input) {
   input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
 }
 
-/* ── Region section toggle — shown for both BUSINESS_HEAD and INITIATOR ──────── */
-function updateBHSection() {
+/* ── Company/Region section toggles ─────────────────────────────────────────── */
+function updateScopeSections() {
   var role = document.getElementById('role-select').value;
+
+  var companiesSection = document.getElementById('companies-section');
+  var showCompanies = (role === 'BUSINESS_HEAD' || role === 'INITIATOR' || role === 'HR_MANAGER');
+  if (companiesSection) companiesSection.style.display = showCompanies ? '' : 'none';
+
+  var rdcBox = document.querySelector('.company-check[data-company="RDC"]');
+  var rdcTicked = rdcBox ? rdcBox.checked : false;
+
   var regionsSection = document.getElementById('regions-section');
-  var showRegions = (role === 'BUSINESS_HEAD' || role === 'INITIATOR');
+  var showRegions = (role === 'BUSINESS_HEAD' || role === 'INITIATOR') && rdcTicked;
   if (regionsSection) regionsSection.style.display = showRegions ? '' : 'none';
   var bhHelp   = document.getElementById('regions-help-bh');
   var initHelp = document.getElementById('regions-help-init');
@@ -336,8 +382,11 @@ document.addEventListener('DOMContentLoaded', function() {
     pwdInp.addEventListener('input', function() { checkPwdStrength(this.value); });
   }
   if (rolesel) {
-    rolesel.addEventListener('change', updateBHSection);
+    rolesel.addEventListener('change', updateScopeSections);
   }
+  document.querySelectorAll('.company-check').forEach(function(cb) {
+    cb.addEventListener('change', updateScopeSections);
+  });
   if (form) {
     form.addEventListener('submit', function(e) {
       if (!guardSubmit(e)) e.preventDefault();
@@ -345,7 +394,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   /* Init */
-  updateBHSection();
+  updateScopeSections();
   updateSubmitBtn();
 });
 </script>

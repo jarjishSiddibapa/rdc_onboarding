@@ -293,7 +293,14 @@
                 <option class="plant-fallback" value="{{ p.value }}" data-cluster="{{ p.cluster }}" {% if val == p.value %}selected{% endif %}>{{ p.label }}</option>
                 {% endfor %}
               {% else %}
-                {% for opt in field.active_options %}
+                {% set _opts = field.active_options %}
+                {% if field.field_key == 'company_code' %}
+                  {# Fail-closed company scope (2026-09-21): only offer companies
+                     this initiator is ticked for — see app/utils.py::company_scope_ids()
+                     and the defense-in-depth check in submit_request()/resubmit_request(). #}
+                  {% set _opts = _opts | selectattr('option_value', 'in', initiator_companies) | list %}
+                {% endif %}
+                {% for opt in _opts %}
                 <option value="{{ opt.option_value }}" {% if val == opt.option_value %}selected{% endif %}>
                   {{ opt.option_label }}
                 </option>
@@ -303,6 +310,11 @@
                 {% endif %}
               {% endif %}
             </select>
+            {% if field.field_key == 'company_code' and not initiator_companies %}
+            <p style="font-size:11.5px;color:var(--c-danger);margin-top:6px;">
+              No company is assigned to your account yet — contact your administrator.
+            </p>
+            {% endif %}
 
             {# Hidden field — captures truein_app_attendance from the selected designation #}
             {% if field.options_source == OptionsSource.DESIGNATION %}

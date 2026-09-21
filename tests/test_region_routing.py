@@ -40,7 +40,7 @@ class TestRegionOverlapDashboardVisibility:
         """The exact real-world scenario: Chennai initiator, Chennai BH."""
         chennai = _region(db, "CHENNAI")
         initiator = _make_user("ChennaiInit", "chennaiinit@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("ChennaiBH",   "chennaibh@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("ChennaiBH",   "chennaibh@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=chennai.id))
         db.session.add(BusinessHeadRegion(business_head_id=bh.id, cluster_id=chennai.id))
         db.session.commit()
@@ -56,8 +56,8 @@ class TestRegionOverlapDashboardVisibility:
         chennai = _region(db, "RR Chennai")
         mumbai  = _region(db, "RR Mumbai")
         initiator = _make_user("MumbaiInit", "mumbaiinit@t.com", UserRole.INITIATOR, db)
-        chennai_bh = _make_user("RRChennaiBH", "rrchennaibh@t.com", UserRole.BUSINESS_HEAD, db)
-        mumbai_bh  = _make_user("RRMumbaiBH",  "rrmumbaibh@t.com",  UserRole.BUSINESS_HEAD, db)
+        chennai_bh = _make_user("RRChennaiBH", "rrchennaibh@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        mumbai_bh  = _make_user("RRMumbaiBH",  "rrmumbaibh@t.com",  UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=mumbai.id))
         db.session.add(BusinessHeadRegion(business_head_id=chennai_bh.id, cluster_id=chennai.id))
         db.session.add(BusinessHeadRegion(business_head_id=mumbai_bh.id, cluster_id=mumbai.id))
@@ -73,8 +73,8 @@ class TestRegionOverlapDashboardVisibility:
     def test_multiple_bhs_sharing_a_region_all_see_the_request(self, client, db, app):
         goa = _region(db, "RR Goa")
         initiator = _make_user("GoaInit", "goainit@t.com", UserRole.INITIATOR, db)
-        bh1 = _make_user("GoaBH1", "goabh1@t.com", UserRole.BUSINESS_HEAD, db)
-        bh2 = _make_user("GoaBH2", "goabh2@t.com", UserRole.BUSINESS_HEAD, db)
+        bh1 = _make_user("GoaBH1", "goabh1@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        bh2 = _make_user("GoaBH2", "goabh2@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=goa.id))
         db.session.add(BusinessHeadRegion(business_head_id=bh1.id, cluster_id=goa.id))
         db.session.add(BusinessHeadRegion(business_head_id=bh2.id, cluster_id=goa.id))
@@ -92,7 +92,7 @@ class TestRegionOverlapDashboardVisibility:
         pune = _region(db, "RR Pune")
         nagpur = _region(db, "RR Nagpur")
         initiator = _make_user("MultiRegionInit", "multiregioninit@t.com", UserRole.INITIATOR, db)
-        nagpur_bh = _make_user("NagpurBH", "nagpurbh@t.com", UserRole.BUSINESS_HEAD, db)
+        nagpur_bh = _make_user("NagpurBH", "nagpurbh@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         # Initiator covers BOTH Pune and Nagpur; this BH only covers Nagpur.
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=pune.id))
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=nagpur.id))
@@ -107,7 +107,7 @@ class TestRegionOverlapDashboardVisibility:
 
     def test_initiator_with_no_region_is_visible_to_every_bh(self, client, db, app):
         initiator = _make_user("NoRegionInit", "noregioninit@t.com", UserRole.INITIATOR, db)
-        some_bh   = _make_user("SomeBH", "somebh@t.com", UserRole.BUSINESS_HEAD, db)
+        some_bh   = _make_user("SomeBH", "somebh@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         db.session.commit()
         req = _create_request(db, initiator, candidate_name="Unassigned Candidate")
         db.session.commit()
@@ -121,7 +121,7 @@ class TestRegionOverlapApproval:
     def test_bh_sharing_region_can_approve(self, client, db, app):
         blr = _region(db, "RR Bangalore")
         initiator = _make_user("BlrInit", "blrinit@t.com", UserRole.INITIATOR, db)
-        bh        = _make_user("BlrBH",   "blrbh@t.com",   UserRole.BUSINESS_HEAD, db)
+        bh        = _make_user("BlrBH",   "blrbh@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=blr.id))
         db.session.add(BusinessHeadRegion(business_head_id=bh.id, cluster_id=blr.id))
         db.session.commit()
@@ -141,8 +141,8 @@ class TestRegionOverlapApproval:
         blr = _region(db, "RR2 Bangalore")
         hyd = _region(db, "RR2 Hyderabad")
         initiator = _make_user("BlrInit2", "blrinit2@t.com", UserRole.INITIATOR, db)
-        blr_bh = _make_user("BlrBH2", "blrbh2@t.com", UserRole.BUSINESS_HEAD, db)
-        hyd_bh = _make_user("HydBH2", "hydbh2@t.com", UserRole.BUSINESS_HEAD, db)
+        blr_bh = _make_user("BlrBH2", "blrbh2@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        hyd_bh = _make_user("HydBH2", "hydbh2@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=blr.id))
         db.session.add(BusinessHeadRegion(business_head_id=blr_bh.id, cluster_id=blr.id))
         db.session.add(BusinessHeadRegion(business_head_id=hyd_bh.id, cluster_id=hyd.id))

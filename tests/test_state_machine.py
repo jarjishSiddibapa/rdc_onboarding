@@ -15,10 +15,14 @@ from .conftest import _make_user
 
 
 class _Req:
-    """Minimal stand-in for OnboardingRequest — get_new_status() only reads .status/.is_special_case."""
-    def __init__(self, status, is_special_case=False):
+    """Minimal stand-in for OnboardingRequest — get_new_status() reads
+    .status/.is_special_case/.company_code (company_code added 2026-09-21
+    for the Ultrafine/ROBO fixed-chain branch; defaults to "RDC" so every
+    pre-existing test keeps exercising the RDC paths unchanged)."""
+    def __init__(self, status, is_special_case=False, company_code="RDC"):
         self.status = status
         self.is_special_case = is_special_case
+        self.company_code = company_code
 
 
 # ── get_new_status — valid paths ───────────────────────────────────────────────
@@ -113,6 +117,42 @@ class TestOverNormTransitions:
         assert result == RequestStatus.ACTIVE
 
 
+# ── get_new_status — Ultrafine/ROBO fixed chain (2026-09-21) ──────────────────
+# BH -> HR Manager -> Head HR -> Dr. Bhoon -> Active, always, regardless of
+# is_special_case (there's no staffing gate for these companies to set it).
+
+class TestOtherCompanyTransitions:
+    @pytest.mark.parametrize("company", ["Ultrafine", "ROBO"])
+    @pytest.mark.parametrize("special_case", [False, True])
+    def test_bh_approve_always_goes_to_hr_manager(self, company, special_case):
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_BH, is_special_case=special_case, company_code=company),
+            UserRole.BUSINESS_HEAD, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_HR_MANAGER
+
+    @pytest.mark.parametrize("company", ["Ultrafine", "ROBO"])
+    @pytest.mark.parametrize("special_case", [False, True])
+    def test_head_hr_approve_always_goes_to_dr_bhoon(self, company, special_case):
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_HEAD_HR, is_special_case=special_case, company_code=company),
+            UserRole.HEAD_HR, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_DR_BHOON
+
+    def test_dr_bhoon_approve_activates_same_as_rdc(self):
+        # PENDING_DR_BHOON -> ACTIVE is an unconditional TRANSITIONS entry,
+        # reused as-is by the non-RDC chain — no branch needed.
+        result = get_new_status(_Req(RequestStatus.PENDING_DR_BHOON, company_code="ROBO"),
+                                 UserRole.DR_BHOON, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.ACTIVE
+
+    def test_hrm_approve_goes_to_head_hr_same_as_rdc(self):
+        # PENDING_HR_MANAGER -> PENDING_HEAD_HR is also an unconditional
+        # TRANSITIONS entry, reused as-is.
+        result = get_new_status(_Req(RequestStatus.PENDING_HR_MANAGER, company_code="Ultrafine"),
+                                 UserRole.HR_MANAGER, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_HEAD_HR
+
+
 # ── get_new_status — invalid combos ───────────────────────────────────────────
 
 class TestInvalidTransitions:
@@ -154,18 +194,19 @@ class TestCanActOn:
             self.id = user_id
 
     class _MockReq:
-        def __init__(self, status):
+        def __init__(self, status, company_code="RDC"):
             self.status = status
+            self.company_code = company_code
             self.initiator = TestCanActOn._MockUser(UserRole.INITIATOR)
 
     def test_bh_can_act_on_pending_bh_unassigned(self, client, db, app):
         with app.app_context():
-            initiator = _make_user("CaoInit1", "caoinit1@t.com", UserRole.INITIATOR, db)
-            bh        = _make_user("CaoBh1",   "caobh1@t.com",   UserRole.BUSINESS_HEAD, db)
-            req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.PENDING_BH)
+            initiator = _make_user("CaoInit1", "caoinit1@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            bh        = _make_user("CaoBh1",   "caobh1@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+            req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.PENDING_BH, company_code="RDC")
             db.session.add(req)
             db.session.flush()
-            # Initiator has no regions at all -> fail-open -> any active BH can act.
+            # Initiator has no regions at all -> fail-open onto the RDC-ticked pool -> any RDC-ticked active BH can act.
             assert can_act_on(req, bh) is True
 
     def test_bh_can_act_on_pending_bh_assigned_to_them(self, client, db, app):
@@ -173,12 +214,12 @@ class TestCanActOn:
             region = ClusterNameMapping(canonical_cluster_name="CAO Region A")
             db.session.add(region)
             db.session.flush()
-            initiator = _make_user("CaoInit2", "caoinit2@t.com", UserRole.INITIATOR, db)
-            bh        = _make_user("CaoBh2",   "caobh2@t.com",   UserRole.BUSINESS_HEAD, db)
+            initiator = _make_user("CaoInit2", "caoinit2@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            bh        = _make_user("CaoBh2",   "caobh2@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
             db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=region.id))
             db.session.add(BusinessHeadRegion(business_head_id=bh.id, cluster_id=region.id))
             db.session.flush()
-            req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.PENDING_BH)
+            req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.PENDING_BH, company_code="RDC")
             db.session.add(req)
             db.session.flush()
             assert can_act_on(req, bh) is True
@@ -189,15 +230,15 @@ class TestCanActOn:
             region_b = ClusterNameMapping(canonical_cluster_name="CAO Region C")
             db.session.add_all([region_a, region_b])
             db.session.flush()
-            initiator  = _make_user("CaoInit3", "caoinit3@t.com", UserRole.INITIATOR, db)
-            other_bh   = _make_user("CaoBh3a",  "caobh3a@t.com",  UserRole.BUSINESS_HEAD, db)
-            unrelated_bh = _make_user("CaoBh3b", "caobh3b@t.com", UserRole.BUSINESS_HEAD, db)
+            initiator  = _make_user("CaoInit3", "caoinit3@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            other_bh   = _make_user("CaoBh3a",  "caobh3a@t.com",  UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+            unrelated_bh = _make_user("CaoBh3b", "caobh3b@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
             db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=region_a.id))
             db.session.add(BusinessHeadRegion(business_head_id=other_bh.id, cluster_id=region_a.id))
             # unrelated_bh covers a DIFFERENT region -> no overlap with the initiator
             db.session.add(BusinessHeadRegion(business_head_id=unrelated_bh.id, cluster_id=region_b.id))
             db.session.flush()
-            req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.PENDING_BH)
+            req = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.PENDING_BH, company_code="RDC")
             db.session.add(req)
             db.session.flush()
             # The initiator's region IS actively covered (by other_bh), so this
@@ -209,10 +250,23 @@ class TestCanActOn:
         req  = self._MockReq(RequestStatus.PENDING_HR_MANAGER)
         assert can_act_on(req, user) is False
 
-    def test_hrm_can_act_on_pending_hrm(self):
-        user = self._MockUser(UserRole.HR_MANAGER, user_id=5)
-        req  = self._MockReq(RequestStatus.PENDING_HR_MANAGER)
-        assert can_act_on(req, user) is True
+    def test_hrm_can_act_on_pending_hrm(self, client, db, app):
+        with app.app_context():
+            hrm = _make_user("CaoHrm1", "caohrm1@t.com", UserRole.HR_MANAGER, db, companies=["RDC"])
+            req = self._MockReq(RequestStatus.PENDING_HR_MANAGER)
+            assert can_act_on(req, hrm) is True
+
+    def test_hrm_cannot_act_on_pending_hrm_when_unscoped(self, client, db, app):
+        with app.app_context():
+            hrm = _make_user("CaoHrm2", "caohrm2@t.com", UserRole.HR_MANAGER, db)  # no companies ticked
+            req = self._MockReq(RequestStatus.PENDING_HR_MANAGER)
+            assert can_act_on(req, hrm) is False
+
+    def test_hrm_cannot_act_on_company_they_are_not_ticked_for(self, client, db, app):
+        with app.app_context():
+            hrm = _make_user("CaoHrm3", "caohrm3@t.com", UserRole.HR_MANAGER, db, companies=["ROBO"])
+            req = self._MockReq(RequestStatus.PENDING_HR_MANAGER, company_code="RDC")
+            assert can_act_on(req, hrm) is False
 
     def test_initiator_cannot_act_as_approver(self):
         user = self._MockUser(UserRole.INITIATOR, user_id=2)

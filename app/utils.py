@@ -93,14 +93,22 @@ PENDING_STATUSES = {
 def get_new_status(req, actor_role, action):
     """Return new status or raise ValueError if transition is invalid.
 
-    Over-norm ("special case") requests skip HR Manager entirely:
-    BH -> Head HR -> Dr. Bhoon -> Active. These two branch points diverge
-    from the standard TRANSITIONS dict; everything else falls through to it.
+    Over-norm ("special case") RDC requests skip HR Manager entirely:
+    BH -> Head HR -> Dr. Bhoon -> Active. Non-RDC (Ultrafine/ROBO) requests
+    (2026-09-21) have their own fixed chain that always visits every role,
+    never branching by is_special_case (there's no staffing gate for them
+    to trigger a special case at all): BH -> HR Manager -> Head HR ->
+    Dr. Bhoon -> Active. These branch points diverge from the standard
+    TRANSITIONS dict; everything else falls through to it.
     """
     cs = req.status
     if cs == RequestStatus.PENDING_BH and actor_role == UserRole.BUSINESS_HEAD and action == ApprovalActionType.APPROVED:
+        if req.company_code != "RDC":
+            return RequestStatus.PENDING_HR_MANAGER   # fixed chain — no special-case branch for non-RDC
         return RequestStatus.PENDING_HEAD_HR if req.is_special_case else RequestStatus.PENDING_HR_MANAGER
     if cs == RequestStatus.PENDING_HEAD_HR and actor_role == UserRole.HEAD_HR and action == ApprovalActionType.APPROVED:
+        if req.company_code != "RDC":
+            return RequestStatus.PENDING_DR_BHOON     # fixed chain — always visits Dr. Bhoon
         return RequestStatus.PENDING_DR_BHOON if req.is_special_case else RequestStatus.ACTIVE
     key = (cs, actor_role, action)
     if key not in TRANSITIONS:
@@ -108,42 +116,85 @@ def get_new_status(req, actor_role, action):
     return TRANSITIONS[key]
 
 
-def bh_ids_for_initiator(initiator):
-    """
-    Return the set of active Business Head user ids eligible for this
-    initiator's requests, or None to mean "unscoped — every active BH".
+def company_scope_ids(user_id) -> set[str]:
+    """Companies (RDC/Ultrafine/ROBO) a user is ticked for. Fail-closed —
+    empty set if they have no UserCompanyScope rows at all (see that
+    model's docstring for why this differs from the region tables' fail-open
+    convention)."""
+    from .models import UserCompanyScope
+    return {r.company for r in UserCompanyScope.query.filter_by(user_id=user_id).all()}
 
-    Purely region-based (2026-09-04 redesign — the old direct
-    User.business_head_id assignment is legacy/unused, see its comment in
-    models.py): every active Business Head who shares AT LEAST ONE region
-    with the initiator, via InitiatorRegion <-> BusinessHeadRegion overlap.
-    Both sides can have multiple regions. Falls open (returns None, meaning
-    "every active BH") when the initiator has no regions assigned at all,
-    or none of their regions are actively covered by any BH — a request
-    must always be reachable by someone rather than going nowhere.
+
+def hr_manager_ids_for_company(company_code) -> set[int]:
+    """Active HR Manager user ids ticked for company_code. Fail-closed —
+    empty set if nobody is ticked."""
+    from .models import User, UserCompanyScope
+    ids = {r.user_id for r in UserCompanyScope.query.filter_by(company=company_code).all()}
+    if not ids:
+        return set()
+    return {
+        u.id for u in User.query.filter(
+            User.id.in_(ids), User.role == UserRole.HR_MANAGER, User.is_active == True,  # noqa: E712
+        ).all()
+    }
+
+
+def bh_ids_for_initiator(initiator, company_code):
     """
-    from .models import User, BusinessHeadRegion, InitiatorRegion
+    Return the set of active Business Head user ids eligible for a request
+    from this initiator for this company. Fail-closed on company scope
+    (2026-09-21, deliberate stakeholder choice, unlike the region tables'
+    fail-open convention below) — an empty set means nobody is eligible,
+    not "unscoped, every active BH".
+
+    For company_code == "RDC": among Business Heads ticked for RDC, the
+    original 2026-09-04 region-overlap logic still applies unchanged —
+    every active RDC-ticked BH who shares at least one region with the
+    initiator, via InitiatorRegion <-> BusinessHeadRegion overlap. Falls
+    open onto "every RDC-ticked active BH" (not "every active BH
+    system-wide" like before this change) when the initiator has no
+    regions assigned, or none of their regions are covered by any
+    RDC-ticked BH — a request must always be reachable by someone within
+    the RDC-ticked pool rather than going nowhere.
+
+    For company_code in ("Ultrafine", "ROBO"): there is no region concept
+    at all (confirmed with the stakeholder — a Robo/Ultrafine initiator can
+    hire at any of that company's plants, and any Business Head ticked for
+    that company can approve any request for it) — every active
+    company-ticked BH is eligible, full stop, no further narrowing.
+    """
+    from .models import User, BusinessHeadRegion, InitiatorRegion, UserCompanyScope
     if not initiator:
-        return None
+        return set()
+
+    company_bh_ids = {r.user_id for r in UserCompanyScope.query.filter_by(company=company_code).all()}
+    active_company_bh_ids = set()
+    if company_bh_ids:
+        active_company_bh_ids = {
+            u.id for u in User.query.filter(
+                User.id.in_(company_bh_ids),
+                User.role == UserRole.BUSINESS_HEAD,
+                User.is_active == True,  # noqa: E712
+            ).all()
+        }
+    if not active_company_bh_ids:
+        return set()
+
+    if company_code != "RDC":
+        return active_company_bh_ids
+
     my_region_ids = {
         r.cluster_id for r in InitiatorRegion.query.filter_by(initiator_id=initiator.id).all()
     }
     if not my_region_ids:
-        return None
+        return active_company_bh_ids
     region_bh_ids = {
         r.business_head_id for r in
         BusinessHeadRegion.query.filter(BusinessHeadRegion.cluster_id.in_(my_region_ids)).all()
     }
     if not region_bh_ids:
-        return None
-    active_ids = {
-        u.id for u in User.query.filter(
-            User.id.in_(region_bh_ids),
-            User.role == UserRole.BUSINESS_HEAD,
-            User.is_active == True,  # noqa: E712
-        ).all()
-    }
-    return active_ids if active_ids else None
+        return active_company_bh_ids
+    return (region_bh_ids & active_company_bh_ids) or active_company_bh_ids
 
 
 def can_act_on(req, user):
@@ -151,13 +202,10 @@ def can_act_on(req, user):
     expected_status = ROLE_QUEUES.get(user.role)
     if expected_status is None or req.status != expected_status:
         return False
-    # Business Head can only act on requests scoped to them by region.
-    # Unscoped (fail-open) means any BH can act.
     if user.role == UserRole.BUSINESS_HEAD:
-        initiator = req.initiator  # loaded via relationship
-        ids = bh_ids_for_initiator(initiator)
-        if ids is not None:
-            return user.id in ids
+        return user.id in bh_ids_for_initiator(req.initiator, req.company_code)
+    if user.role == UserRole.HR_MANAGER:
+        return req.company_code in company_scope_ids(user.id)
     return True
 
 

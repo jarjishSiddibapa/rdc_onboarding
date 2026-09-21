@@ -7,10 +7,12 @@ class TestDashboardSpecialNormalPanels:
         req_normal = OnboardingRequest(
             initiated_by=initiator.id, status=RequestStatus.PENDING_BH,
             is_special_case=False, candidate_name="Normal Candidate",
+            company_code="RDC",
         )
         req_special = OnboardingRequest(
             initiated_by=initiator.id, status=RequestStatus.PENDING_BH,
             is_special_case=True, candidate_name="Special Candidate",
+            company_code="RDC",
         )
         db.session.add_all([req_normal, req_special])
         db.session.commit()

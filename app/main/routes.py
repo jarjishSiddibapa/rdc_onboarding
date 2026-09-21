@@ -95,46 +95,79 @@ def dashboard():
             OnboardingRequest.status != RequestStatus.DRAFT,
         )
 
-        # Business Head: scope to requests from initiators who share at
-        # least one region with this BH — multi-region on both sides. See
-        # utils.bh_ids_for_initiator() for the same overlap from the other
-        # direction (the old direct business_head_id assignment is legacy —
-        # see its comment in models.py).
+        # Business Head: scoped by company tick marks (2026-09-21,
+        # fail-closed — zero ticks means zero requests visible), and, only
+        # within the RDC-ticked pool, further scoped to requests from
+        # initiators who share at least one region with this BH —
+        # multi-region on both sides. See utils.bh_ids_for_initiator() for
+        # the same overlap from the other direction (the old direct
+        # business_head_id assignment is legacy — see its comment in
+        # models.py). Ultrafine/ROBO have no region concept — company scope
+        # alone is the whole story for those companies' rows.
         if role == UserRole.BUSINESS_HEAD:
-            from ..models import BusinessHeadRegion, InitiatorRegion
+            from ..models import BusinessHeadRegion, InitiatorRegion, UserCompanyScope
 
-            my_region_ids = {
-                r.cluster_id for r in
-                BusinessHeadRegion.query.filter_by(business_head_id=current_user.id).all()
+            my_companies = {
+                r.company for r in UserCompanyScope.query.filter_by(user_id=current_user.id).all()
             }
-            # Regions covered by at least one active BH (any BH, not just me) —
-            # an initiator whose region(s) nobody actively covers falls open to
-            # every BH, same as a fully-unassigned initiator.
-            covered_region_ids = {
-                r.cluster_id for r in
-                BusinessHeadRegion.query.join(User, User.id == BusinessHeadRegion.business_head_id)
-                .filter(User.is_active == True).all()
-            }
-
-            initiator_region_ids = {}
-            for r in InitiatorRegion.query.all():
-                initiator_region_ids.setdefault(r.initiator_id, set()).add(r.cluster_id)
-
-            # Visible to me if: fully unassigned (no regions — fail-open),
-            # any of their regions overlap mine, or none of their regions
-            # are covered by any active BH at all (fail-open).
-            scoped_ids = []
-            for u in User.query.filter_by(role=UserRole.INITIATOR, is_active=True).all():
-                regions = initiator_region_ids.get(u.id, set())
-                if not regions or (regions & my_region_ids) or not (regions & covered_region_ids):
-                    scoped_ids.append(u.id)
-
-            if scoped_ids:
-                base_q = base_q.filter(OnboardingRequest.initiated_by.in_(scoped_ids))
-                all_q = all_q.filter(OnboardingRequest.initiated_by.in_(scoped_ids))
-            else:
+            if not my_companies:
                 base_q = base_q.filter(db.false())
                 all_q = all_q.filter(db.false())
+            else:
+                base_q = base_q.filter(OnboardingRequest.company_code.in_(my_companies))
+                all_q = all_q.filter(OnboardingRequest.company_code.in_(my_companies))
+
+                if "RDC" in my_companies:
+                    my_region_ids = {
+                        r.cluster_id for r in
+                        BusinessHeadRegion.query.filter_by(business_head_id=current_user.id).all()
+                    }
+                    # Regions covered by at least one active BH (any BH, not just me) —
+                    # an initiator whose region(s) nobody actively covers falls open to
+                    # every BH, same as a fully-unassigned initiator.
+                    covered_region_ids = {
+                        r.cluster_id for r in
+                        BusinessHeadRegion.query.join(User, User.id == BusinessHeadRegion.business_head_id)
+                        .filter(User.is_active == True).all()
+                    }
+
+                    initiator_region_ids = {}
+                    for r in InitiatorRegion.query.all():
+                        initiator_region_ids.setdefault(r.initiator_id, set()).add(r.cluster_id)
+
+                    # Visible to me if: fully unassigned (no regions — fail-open),
+                    # any of their regions overlap mine, or none of their regions
+                    # are covered by any active BH at all (fail-open).
+                    scoped_ids = []
+                    for u in User.query.filter_by(role=UserRole.INITIATOR, is_active=True).all():
+                        regions = initiator_region_ids.get(u.id, set())
+                        if not regions or (regions & my_region_ids) or not (regions & covered_region_ids):
+                            scoped_ids.append(u.id)
+
+                    if scoped_ids:
+                        rdc_ok = OnboardingRequest.initiated_by.in_(scoped_ids)
+                        base_q = base_q.filter(db.or_(OnboardingRequest.company_code != "RDC", rdc_ok))
+                        all_q = all_q.filter(db.or_(OnboardingRequest.company_code != "RDC", rdc_ok))
+                    else:
+                        base_q = base_q.filter(OnboardingRequest.company_code != "RDC")
+                        all_q = all_q.filter(OnboardingRequest.company_code != "RDC")
+                # else: RDC not ticked -> the company filter above already excludes all RDC rows
+
+        # HR Manager: company-scoped only (2026-09-21, fail-closed) — never
+        # region-narrowed, regardless of company (an RDC-ticked HR Manager
+        # handles every RDC region, confirmed with the stakeholder).
+        elif role == UserRole.HR_MANAGER:
+            from ..models import UserCompanyScope
+
+            my_companies = {
+                r.company for r in UserCompanyScope.query.filter_by(user_id=current_user.id).all()
+            }
+            if not my_companies:
+                base_q = base_q.filter(db.false())
+                all_q = all_q.filter(db.false())
+            else:
+                base_q = base_q.filter(OnboardingRequest.company_code.in_(my_companies))
+                all_q = all_q.filter(OnboardingRequest.company_code.in_(my_companies))
 
         queue = base_q.filter_by(status=pending_status).order_by(
             OnboardingRequest.updated_at.asc()).all()

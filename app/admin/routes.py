@@ -23,7 +23,7 @@ from ..models import (
     PlantLocation, Designation, FormField, FormFieldOption, FieldType, OptionsSource,
     AuditLog, AuditCategory, NormRoleCategory,
     PlantDvtMapping, ClusterNameMapping, BusinessHeadRegion, InitiatorRegion,
-    MatchConfidence, COMPANY_CHOICES,
+    MatchConfidence, COMPANY_CHOICES, UserCompanyScope,
 )
 from ..utils import role_required, validate_password, log_audit
 from . import admin_bp
@@ -101,6 +101,34 @@ def _set_initiator_regions(user, region_id_strs):
         "from": sorted(names_by_id.get(i, str(i)) for i in existing_ids),
         "to": sorted(names_by_id.get(i, str(i)) for i in ids),
     }
+
+
+# Roles that get company scoping (2026-09-21) — Head HR/Dr. Bhoon/Super
+# Admin stay unscoped, confirmed with the stakeholder.
+_COMPANY_SCOPED_ROLES = {UserRole.INITIATOR, UserRole.BUSINESS_HEAD, UserRole.HR_MANAGER}
+
+
+def _set_company_scope(user, company_strs):
+    """
+    Replace a user's company-scope ticks (UserCompanyScope). Returns
+    {"from": [...], "to": [...]} for audit logging, or None if nothing
+    changed. Caller commits. Fail-closed downstream (see
+    app/utils.py::company_scope_ids()) — an empty result here means this
+    user can act on/submit nothing at all, so new_user()/edit_user() make
+    at least one tick mandatory for the 3 scoped roles before validation
+    even reaches this helper.
+    """
+    ticked = {c for c in company_strs if c in COMPANY_CHOICES}
+    existing_links = UserCompanyScope.query.filter_by(user_id=user.id).all()
+    existing = {link.company for link in existing_links}
+    if ticked == existing:
+        return None
+    for link in existing_links:
+        if link.company not in ticked:
+            db.session.delete(link)
+    for c in ticked - existing:
+        db.session.add(UserCompanyScope(user_id=user.id, company=c))
+    return {"from": sorted(existing), "to": sorted(ticked)}
 
 
 # ── Availability check endpoints (AJAX) ───────────────────────────────────────
@@ -199,19 +227,27 @@ def new_user():
         username_raw = request.form.get("username", "").strip().lower()
         username = username_raw or None
         employee_code = request.form.get("employee_code", "").strip().upper() or None
+        ticked_companies = {c for c in request.form.getlist("companies") if c in COMPANY_CHOICES}
+        try:
+            parsed_role_for_check = UserRole(role_val) if role_val else None
+        except ValueError:
+            parsed_role_for_check = None
         if not all([name, email, password, role_val, employee_code]):
             flash("All fields are required, including Employee Code.", "danger")
         elif User.query.filter_by(email=email).first():
             flash("Email already in use.", "danger")
         elif username and User.query.filter_by(username=username).first():
             flash("Username already taken.", "danger")
+        elif parsed_role_for_check in _COMPANY_SCOPED_ROLES and not ticked_companies:
+            flash("Select at least one Company Scope tick mark for this role.", "danger")
         else:
             try:
                 parsed_role = UserRole(role_val)
             except ValueError:
                 flash("Invalid role selected.", "danger")
                 return render_template("admin/user_form.html", user=None, UserRole=UserRole,
-                                       clusters=clusters, current_region_ids=[])
+                                       clusters=clusters, current_region_ids=[],
+                                       companies=COMPANY_CHOICES, current_companies=[])
             user = User(
                 name=name, email=email, username=username,
                 employee_code=employee_code,
@@ -221,26 +257,33 @@ def new_user():
             db.session.add(user)
             db.session.commit()
 
-            # Region assignment — Business Heads and Initiators both pick
-            # region(s) from the same checkbox set; which table it lands in
-            # depends on role.
+            # Company scope, then region assignment (region only relevant —
+            # and only offered/saved — for RDC-ticked BH/Initiator; HR
+            # Manager never gets region-narrowing regardless of company).
+            scope_changes = None
             region_changes = None
-            if parsed_role == UserRole.BUSINESS_HEAD:
-                region_changes = _set_bh_regions(user, request.form.getlist("regions"))
-            elif parsed_role == UserRole.INITIATOR:
-                region_changes = _set_initiator_regions(user, request.form.getlist("regions"))
+            if parsed_role in _COMPANY_SCOPED_ROLES:
+                scope_changes = _set_company_scope(user, ticked_companies)
+                if parsed_role == UserRole.BUSINESS_HEAD:
+                    region_changes = _set_bh_regions(
+                        user, request.form.getlist("regions") if "RDC" in ticked_companies else [])
+                elif parsed_role == UserRole.INITIATOR:
+                    region_changes = _set_initiator_regions(
+                        user, request.form.getlist("regions") if "RDC" in ticked_companies else [])
 
             log_audit("USER_MGMT", "USER_CREATED",
                       resource_type="User", resource_id=user.id,
                       resource_label=user.name,
                       detail={"name": name, "email": email, "role": role_val,
                               "username": username, "employee_code": employee_code,
+                              "companies": scope_changes["to"] if scope_changes else None,
                               "regions": region_changes["to"] if region_changes else None})
             db.session.commit()
             flash(f"User {name} created successfully.", "success")
             return redirect(url_for("admin.users_list"))
     return render_template("admin/user_form.html", user=None, UserRole=UserRole,
-                           clusters=clusters, current_region_ids=[])
+                           clusters=clusters, current_region_ids=[],
+                           companies=COMPANY_CHOICES, current_companies=[])
 
 
 @admin_bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
@@ -257,7 +300,11 @@ def edit_user(user_id):
             return [r.cluster_id for r in InitiatorRegion.query.filter_by(initiator_id=u.id)]
         return []
 
+    def _current_company_ids(u):
+        return [r.company for r in UserCompanyScope.query.filter_by(user_id=u.id)]
+
     current_region_ids = _current_region_ids(user)
+    current_company_ids = _current_company_ids(user)
     if request.method == "POST":
         # Capture before-state for audit diff
         _old_name     = user.name
@@ -277,7 +324,8 @@ def edit_user(user_id):
         if existing_email and existing_email.id != user.id:
             flash("Email already in use by another account.", "danger")
             return render_template("admin/user_form.html", user=user, UserRole=UserRole,
-                                   clusters=clusters, current_region_ids=current_region_ids)
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
 
         # Username uniqueness check (exclude self)
         if new_username:
@@ -285,38 +333,63 @@ def edit_user(user_id):
             if existing_uname and existing_uname.id != user.id:
                 flash("Username already taken.", "danger")
                 return render_template("admin/user_form.html", user=user, UserRole=UserRole,
-                                   clusters=clusters, current_region_ids=current_region_ids)
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
+
+        role_val = request.form.get("role")
+        _effective_role = user.role
+        if role_val:
+            try:
+                _effective_role = UserRole(role_val)
+            except ValueError:
+                flash("Invalid role selected.", "danger")
+                return render_template("admin/user_form.html", user=user, UserRole=UserRole,
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
+
+        ticked_companies = {c for c in request.form.getlist("companies") if c in COMPANY_CHOICES}
+        if _effective_role in _COMPANY_SCOPED_ROLES and not ticked_companies:
+            flash("Select at least one Company Scope tick mark for this role.", "danger")
+            return render_template("admin/user_form.html", user=user, UserRole=UserRole,
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
 
         user.name = new_name
         user.email = new_email
         user.username = new_username
         user.employee_code = new_empcode
-        role_val = request.form.get("role")
-        if role_val:
-            try:
-                user.role = UserRole(role_val)
-            except ValueError:
-                flash("Invalid role selected.", "danger")
-                return render_template("admin/user_form.html", user=user, UserRole=UserRole,
-                                   clusters=clusters, current_region_ids=current_region_ids)
+        user.role = _effective_role
 
         # Commit name/email/role/username changes first
         db.session.commit()
 
-        # Region assignment — Business Heads and Initiators both pick
-        # region(s) from the same checkbox set; which table it lands in
-        # depends on the (possibly just-changed) role. Clear any stale
-        # assignment in the other table if the role changed away from it.
+        # Company scope, then region assignment — Business Heads and
+        # Initiators both pick region(s) from the same checkbox set, but
+        # only when "RDC" is ticked among their companies; HR Manager never
+        # gets region-narrowing regardless of company. Clear any stale
+        # scope/region rows if the role changed away from a scoped role, or
+        # RDC was unticked.
+        scope_changes = None
         region_changes = None
-        if user.role == UserRole.BUSINESS_HEAD:
-            region_changes = _set_bh_regions(user, request.form.getlist("regions"))
-            if InitiatorRegion.query.filter_by(initiator_id=user.id).first():
-                _set_initiator_regions(user, [])
-        elif user.role == UserRole.INITIATOR:
-            region_changes = _set_initiator_regions(user, request.form.getlist("regions"))
-            if BusinessHeadRegion.query.filter_by(business_head_id=user.id).first():
-                _set_bh_regions(user, [])
+        if user.role in _COMPANY_SCOPED_ROLES:
+            scope_changes = _set_company_scope(user, ticked_companies)
+            if user.role == UserRole.BUSINESS_HEAD:
+                region_changes = _set_bh_regions(
+                    user, request.form.getlist("regions") if "RDC" in ticked_companies else [])
+                if InitiatorRegion.query.filter_by(initiator_id=user.id).first():
+                    _set_initiator_regions(user, [])
+            elif user.role == UserRole.INITIATOR:
+                region_changes = _set_initiator_regions(
+                    user, request.form.getlist("regions") if "RDC" in ticked_companies else [])
+                if BusinessHeadRegion.query.filter_by(business_head_id=user.id).first():
+                    _set_bh_regions(user, [])
+            else:  # HR_MANAGER: never gets regions, regardless of ticked companies
+                if BusinessHeadRegion.query.filter_by(business_head_id=user.id).first():
+                    _set_bh_regions(user, [])
+                if InitiatorRegion.query.filter_by(initiator_id=user.id).first():
+                    _set_initiator_regions(user, [])
         else:
+            scope_changes = _set_company_scope(user, [])
             if BusinessHeadRegion.query.filter_by(business_head_id=user.id).first():
                 _set_bh_regions(user, [])
             if InitiatorRegion.query.filter_by(initiator_id=user.id).first():
@@ -338,6 +411,8 @@ def edit_user(user_id):
             _changes["employee_code"] = {"from": _old_empcode, "to": new_empcode}
 
         # Log the edit
+        if scope_changes:
+            _changes["companies"] = scope_changes
         if region_changes:
             _changes["regions"] = region_changes
         log_audit("USER_MGMT", "USER_EDITED",
@@ -356,7 +431,8 @@ def edit_user(user_id):
         flash("User updated.", "success")
         return redirect(url_for("admin.users_list"))
     return render_template("admin/user_form.html", user=user, UserRole=UserRole,
-                           clusters=clusters, current_region_ids=current_region_ids)
+                           clusters=clusters, current_region_ids=current_region_ids,
+                           companies=COMPANY_CHOICES, current_companies=current_company_ids)
 
 
 @admin_bp.route("/users/<int:user_id>/toggle-active", methods=["POST"])

@@ -24,6 +24,7 @@ class TestUserCreate:
                 "password": "Secure99",
                 "role":     UserRole.INITIATOR.value,
                 "employee_code": "EMP9001",
+                "companies": ["RDC"],
             }, follow_redirects=True)
         assert resp.status_code == 200
         with app.app_context():

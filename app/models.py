@@ -654,6 +654,34 @@ class InitiatorRegion(db.Model):
     cluster = db.relationship("ClusterNameMapping", backref=db.backref("initiator_links", cascade="all, delete-orphan"))
 
 
+class UserCompanyScope(db.Model):
+    """
+    Companies (RDC/Ultrafine/ROBO) a user is ticked for — shared across
+    INITIATOR, BUSINESS_HEAD, HR_MANAGER (2026-09-21, the only 3 roles that
+    get company scoping; HEAD_HR/DR_BHOON stay unscoped, confirmed with the
+    stakeholder). One shared table rather than role-specific tables (unlike
+    BusinessHeadRegion/InitiatorRegion, which are genuinely directional)
+    since "companies this account is ticked for" is identical regardless of
+    role. Fail-closed by design, unlike the region tables above: zero rows
+    means scoped to nothing, not "unscoped/sees everything" — see
+    backfill_company_scope.py, which ticks "RDC" for every pre-existing
+    user of these 3 roles so this doesn't strand live accounts at ship
+    time. See app/utils.py::bh_ids_for_initiator()/company_scope_ids()/
+    hr_manager_ids_for_company() for how this gates approval routing, and
+    the "RDC region scope only matters when RDC is ticked here" rule in
+    app/admin/routes.py::new_user()/edit_user().
+    """
+    __tablename__ = "user_company_scopes"
+    __table_args__ = (db.UniqueConstraint("user_id", "company"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    company = db.Column(db.String(20), nullable=False)  # one of COMPANY_CHOICES
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("company_scope_links", cascade="all, delete-orphan"))
+
+
 class PlantDvtMapping(db.Model):
     """
     Maps the free-text plant string actually submitted on onboarding requests

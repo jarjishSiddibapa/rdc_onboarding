@@ -897,11 +897,13 @@ def staffing_status():
 def staffing_status_download():
     """
     Excel download of the RDC Staffing Status dashboard — one sheet per scope
-    (By Cluster / By Plant), each row a (location, role category) pair with
-    current/allowed headcount, can-hire, and the location's production volume.
-    Same data source and role/region scoping as staffing_status()/
-    staffing_status_cluster()/staffing_status_plant() above — just flattened
-    into rows instead of drilled into per-page.
+    (By Cluster / By Plant / By Employees), each row a (location, role
+    category) pair with current/allowed headcount, can-hire, and the
+    location's production volume — except By Employees, which is one row per
+    actual employee (Cluster, Plant, then their details) rather than an
+    aggregated headcount. Same data source and role/region scoping as
+    staffing_status()/staffing_status_cluster()/staffing_status_plant() above
+    — just flattened into rows instead of drilled into per-page.
     """
     import io
     from datetime import datetime as _dt
@@ -946,8 +948,14 @@ def staffing_status_download():
                      ("Current Headcount", 16), ("Allowed Headcount", 16), ("Can Hire?", 12)]
     plant_cols = [("Region", 22), ("Plant", 26), ("Volume (m³)", 14), ("Tier", 20), ("Role Category", 26),
                    ("Current Headcount", 16), ("Allowed Headcount", 16), ("Can Hire?", 12)]
+    employee_cols = [("Cluster", 22), ("Plant", 26), ("Employee Name", 26), ("Employee Code", 16),
+                      ("Designation", 26), ("Department", 20), ("Date of Joining", 16), ("Source", 10)]
 
-    cluster_rows, plant_rows = [], []
+    def _employee_row(cluster_name, plant_name, e):
+        return (cluster_name, plant_name, e.employee_name, e.employee_code,
+                e.designation, e.department, e.date_of_joining, e.source.value)
+
+    cluster_rows, plant_rows, employee_rows = [], [], []
     for c in clusters:
         for s in headcount.get_snapshot_rows_for_location(c.canonical_cluster_name, NormScope.CLUSTER):
             cluster_rows.append((c.canonical_cluster_name, s.production_volume, s.tier_label,
@@ -958,6 +966,14 @@ def staffing_status_download():
                 plant_rows.append((c.canonical_cluster_name, p.display_name, s.production_volume, s.tier_label,
                                     s.norm_role_category.name, s.current_headcount, s.allowed_headcount,
                                     _can_hire_label(s.can_hire)))
+            for e in headcount.get_employees_at_plant(p.plant_location_name):
+                employee_rows.append(_employee_row(c.canonical_cluster_name, p.display_name, e))
+        # Employees resolved to this cluster but not to any specific plant
+        # within it (e.g. regional/HQ roles) — same "cluster-only staff"
+        # concept as the cluster detail page, Plant left blank here.
+        for e in headcount.get_employees_at_cluster(c.canonical_cluster_name, unassigned_to_plant_only=True):
+            employee_rows.append(_employee_row(c.canonical_cluster_name, "", e))
+    employee_rows.sort(key=lambda r: (r[0] or "", r[1] or "", r[2] or ""))
 
     wb = Workbook()
     ws1 = wb.active
@@ -965,6 +981,8 @@ def staffing_status_download():
     _write_sheet(ws1, cluster_cols, cluster_rows)
     ws2 = wb.create_sheet("By Plant")
     _write_sheet(ws2, plant_cols, plant_rows)
+    ws3 = wb.create_sheet("By Employees")
+    _write_sheet(ws3, employee_cols, employee_rows)
 
     buf = io.BytesIO()
     wb.save(buf)

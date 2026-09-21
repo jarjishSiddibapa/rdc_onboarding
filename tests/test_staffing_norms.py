@@ -129,6 +129,64 @@ class TestPlantScopeFixed:
         assert result["reason"] == "no_snapshot_yet"
 
 
+class TestAdjacentTierBoundaries:
+    """
+    Regression coverage for the 2026-09-21 "< 1500 m3" tier addition:
+    _find_tier() (both the copy in staffing_norms.py and the one in
+    headcount.py) scans NormTier rows with no ORDER BY and returns the
+    FIRST range match. Two tiers must never have overlapping
+    [min_value, max_value) ranges for the same scope/sheet, or which one
+    "wins" depends on unspecified row order. These tests lock in that the
+    lower tier's upper bound is exclusive and the next tier's lower bound
+    is inclusive, using non-overlapping ranges exactly like the real
+    LT_1500 (None, 1500) / LT_3000 (1500, 3000) pair.
+    """
+
+    def _seed_two_adjacent_tiers(self, db):
+        cat = NormRoleCategory(name="Batcher Role", scope=NormScope.PLANT, sheet=NormSheet.SHEET1)
+        db.session.add(cat)
+        db.session.flush()
+        lo_tier = NormTier(sheet=NormSheet.SHEET1, scope=NormScope.PLANT, tier_key="LT_1500",
+                            tier_label="< 1500 m3", min_value=None, max_value=1500)
+        hi_tier = NormTier(sheet=NormSheet.SHEET1, scope=NormScope.PLANT, tier_key="1500_3000",
+                            tier_label="1500-3000 m3", min_value=1500, max_value=3000)
+        db.session.add(lo_tier)
+        db.session.add(hi_tier)
+        db.session.flush()
+        db.session.add(NormRequirement(tier_id=lo_tier.id, norm_role_category_id=cat.id,
+                                        requirement_type=NormRequirementType.FIXED, fixed_count=1))
+        db.session.add(NormRequirement(tier_id=hi_tier.id, norm_role_category_id=cat.id,
+                                        requirement_type=NormRequirementType.FIXED, fixed_count=2))
+        db.session.flush()
+        return cat, lo_tier, hi_tier
+
+    def test_find_tier_boundary_is_exclusive_below_inclusive_above(self, db):
+        cat, lo_tier, hi_tier = self._seed_two_adjacent_tiers(db)
+        assert staffing_norms._find_tier(NormScope.PLANT, NormSheet.SHEET1, 1499).id == lo_tier.id
+        assert staffing_norms._find_tier(NormScope.PLANT, NormSheet.SHEET1, 1500).id == hi_tier.id
+        assert staffing_norms._find_tier(NormScope.PLANT, NormSheet.SHEET1, 2999).id == hi_tier.id
+
+    def test_gate_uses_correct_tier_allowed_headcount_at_boundary(self, db, initiator):
+        cat, lo_tier, hi_tier = self._seed_two_adjacent_tiers(db)
+        desig = Designation(name="Batcher", norm_category_id=cat.id)
+        db.session.add(desig)
+        plant_map = PlantDvtMapping(plant_location_name="PlantX", dvt_plant_code="PX1")
+        db.session.add(plant_map)
+        db.session.flush()
+        db.session.add(StaffingSnapshot(
+            scope=NormScope.PLANT, location_key="PlantX", norm_role_category_id=cat.id,
+            current_headcount=0, zinghr_count=0, truein_count=0,
+        ))
+        db.session.flush()
+        req = _make_request(db, initiator, "Batcher", "PlantX")
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=1200.0):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["details"]["allowed_headcount"] == 1
+        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=1500.0):
+            result = staffing_norms.check_rdc_staffing_gate(req.form_data)
+        assert result["details"]["allowed_headcount"] == 2
+
+
 class TestRateBasedRounding:
     def test_rounds_to_nearest(self, db, initiator):
         # tier is 3000-5000 m3 (see _seed_plant_norm defaults); 1 per 900 m3,
@@ -270,6 +328,21 @@ class TestStaffingStatusDownload:
             current_headcount=1, allowed_headcount=2, tier_label=tier.tier_label,
             production_volume=4000.0, can_hire=True, computed_at=run_time,
         ))
+        # One plant-level employee and one cluster-only (no specific plant)
+        # employee, sharing the same run_time — see the shared-timestamp note
+        # in get_snapshot_rows_for_location()/EmployeeLocationSnapshot reads.
+        db.session.add(EmployeeLocationSnapshot(
+            source=ExternalDesignationSource.ZINGHR, employee_code="E001",
+            employee_name="Plant Employee", designation="Operator", department="Technical",
+            date_of_joining="12 May 2020", plant_location_key="PlantX",
+            cluster_location_key="Bangalore", computed_at=run_time,
+        ))
+        db.session.add(EmployeeLocationSnapshot(
+            source=ExternalDesignationSource.TRUEIN, employee_code="E002",
+            employee_name="Cluster Only Employee", designation="Accountant", department="Accounts",
+            date_of_joining="01 Jan 2021", plant_location_key=None,
+            cluster_location_key="Bangalore", computed_at=run_time,
+        ))
         db.session.flush()
         return cluster
 
@@ -285,13 +358,26 @@ class TestStaffingStatusDownload:
         assert resp.status_code == 200
         assert resp.headers["Content-Type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         wb = load_workbook(BytesIO(resp.data))
-        assert wb.sheetnames == ["By Cluster", "By Plant"]
+        assert wb.sheetnames == ["By Cluster", "By Plant", "By Employees"]
         cluster_rows = list(wb["By Cluster"].iter_rows(min_row=2, values_only=True))
         plant_rows = list(wb["By Plant"].iter_rows(min_row=2, values_only=True))
+        employee_rows = list(wb["By Employees"].iter_rows(min_row=2, values_only=True))
         assert len(cluster_rows) == 1
         assert cluster_rows[0][0] == "Bangalore"
         assert len(plant_rows) == 1
         assert plant_rows[0][0] == "Bangalore"
+        assert wb["By Employees"]["A1":"H1"][0][0].value == "Cluster"
+        assert wb["By Employees"]["A1":"H1"][0][1].value == "Plant"
+        assert len(employee_rows) == 2
+        by_code = {r[3]: r for r in employee_rows}
+        plant_emp = by_code["E001"]
+        assert plant_emp[0] == "Bangalore" and plant_emp[1] == "PlantX"
+        assert plant_emp[2] == "Plant Employee" and plant_emp[4] == "Operator"
+        cluster_only_emp = by_code["E002"]
+        # openpyxl reads a cell written with value="" back as None, not "" —
+        # both mean "blank Plant column" for a cluster-only employee.
+        assert cluster_only_emp[0] == "Bangalore" and not cluster_only_emp[1]
+        assert cluster_only_emp[2] == "Cluster Only Employee"
 
     def test_business_head_only_sees_own_region(self, client, db, app):
         self._seed(db)

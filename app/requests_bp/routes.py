@@ -962,7 +962,7 @@ def staffing_status_download():
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
-    from ..models import ClusterNameMapping, NormScope
+    from ..models import ClusterNameMapping, NormScope, StaffingSnapshot, EmployeeLocationSnapshot
     from ..services import headcount
 
     clusters = ClusterNameMapping.query.filter_by(is_deleted=False).order_by(ClusterNameMapping.canonical_cluster_name).all()
@@ -1006,23 +1006,33 @@ def staffing_status_download():
         return (cluster_name, plant_name, e.employee_name, e.employee_code,
                 e.designation, e.department, e.date_of_joining, e.source.value)
 
+    # Resolved ONCE for the whole report instead of once per cluster/plant
+    # (28 clusters + 140 plants previously meant ~336 redundant
+    # MAX(computed_at) full-table scans across two large, unpruned history
+    # tables — the dominant cost of this download, confirmed by profiling).
+    # Every location in this report reads from the same single latest run,
+    # so resolving it once and threading it through is correct, not just
+    # faster.
+    latest_snapshot_run = db.session.query(db.func.max(StaffingSnapshot.computed_at)).scalar()
+    latest_employee_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+
     cluster_rows, plant_rows, employee_rows = [], [], []
     for c in clusters:
-        for s in headcount.get_snapshot_rows_for_location(c.canonical_cluster_name, NormScope.CLUSTER):
+        for s in headcount.get_snapshot_rows_for_location(c.canonical_cluster_name, NormScope.CLUSTER, latest_run=latest_snapshot_run):
             cluster_rows.append((c.canonical_cluster_name, s.production_volume, s.tier_label,
                                   s.norm_role_category.name, s.current_headcount, s.allowed_headcount,
                                   _can_hire_label(s.can_hire)))
         for p in headcount.get_plants_in_cluster(c.id):
-            for s in headcount.get_snapshot_rows_for_location(p.plant_location_name, NormScope.PLANT):
+            for s in headcount.get_snapshot_rows_for_location(p.plant_location_name, NormScope.PLANT, latest_run=latest_snapshot_run):
                 plant_rows.append((c.canonical_cluster_name, p.display_name, s.production_volume, s.tier_label,
                                     s.norm_role_category.name, s.current_headcount, s.allowed_headcount,
                                     _can_hire_label(s.can_hire)))
-            for e in headcount.get_employees_at_plant(p.plant_location_name):
+            for e in headcount.get_employees_at_plant(p.plant_location_name, latest_run=latest_employee_run):
                 employee_rows.append(_employee_row(c.canonical_cluster_name, p.display_name, e))
         # Employees resolved to this cluster but not to any specific plant
         # within it (e.g. regional/HQ roles) — same "cluster-only staff"
         # concept as the cluster detail page, Plant left blank here.
-        for e in headcount.get_employees_at_cluster(c.canonical_cluster_name, unassigned_to_plant_only=True):
+        for e in headcount.get_employees_at_cluster(c.canonical_cluster_name, unassigned_to_plant_only=True, latest_run=latest_employee_run):
             employee_rows.append(_employee_row(c.canonical_cluster_name, "", e))
     employee_rows.sort(key=lambda r: (r[0] or "", r[1] or "", r[2] or ""))
 
@@ -1711,11 +1721,10 @@ def delete_request(token):
 # ── Approval notification helpers ──────────────────────────────────────────────
 
 def _send_approval_notifications(db, req, new_status):
-    from ..utils import company_scope_ids
+    from ..utils import hr_manager_ids_for_company
 
     if new_status == RequestStatus.PENDING_HR_MANAGER:
-        recipients = [u for u in User.query.filter_by(role=UserRole.HR_MANAGER, is_active=True).all()
-                      if req.company_code in company_scope_ids(u.id)]
+        recipients = User.query.filter(User.id.in_(hr_manager_ids_for_company(req.company_code))).all()
         notify_users(db, req, recipients,
                      subject=f"Approved by Business Head: {req.candidate_name}",
                      body=f"Please review the request for {req.candidate_name}.")
@@ -1743,8 +1752,7 @@ def _send_approval_notifications(db, req, new_status):
                      body=body)
     elif new_status == RequestStatus.ACTIVE:
         initiator = db.session.get(User, req.initiated_by)
-        hr_managers = [u for u in User.query.filter_by(role=UserRole.HR_MANAGER, is_active=True).all()
-                       if req.company_code in company_scope_ids(u.id)]
+        hr_managers = User.query.filter(User.id.in_(hr_manager_ids_for_company(req.company_code))).all()
         head_hrs = User.query.filter_by(role=UserRole.HEAD_HR, is_active=True).all()  # unscoped
         notify_users(db, req, [initiator] + hr_managers + head_hrs,
                      subject=f"Employee ACTIVE: {req.candidate_name}",

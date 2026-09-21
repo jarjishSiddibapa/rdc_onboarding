@@ -200,7 +200,7 @@
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="margin-right:6px;vertical-align:-2px;flex-shrink:0;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
-          Download Excel
+          <span id="download-link-label">Download Excel</span>
         </a>
       </div>
     </div>
@@ -541,6 +541,27 @@ document.addEventListener('DOMContentLoaded', function () {
   // Close preview button
   var closeBtn = document.getElementById('close-preview-btn');
   if (closeBtn) closeBtn.addEventListener('click', closePreview);
+
+  // Download Excel link — same "no feedback on click" gap the Preview
+  // button already avoided (it has a .loading state, this didn't). Can't
+  // hook a completion event on a plain <a> file download across browsers,
+  // so show "Generating…" immediately and revert after a bounded timeout.
+  var downloadLink = document.getElementById('download-link');
+  var downloadLabel = document.getElementById('download-link-label');
+  if (downloadLink) {
+    downloadLink.addEventListener('click', function(e) {
+      if (downloadLink.getAttribute('href') === '#') { e.preventDefault(); return; }
+      if (downloadLink.style.pointerEvents === 'none') return;
+      downloadLink.style.pointerEvents = 'none';
+      downloadLink.style.opacity = '0.65';
+      downloadLabel.textContent = 'Generating…';
+      setTimeout(function() {
+        downloadLink.style.pointerEvents = '';
+        downloadLink.style.opacity = '';
+        downloadLabel.textContent = 'Download Excel';
+      }, 15000);
+    });
+  }
 });
 </script>
 {% endblock %}

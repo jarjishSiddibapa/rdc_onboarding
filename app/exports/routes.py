@@ -5,10 +5,11 @@ from flask_login import login_required
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from sqlalchemy.orm import joinedload, selectinload
 from ..extensions import db
 from ..models import (
     OnboardingRequest, RequestStatus, UserRole, User,
-    FormField, FieldType, PlantLocation, Designation,
+    FormField, FieldType, PlantLocation, Designation, ApprovalAction,
 )
 from ..extensions import limiter
 from ..utils import role_required, log_audit
@@ -54,7 +55,15 @@ def _collect_filter_params(args):
 def _apply_filters(params):
     """Build query from filter params dict; return list of matching records."""
     p = params
-    q = OnboardingRequest.query.filter_by(is_deleted=False)
+    # initiator/actions are lazy="select" by default (actions.actor too) —
+    # _cell_val()/_actor_for_role() below touch both per record, which was
+    # a real N+1 (2+ extra queries per row). Negligible at today's row
+    # counts but compounds linearly as onboarding_requests grows, and it's
+    # a one-line fix, so applied eagerly rather than left for later.
+    q = OnboardingRequest.query.filter_by(is_deleted=False).options(
+        joinedload(OnboardingRequest.initiator),
+        selectinload(OnboardingRequest.actions).joinedload(ApprovalAction.actor),
+    )
 
     # Status
     if p["statuses_raw"]:

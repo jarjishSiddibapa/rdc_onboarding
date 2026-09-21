@@ -31,7 +31,7 @@
       <p class="page-sub" style="margin-top:4px;">Click a region to see its plants, then click a plant for role-by-role detail.</p>
     </div>
     <div style="display:flex;gap:8px;">
-      <a href="{{ url_for('requests_bp.staffing_status_download') }}" class="btn btn-secondary btn-sm">⬇ Download Report</a>
+      <a id="download-report-link" href="{{ url_for('requests_bp.staffing_status_download') }}" class="btn btn-secondary btn-sm">⬇ <span id="download-report-label">Download Report</span></a>
       <a href="{{ url_for('requests_bp.staffing_status_employees') }}" class="btn btn-secondary btn-sm">All Employees →</a>
     </div>
   </div>
@@ -152,5 +152,29 @@ function switchCTab(tab) {
   });
 }
 switchCTab('rdc');
+
+// "leads to a blank page, takes too long" fix: this link had zero loading
+// feedback — the file build+download used to take well over a minute (see
+// the N+1 snapshot-scan fix server-side) with no visible cue at all. Can't
+// hook a completion event on a plain <a> file download across browsers, so
+// this shows "Generating…" immediately and reverts after a bounded timeout
+// — comfortably longer than the report should ever take post-fix, short
+// enough that a genuinely stuck request doesn't look permanently broken.
+(function() {
+  var link = document.getElementById('download-report-link');
+  var label = document.getElementById('download-report-label');
+  if (!link) return;
+  link.addEventListener('click', function() {
+    if (link.style.pointerEvents === 'none') return;
+    link.style.pointerEvents = 'none';
+    link.style.opacity = '0.65';
+    label.textContent = 'Generating…';
+    setTimeout(function() {
+      link.style.pointerEvents = '';
+      link.style.opacity = '';
+      label.textContent = 'Download Report';
+    }, 15000);
+  });
+})();
 </script>
 {% endblock %}

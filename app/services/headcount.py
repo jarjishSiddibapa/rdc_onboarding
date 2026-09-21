@@ -711,10 +711,14 @@ def get_latest_snapshot(location_key: str, scope, norm_role_category_id: int):
     )
 
 
-def get_snapshot_rows_for_location(location_key: str, scope) -> list:
+def get_snapshot_rows_for_location(location_key: str, scope, latest_run=None) -> list:
     """All role-level StaffingSnapshot rows for one plant or cluster, from the
-    latest run — the "can we hire here?" table on the plant/cluster detail pages."""
-    latest_run = db.session.query(db.func.max(StaffingSnapshot.computed_at)).scalar()
+    latest run — the "can we hire here?" table on the plant/cluster detail pages.
+    `latest_run` can be passed in by a caller that already resolved it once
+    (e.g. looping over many locations in one report) to avoid re-running the
+    MAX(computed_at) scan per location — see staffing_status_download()."""
+    if latest_run is None:
+        latest_run = db.session.query(db.func.max(StaffingSnapshot.computed_at)).scalar()
     if not latest_run:
         return []
     return (StaffingSnapshot.query
@@ -735,7 +739,7 @@ def get_all_latest_snapshots(scope=None) -> list:
     return q.order_by(StaffingSnapshot.location_key).all()
 
 
-def get_employees_at_plant(plant_name: str) -> list:
+def get_employees_at_plant(plant_name: str, latest_run=None) -> list:
     """
     Real employee list (name, designation, department, ...) for one RDC
     plant, from the latest run. `company.is_(None)` (added 2026-09-15):
@@ -744,8 +748,13 @@ def get_employees_at_plant(plant_name: str) -> list:
     share this table and the same computed_at (see that function's `now`
     docstring), a plant name collision between companies would mix a
     different company's employees into this RDC-only view.
+
+    `latest_run` can be passed in by a caller that already resolved it once
+    (e.g. looping over many plants in one report) to avoid re-running the
+    MAX(computed_at) scan per plant — see staffing_status_download().
     """
-    latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+    if latest_run is None:
+        latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
     if not latest_run:
         return []
     return (EmployeeLocationSnapshot.query
@@ -755,15 +764,18 @@ def get_employees_at_plant(plant_name: str) -> list:
             .all())
 
 
-def get_employees_at_cluster(cluster_name: str, unassigned_to_plant_only: bool = False) -> list:
+def get_employees_at_cluster(cluster_name: str, unassigned_to_plant_only: bool = False, latest_run=None) -> list:
     """
     Real employee list for a cluster. With unassigned_to_plant_only=True,
     returns only employees resolved to this cluster but NOT to any specific
     plant within it (e.g. regional/HQ roles — Accounts, Credit Control) —
     used on the cluster detail page's "Cluster-level staff" section, since
     plant-level staff are already shown when you drill into their plant.
+
+    `latest_run` — see get_employees_at_plant()'s docstring.
     """
-    latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+    if latest_run is None:
+        latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
     if not latest_run:
         return []
     # company.is_(None): see get_employees_at_plant()'s docstring — Ultrafine/

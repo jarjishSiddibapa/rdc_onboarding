@@ -75,7 +75,18 @@ def _auto_migrate(engine):
                 ))
                 conn.commit()
 
-        # Ensure indexes exist on existing DBs (CREATE INDEX IF NOT EXISTS)
+        # Ensure indexes exist on existing DBs.
+        # NOTE (found & fixed 2026-09-21): `CREATE INDEX IF NOT EXISTS` is
+        # NOT valid MySQL syntax at all (confirmed live, MySQL 9.5.0 — this
+        # was never version-specific) — every attempt in this loop has
+        # always thrown a syntax error and been silently swallowed by the
+        # try/except below. Any index in this list added to a table that
+        # already existed live (i.e. not present when that table's
+        # db.create_all() first ran) was NEVER actually created — this
+        # mechanism has been dead code for that case since it was written.
+        # Fixed the same way _REQUIRED_COLUMNS above checks for an existing
+        # column: query information_schema first, only CREATE INDEX (no
+        # IF NOT EXISTS) when it's actually missing.
         _INDEXES = [
             ("idx_req_status_deleted", "onboarding_requests", "status, is_deleted"),
             ("idx_req_initiated_by",   "onboarding_requests", "initiated_by"),
@@ -83,15 +94,27 @@ def _auto_migrate(engine):
             ("idx_req_updated_at",     "onboarding_requests", "updated_at"),
             ("idx_user_bh_id",         "users",               "business_head_id"),
             ("idx_user_role_active",   "users",               "role, is_active"),
+            ("idx_req_company_code",          "onboarding_requests",        "company_code"),
+            ("idx_snapshot_computed_at",       "staffing_snapshots",         "computed_at"),
+            ("idx_emp_snapshot_computed_at",   "employee_location_snapshots", "computed_at"),
         ]
         for idx_name, tbl, cols in _INDEXES:
-            try:
-                conn.execute(db.text(
-                    f"CREATE INDEX IF NOT EXISTS `{idx_name}` ON `{tbl}` ({cols})"
-                ))
-                conn.commit()
-            except Exception:
-                pass  # Index may already exist or DB doesn't support CREATE INDEX IF NOT EXISTS
+            result = conn.execute(
+                db.text(
+                    "SELECT COUNT(*) FROM information_schema.statistics "
+                    "WHERE table_schema = DATABASE() "
+                    "AND table_name = :t AND index_name = :i"
+                ),
+                {"t": tbl, "i": idx_name},
+            )
+            if result.scalar() == 0:
+                try:
+                    conn.execute(db.text(
+                        f"CREATE INDEX `{idx_name}` ON `{tbl}` ({cols})"
+                    ))
+                    conn.commit()
+                except Exception:
+                    pass  # best-effort — never block app startup on an index failure
 
         # Backfill public_token for existing requests that have NULL
         rows = conn.execute(db.text(

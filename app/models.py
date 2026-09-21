@@ -287,6 +287,10 @@ class OnboardingRequest(db.Model):
         db.Index("idx_req_initiated_by",    "initiated_by"),
         db.Index("idx_req_public_token",    "public_token"),
         db.Index("idx_req_updated_at",      "updated_at"),
+        # company_code became a first-class WHERE clause 2026-09-21 for
+        # BH/HR Manager dashboard scoping (app/main/routes.py) and the admin
+        # requests-list company filter — previously unindexed.
+        db.Index("idx_req_company_code",    "company_code"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -780,6 +784,12 @@ class StaffingSnapshot(db.Model):
     __tablename__ = "staffing_snapshots"
     __table_args__ = (
         db.Index("idx_snapshot_lookup", "scope", "location_key", "norm_role_category_id", "computed_at"),
+        # computed_at alone: every read helper resolves "the latest run" via
+        # MAX(computed_at) first. It's the LAST column in idx_snapshot_lookup
+        # above, so that composite index can't answer a bare MAX() — without
+        # this dedicated index MySQL does a full table scan (confirmed:
+        # ~293k rows, ~0.12s per call) every time any snapshot is read.
+        db.Index("idx_snapshot_computed_at", "computed_at"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -867,6 +877,11 @@ class EmployeeLocationSnapshot(db.Model):
     __table_args__ = (
         db.Index("idx_emp_snapshot_plant", "plant_location_key", "computed_at"),
         db.Index("idx_emp_snapshot_cluster", "cluster_location_key", "computed_at"),
+        # See idx_snapshot_computed_at on StaffingSnapshot — same reasoning,
+        # same fix: computed_at is the trailing column in both composite
+        # indexes above, so a bare MAX(computed_at) still forces a full
+        # table scan (confirmed: ~573k rows, ~0.29s per call) without this.
+        db.Index("idx_emp_snapshot_computed_at", "computed_at"),
     )
 
     id = db.Column(db.Integer, primary_key=True)

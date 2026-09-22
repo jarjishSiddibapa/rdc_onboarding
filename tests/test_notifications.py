@@ -72,6 +72,12 @@ class TestDuplicateEmailCheck:
         initiator = _make_user("DupInit", "dupinit@t.com", UserRole.INITIATOR, db)
         existing = _make_request(db, initiator, candidate_name="Existing Candidate")
         existing.form_data = {"email_id": "duplicate@candidate.com"}
+        # _check_email_registered() now queries the indexed candidate_email
+        # column (kept in sync by _sync_quick_access() on every real form
+        # save) rather than scanning form_data — this test bypasses that
+        # helper by writing form_data directly, so it must set the mirror
+        # column itself too.
+        existing.candidate_email = "duplicate@candidate.com"
         db.session.commit()
         initiator_email = initiator.email
 

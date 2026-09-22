@@ -59,11 +59,32 @@ def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {get_access_token()}"}
 
 
+# DVT was the only one of the three external integrations (Truein, ZingHR,
+# DVT) with no caching at all — every plant/designation change on the New
+# Request form (check_hiring_capacity(), see app/requests_bp/routes.py)
+# round-tripped live to DVT, as did edit_plant_mapping()'s GET and
+# matching.py's fetch_all_plants(). The actual staffing-gate check at submit
+# time was never affected (staffing_norms.py reads only the cached
+# StaffingSnapshot, never DVT live) — this cache only speeds up/insulates
+# the interactive preview and admin-facing callers. Same 1h TTL convention
+# as zinghr.py's _CACHE_TTL. Keyed by month since callers pass different
+# months (though in practice almost always "last month").
+_CACHE_TTL_S = 3600
+_volumes_cache: dict[str, dict] = {}
+_volumes_cache_at: dict[str, float] = {}
+
+
 def fetch_monthly_volumes(month: str) -> dict:
     """
     GET /api/v1/volumes/monthly?month=YYYY-MM
     Returns the raw response dict: {"period","month","metric","count","plants":[...]}.
+    Cached in-process per month for _CACHE_TTL_S (1h) — see module docstring above.
     """
+    now = time.time()
+    cached_at = _volumes_cache_at.get(month, 0.0)
+    if month in _volumes_cache and (now - cached_at) < _CACHE_TTL_S:
+        return _volumes_cache[month]
+
     resp = requests.get(
         f"{BASE_URL}/api/v1/volumes/monthly",
         params={"month": month},
@@ -71,7 +92,10 @@ def fetch_monthly_volumes(month: str) -> dict:
         timeout=30,
     )
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    _volumes_cache[month] = data
+    _volumes_cache_at[month] = now
+    return data
 
 
 def _previous_month_str() -> str:

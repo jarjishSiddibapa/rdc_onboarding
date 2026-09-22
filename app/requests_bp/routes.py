@@ -85,6 +85,8 @@ def _sync_quick_access(req):
     req.company_code = fd.get("company_code", "") or ""
     req.plant_location = fd.get("plant_location", "") or ""
     req.designation = fd.get("designation", "") or ""
+    req.candidate_email = (fd.get("email_id") or "").strip().lower()
+    req.candidate_govt_id = re.sub(r"\D", "", fd.get("aadhar_no") or "")
 
 
 def _validate_required(fields, form_data):
@@ -237,7 +239,9 @@ def _check_email_registered(email: str, exclude_token: str | None = None) -> str
 
     Checks, in order:
       1. Our own DB — any other non-deleted, non-rejected request already
-         using this email (small dataset; a plain Python scan is fine here).
+         using this email, via the indexed candidate_email column (kept in
+         sync by _sync_quick_access() on every form save) rather than
+         loading and JSON-parsing every request row on every field blur.
       2. Truein's warm employee cache ONLY (get_cached_employees_if_warm never
          triggers a live pull — see CLAUDE.md gotcha #1). A cold cache simply
          skips this half rather than blocking the initiator on a multi-minute
@@ -247,13 +251,12 @@ def _check_email_registered(email: str, exclude_token: str | None = None) -> str
     if not email:
         return None
 
-    for r in OnboardingRequest.query.filter_by(is_deleted=False).filter(
-            OnboardingRequest.status.notin_(REJECTED_STATUSES)).all():
-        if exclude_token and r.public_token == exclude_token:
-            continue
-        existing_email = (r.form_data.get("email_id") or "").strip().lower()
-        if existing_email and existing_email == email:
-            return "This email is already used on another onboarding request in this system."
+    dup_q = OnboardingRequest.query.filter_by(is_deleted=False, candidate_email=email).filter(
+        OnboardingRequest.status.notin_(REJECTED_STATUSES))
+    if exclude_token:
+        dup_q = dup_q.filter(OnboardingRequest.public_token != exclude_token)
+    if dup_q.first():
+        return "This email is already used on another onboarding request in this system."
 
     from ..integrations import truein
     for e in (truein.get_cached_employees_if_warm() or []):
@@ -279,22 +282,24 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
 
     Checks, in order (mirrors _check_email_registered exactly):
       1. Our own DB — any other non-deleted, non-rejected request already
-         using this Aadhar number.
+         using this Aadhar number, via the indexed candidate_govt_id column
+         (kept in sync by _sync_quick_access() on every form save) rather
+         than loading and JSON-parsing every request row on every blur.
       2. Truein's warm employee cache ONLY (never triggers a live pull).
     Compares digits-only so formatting (spaces/dashes) never causes a
-    false negative.
+    false negative — candidate_govt_id is stored digits-only for exactly
+    this reason.
     """
     digits = re.sub(r"\D", "", aadhar_no or "")
     if len(digits) != 12:
         return None  # not a complete number yet — pattern validation handles format separately
 
-    for r in OnboardingRequest.query.filter_by(is_deleted=False).filter(
-            OnboardingRequest.status.notin_(REJECTED_STATUSES)).all():
-        if exclude_token and r.public_token == exclude_token:
-            continue
-        existing = re.sub(r"\D", "", r.form_data.get("aadhar_no") or "")
-        if existing and existing == digits:
-            return "This Aadhar number is already used on another onboarding request in this system."
+    dup_q = OnboardingRequest.query.filter_by(is_deleted=False, candidate_govt_id=digits).filter(
+        OnboardingRequest.status.notin_(REJECTED_STATUSES))
+    if exclude_token:
+        dup_q = dup_q.filter(OnboardingRequest.public_token != exclude_token)
+    if dup_q.first():
+        return "This Aadhar number is already used on another onboarding request in this system."
 
     from ..integrations import truein
     for e in (truein.get_cached_employees_if_warm() or []):

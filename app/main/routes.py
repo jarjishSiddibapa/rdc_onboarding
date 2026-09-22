@@ -131,26 +131,36 @@ def dashboard():
                         .filter(User.is_active == True).all()
                     }
 
-                    initiator_region_ids = {}
-                    for r in InitiatorRegion.query.all():
-                        initiator_region_ids.setdefault(r.initiator_id, set()).add(r.cluster_id)
+                    # Pushed to SQL as correlated EXISTS clauses instead of
+                    # loading every InitiatorRegion row + every active
+                    # Initiator into Python and looping (found by the
+                    # 2026-09-21 performance audit — that was an
+                    # O(all initiators) Python pass on every dashboard load
+                    # for every Business Head). Same semantics as before,
+                    # evaluated per-row by MySQL against InitiatorRegion's
+                    # (initiator_id, cluster_id) unique index instead:
+                    # visible if the initiator has no regions at all
+                    # (fail-open), OR any of their regions overlap mine, OR
+                    # none of their regions are covered by any active BH at
+                    # all (fail-open).
+                    def _region_exists(cluster_ids):
+                        if not cluster_ids:
+                            return db.false()
+                        return db.exists().where(
+                            InitiatorRegion.initiator_id == OnboardingRequest.initiated_by,
+                            InitiatorRegion.cluster_id.in_(cluster_ids),
+                        )
 
-                    # Visible to me if: fully unassigned (no regions — fail-open),
-                    # any of their regions overlap mine, or none of their regions
-                    # are covered by any active BH at all (fail-open).
-                    scoped_ids = []
-                    for u in User.query.filter_by(role=UserRole.INITIATOR, is_active=True).all():
-                        regions = initiator_region_ids.get(u.id, set())
-                        if not regions or (regions & my_region_ids) or not (regions & covered_region_ids):
-                            scoped_ids.append(u.id)
-
-                    if scoped_ids:
-                        rdc_ok = OnboardingRequest.initiated_by.in_(scoped_ids)
-                        base_q = base_q.filter(db.or_(OnboardingRequest.company_code != "RDC", rdc_ok))
-                        all_q = all_q.filter(db.or_(OnboardingRequest.company_code != "RDC", rdc_ok))
-                    else:
-                        base_q = base_q.filter(OnboardingRequest.company_code != "RDC")
-                        all_q = all_q.filter(OnboardingRequest.company_code != "RDC")
+                    has_any_region = db.exists().where(
+                        InitiatorRegion.initiator_id == OnboardingRequest.initiated_by
+                    )
+                    rdc_ok = db.or_(
+                        ~has_any_region,
+                        _region_exists(my_region_ids),
+                        ~_region_exists(covered_region_ids),
+                    )
+                    base_q = base_q.filter(db.or_(OnboardingRequest.company_code != "RDC", rdc_ok))
+                    all_q = all_q.filter(db.or_(OnboardingRequest.company_code != "RDC", rdc_ok))
                 # else: RDC not ticked -> the company filter above already excludes all RDC rows
 
         # HR Manager: company-scoped only (2026-09-21, fail-closed) — never

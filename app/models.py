@@ -291,6 +291,17 @@ class OnboardingRequest(db.Model):
         # BH/HR Manager dashboard scoping (app/main/routes.py) and the admin
         # requests-list company filter — previously unindexed.
         db.Index("idx_req_company_code",    "company_code"),
+        # candidate_email/candidate_govt_id (2026-09-22): denormalized +
+        # indexed the same way candidate_name/company_code/etc. already are,
+        # so _check_email_registered()/_check_govt_id_registered() (fired
+        # on every onboarding-form field blur) can do an indexed lookup
+        # instead of loading and JSON-parsing every non-deleted/non-rejected
+        # request into Python on every keystroke-blur — negligible at
+        # today's live row count but a genuine linear-scan risk that only
+        # gets worse, and safest to fix now while the data is small enough
+        # to backfill trivially (see backfill_candidate_lookup_columns.py).
+        db.Index("idx_req_candidate_email",   "candidate_email"),
+        db.Index("idx_req_candidate_govt_id", "candidate_govt_id"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -304,6 +315,11 @@ class OnboardingRequest(db.Model):
     candidate_name = db.Column(db.String(200))   # = form_data['associate_name']
     company_code = db.Column(db.String(50))       # = form_data['company_code']
     plant_location = db.Column(db.String(200))    # = form_data['plant_location']
+    # Lowercased/digits-only mirrors of form_data['email_id']/['aadhar_no'],
+    # kept in sync purely so the duplicate-check queries below can filter at
+    # the DB level — see idx_req_candidate_email/idx_req_candidate_govt_id above.
+    candidate_email = db.Column(db.String(200))    # = form_data['email_id'].strip().lower()
+    candidate_govt_id = db.Column(db.String(20))   # = digits-only form_data['aadhar_no']
     designation = db.Column(db.String(200))       # = form_data['designation']
 
     # All form responses stored as JSON {field_key: value}

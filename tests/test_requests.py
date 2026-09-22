@@ -151,6 +151,13 @@ class TestGovtIdDuplicateCheck:
     def test_duplicate_against_another_request_is_flagged(self, client, db, app, initiator):
         other_req = _create_request(db, initiator, RequestStatus.PENDING_BH, candidate_name="Other Candidate")
         other_req.form_data = {"aadhar_no": "123412341234"}
+        # _check_govt_id_registered() now queries the indexed candidate_govt_id
+        # column (kept in sync by _sync_quick_access() on every real form
+        # save) rather than scanning form_data — this test bypasses that
+        # helper by writing form_data directly, so it must set the mirror
+        # column itself too, same convention as _create_request()'s own
+        # form_data/company_code mirroring above.
+        other_req.candidate_govt_id = "123412341234"
         db.session.commit()
         with app.app_context():
             login(client, initiator.email)

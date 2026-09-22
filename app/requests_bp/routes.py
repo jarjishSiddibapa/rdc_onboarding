@@ -1523,7 +1523,9 @@ def truein_preflight(token):
         return jsonify({"applicable": False})
     if new_status != RequestStatus.ACTIVE:
         return jsonify({"applicable": False})
-    from ..integrations.truein import preflight_check
+    from ..integrations.truein import preflight_check, is_company_tracked_in_truein
+    if not is_company_tracked_in_truein(req.company_code):
+        return jsonify({"applicable": False})
     result = preflight_check(req)
     return jsonify({"applicable": True, "issues": result["issues"]})
 
@@ -1573,8 +1575,14 @@ def approve_request(token):
     flash(f"Approved. Status: {req.status_label}", "success")
 
     # ── Auto-push to Truein when request reaches ACTIVE ───────────────────────
+    # Gated to companies Truein actually tracks under this account/subscription
+    # (RDC only, confirmed 2026-09-15 — see CLAUDE.md "Multi-Company Support"
+    # and is_company_tracked_in_truein()'s docstring). Without this gate, a
+    # Ultrafine/ROBO request reaching ACTIVE would still be pushed and
+    # mislabeled as an RDC Concrete employee (siteName is hardcoded).
     _push_issue = False
-    if new_status == RequestStatus.ACTIVE:
+    from ..integrations.truein import is_company_tracked_in_truein
+    if new_status == RequestStatus.ACTIVE and is_company_tracked_in_truein(req.company_code):
         from ..integrations.truein import (
             push_employee, start_retry_thread, _write_push_log,
             _handle_dropped_fields, _notify_push_failed,

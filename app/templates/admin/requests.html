@@ -39,7 +39,7 @@
       <td style="text-align:right;">
         <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
           <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-secondary btn-sm">View</a>
-          {% if req.status.value == 'ACTIVE' %}
+          {% if req.status.value == 'ACTIVE' and req.company_code == 'RDC' %}
           <div style="display:flex;align-items:center;gap:5px;">
             {% if req.truein_pushed_at and req.truein_dropped_list %}
               <span title="Synced {{ req.truein_pushed_at | ist }} — but missing in Truein: {{ req.truein_dropped_list | join(', ') }}. Enter manually in Truein dashboard."

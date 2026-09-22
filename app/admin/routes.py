@@ -1246,6 +1246,11 @@ def truein_push(token):
         flash("Only ACTIVE requests can be pushed to Truein.", "warning")
         return redirect(url_for("admin.requests_list"))
 
+    from ..integrations.truein import is_company_tracked_in_truein
+    if not is_company_tracked_in_truein(req.company_code):
+        flash(f"{req.company_code} is not tracked in Truein under this account — nothing to push.", "warning")
+        return redirect(url_for("admin.requests_list"))
+
     from ..integrations.truein import (
         push_employee, start_retry_thread, _write_push_log,
         _handle_dropped_fields, _notify_push_failed,
@@ -1374,9 +1379,12 @@ def truein_dryrun(token):
     a result page.  The addEmployeeDtls endpoint is NEVER called.
     """
     from ..requests_bp.routes import _get_req_by_token
-    from ..integrations.truein import dry_run_to_file
+    from ..integrations.truein import dry_run_to_file, is_company_tracked_in_truein
 
     req = _get_req_by_token(token)
+    if not is_company_tracked_in_truein(req.company_code):
+        flash(f"{req.company_code} is not tracked in Truein under this account — nothing to preview.", "warning")
+        return redirect(url_for("admin.requests_list"))
     output_dir = os.path.abspath(
         os.path.join(current_app.root_path, "..", "truein_dryruns")
     )

@@ -124,6 +124,37 @@ class TestBuildPayloadFieldCompleteness:
             assert payload["manager"] == "Some Manager"
             assert payload["uan_number"] == "UAN12345"
 
+    def test_bank_details_now_reach_the_payload(self, db, app):
+        """
+        2026-09-22 fix: bank_name/account_number/ifsc_code have been
+        collected on the form (step 3) since before this integration
+        existed, but were never in FIELD_MAP — same silent-drop bug as
+        father_name/uan_number above. Truein's own schema has exact
+        matching field names for all three.
+        """
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1,
+                public_token=uuid.uuid4().hex,
+                candidate_name="Test Candidate",
+                designation="Batching Plant Operator",
+                plant_location="BG-Test Plant",
+                company_code="RDC",
+            )
+            req.form_data = {
+                "bank_name": "Test Bank",
+                "account_number": "1234567890",
+                "ifsc_code": "TEST0001234",
+            }
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["bank_name"] == "Test Bank"
+            assert payload["account_number"] == "1234567890"
+            assert payload["ifsc_code"] == "TEST0001234"
+
     def test_sub_site_and_category_derived_from_plant_mapping(self, db, app):
         with app.app_context():
             cluster = ClusterNameMapping(canonical_cluster_name="BG Region", truein_category="Bangalore")

@@ -68,6 +68,14 @@ FIELD_MAP = {
     "id_number":             "id_number",
     "father_name":           "father_name",
     "uan_number":            "uan_number",
+    # Bank details (step 3 of the form) — Truein has exact matching field
+    # names for all three. Confirmed missing 2026-09-22: the form has
+    # collected these since before this integration existed, but they were
+    # never in FIELD_MAP, so they were silently dropped on every push —
+    # same category of bug as the father_name/uan_number fix above.
+    "bank_name":             "bank_name",
+    "account_number":        "account_number",
+    "ifsc_code":             "ifsc_code",
     # Employment
     "department":            "department",
     "dept":                  "department",
@@ -117,6 +125,22 @@ FIELD_MAP = {
 
 # ── Required fields Truein enforces ───────────────────────────────────────────
 REQUIRED_TRUEIN_FIELDS = ["empId", "name", "siteName"]
+
+# ── Company gate ────────────────────────────────────────────────────────────
+# Confirmed 2026-09-15 (see CLAUDE.md "Multi-Company Support"): this Truein
+# account/subscription tracks exactly two site_name values, "RDC Concrete"
+# and "RDC Drivers" — Robo Silicon and Ultrafine are not tracked in Truein
+# under this account at all. build_payload() hardcodes siteName to
+# "RDC Concrete" regardless of caller — before this gate, a Ultrafine/ROBO
+# request reaching ACTIVE would still be pushed and silently mislabeled as
+# an RDC Concrete employee, corrupting the very headcount data the RDC
+# staffing-norms gate reconciles against. Every push/preflight/dry-run call
+# site must check this before calling into Truein at all.
+TRUEIN_TRACKED_COMPANIES = {"RDC"}
+
+
+def is_company_tracked_in_truein(company_code) -> bool:
+    return company_code in TRUEIN_TRACKED_COMPANIES
 
 # ── Department derivation for new hires ────────────────────────────────────────
 # Our form never collects a raw "department" string from the initiator (unlike
@@ -846,6 +870,7 @@ def resume_pending_retries(app) -> int:
             OnboardingRequest.is_deleted   == False,
             OnboardingRequest.truein_pushed_at  == None,
             OnboardingRequest.truein_retry_stopped == False,
+            OnboardingRequest.company_code.in_(TRUEIN_TRACKED_COMPANIES),
         ).all()
 
         started = 0

@@ -158,6 +158,38 @@ class TestUltrafineRoboFullChain:
             # No InitiatorRegion/BusinessHeadRegion rows exist for either user at all.
             assert can_act_on(req, bh) is True
 
+    @pytest.mark.parametrize("company", ["Ultrafine", "ROBO"])
+    def test_activation_never_attempts_a_truein_push(self, client, db, app, company):
+        """
+        2026-09-22 fix: Truein tracks only RDC under this account/subscription
+        (confirmed — see is_company_tracked_in_truein() docstring). Before this
+        fix, build_payload()'s hardcoded siteName="RDC Concrete" meant an
+        Ultrafine/ROBO hire reaching ACTIVE would still be pushed and
+        mislabeled as an RDC Concrete employee. Activation must now skip the
+        push entirely — no push error, no push log, no retry thread.
+        """
+        tag = company.lower()
+        drb = _make_user(f"NoPushDrb_{tag}", f"nopushdrb_{tag}@t.com", UserRole.DR_BHOON, db)
+        initiator = _make_user(f"NoPushInit_{tag}", f"nopushinit_{tag}@t.com", UserRole.INITIATOR, db,
+                                companies=[company])
+        req = _create_request(db, initiator, RequestStatus.PENDING_DR_BHOON, company_code=company)
+        db.session.commit()
+        drb_email = drb.email
+
+        with app.app_context():
+            login(client, drb_email)
+            resp = client.post(f"/requests/{req.public_token}/approve",
+                                data={"remark": "ok drb"}, follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            from app.models import TrueinPushLog
+            updated = _db.session.get(OnboardingRequest, req.id)
+            assert updated.status == RequestStatus.ACTIVE
+            assert updated.truein_pushed_at is None
+            assert updated.truein_push_error is None
+            assert TrueinPushLog.query.filter_by(request_id=req.id).count() == 0
+
 
 class TestRdcUnaffected:
     """RDC's standard and special-case paths must stay byte-for-byte

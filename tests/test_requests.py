@@ -234,6 +234,83 @@ class TestGovtIdDuplicateCheck:
         assert 'pattern="[0-9]{12}"' in html
 
 
+class TestMobileDuplicateCheck:
+    """
+    Regression coverage for the 2026-09-24 fix: a mobile-number collision
+    with an existing Truein employee (request #41 "Sponge Bob" —
+    "mobile_truein_rejected", Truein dropped the field with no early
+    warning) was only discovered at final-approval push time, after the
+    entire multi-step approval chain had already run. This live-checks the
+    Mobile Number field the moment the initiator fills it, mirroring the
+    existing duplicate-email/duplicate-Aadhar checks exactly.
+    """
+
+    def test_no_duplicate_returns_ok(self, client, db, app, initiator):
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post("/requests/check-mobile-number", data={"mobile_number": "9988776655"})
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+    def test_duplicate_against_another_request_is_flagged(self, client, db, app, initiator):
+        other_req = _create_request(db, initiator, RequestStatus.PENDING_BH, candidate_name="Other Candidate")
+        other_req.form_data = {"mobile_number": "9123456789"}
+        # _check_mobile_registered() queries the indexed candidate_mobile
+        # column (kept in sync by _sync_quick_access() on every real form
+        # save) rather than scanning form_data — this test bypasses that
+        # helper by writing form_data directly, so it must set the mirror
+        # column itself too, same convention as the Aadhar test above.
+        other_req.candidate_mobile = "9123456789"
+        db.session.commit()
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post("/requests/check-mobile-number", data={"mobile_number": "9123456789"})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert body["duplicate"] is True
+        assert "already used" in body["error"]
+
+    def test_duplicate_against_truein_warm_cache_is_flagged(self, client, db, app, initiator):
+        """The second half of the check — a number already registered to a
+        real Truein employee, not just another request in our own DB."""
+        from unittest.mock import patch
+        with app.app_context():
+            login(client, initiator.email)
+            with patch("app.integrations.truein.get_cached_employees_if_warm",
+                       return_value=[{"name": "Existing Employee", "empId": "E001", "mobile": "9123456789"}]):
+                resp = client.post("/requests/check-mobile-number", data={"mobile_number": "9123456789"})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert body["duplicate"] is True
+        assert "Existing Employee" in body["error"]
+
+    def test_incomplete_number_is_never_flagged(self, client, db, app, initiator):
+        """Only a complete, valid 10-digit number is checked — an
+        in-progress typed number shouldn't trigger a false duplicate
+        lookup."""
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post("/requests/check-mobile-number", data={"mobile_number": "998877"})
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+
+    def test_mobile_field_renders_with_duplicate_check_hook(self, client, db, app, initiator):
+        db.session.add(FormField(
+            field_key="mobile_number", field_label="Mobile Number",
+            field_type=FieldType.TEL, step=1, is_required=True, is_active=True,
+        ))
+        db.session.commit()
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.get("/requests/new", follow_redirects=True)
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert 'onblur="checkMobileDuplicate()"' in html
+        assert 'id="mobile_number_input"' in html
+
+
 class TestEmailOtpPersistence:
     """
     Regression coverage for the 2026-09-23 fix: email OTP verification was
@@ -395,6 +472,120 @@ class TestCompanyAwarePlantLocationsApi:
         # render zero plant options here — seeing the ROBO plant confirms
         # the company-aware branch actually ran.
         assert "ROBO Only Plant" in html
+
+
+class TestInitiatorRegionScopedPlantPicker:
+    """
+    Coverage for the 2026-09-24 fix: InitiatorRegion has driven which
+    Business Head sees/can act on a request since 2026-09-04, but the
+    initiator's own New Request Plant Location picker never filtered by it
+    at all — any RDC initiator, regardless of assigned region, could pick
+    any plant in any region (confirmed live: a screenshot showing a
+    Mumbai-scoped initiator's Cluster/Region dropdown listing every region
+    in India). Now narrowed to the initiator's own InitiatorRegion scope,
+    both in the dropdown (plant_locations_api()/new_request()) and as a
+    submit-time defense-in-depth check (_validate_plant_region()) —
+    fail-open when the initiator has zero regions assigned (same
+    convention as bh_ids_for_initiator's region half), and a no-op for
+    Ultrafine/ROBO, which have no region concept.
+    """
+
+    def _make_two_region_plants(self, db):
+        from app.models import ClusterNameMapping, PlantDvtMapping
+        mumbai = ClusterNameMapping(canonical_cluster_name="MUMBAI")
+        assam = ClusterNameMapping(canonical_cluster_name="ASSAM")
+        db.session.add_all([mumbai, assam])
+        db.session.flush()
+        db.session.add_all([
+            PlantDvtMapping(plant_location_name="MUM-Test Plant", cluster_id=mumbai.id, dvt_plant_code="MUM1"),
+            PlantDvtMapping(plant_location_name="ASM-Test Plant", cluster_id=assam.id, dvt_plant_code="ASM1"),
+        ])
+        db.session.commit()
+        return mumbai, assam
+
+    def test_unscoped_initiator_sees_every_region_fail_open(self, client, db, app, initiator):
+        """No InitiatorRegion rows at all = unscoped, same fail-open
+        convention as bh_ids_for_initiator's region half — must not
+        accidentally lock an unassigned initiator out of everything."""
+        self._make_two_region_plants(db)
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.get("/requests/api/plant-locations?company=RDC")
+        values = {p["value"] for p in resp.get_json()["data"]}
+        assert {"MUM-Test Plant", "ASM-Test Plant"}.issubset(values)
+
+    def test_region_scoped_initiator_sees_only_their_own_region(self, client, db, app, initiator):
+        from app.models import InitiatorRegion
+        mumbai, _assam = self._make_two_region_plants(db)
+        db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=mumbai.id))
+        db.session.commit()
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.get("/requests/api/plant-locations?company=RDC")
+        values = {p["value"] for p in resp.get_json()["data"]}
+        assert values == {"MUM-Test Plant"}
+
+    def test_ultrafine_company_ignores_region_scope_entirely(self, client, db, app, initiator):
+        """Ultrafine/ROBO have no region concept — a region-scoped RDC
+        initiator must still see every plant of a non-RDC company."""
+        from app.models import InitiatorRegion
+        mumbai, _assam = self._make_two_region_plants(db)
+        db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=mumbai.id))
+        db.session.add(PlantLocation(name="UF Any Region Plant", company="Ultrafine", is_active=True))
+        db.session.commit()
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.get("/requests/api/plant-locations?company=Ultrafine")
+        values = {p["value"] for p in resp.get_json()["data"]}
+        assert values == {"UF Any Region Plant"}
+
+    def test_submit_blocked_for_plant_outside_assigned_region(self, client, db, app, initiator, business_head):
+        """Defense-in-depth: a crafted POST naming a plant outside the
+        initiator's region must be rejected even though it was never
+        offered in their dropdown."""
+        from app.models import InitiatorRegion, BusinessHeadRegion
+        mumbai, assam = self._make_two_region_plants(db)
+        db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=mumbai.id))
+        db.session.add(BusinessHeadRegion(business_head_id=business_head.id, cluster_id=mumbai.id))
+        db.session.commit()
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="RDC")
+        req.form_data = dict(req.form_data, plant_location="ASM-Test Plant")  # outside their MUMBAI-only scope
+        db.session.commit()
+        token = req.public_token
+        req_id = req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "outside your assigned region" in html
+        updated = _db.session.get(OnboardingRequest, req_id)
+        assert updated.status == RequestStatus.DRAFT   # never progressed
+
+    def test_submit_allowed_for_plant_inside_assigned_region(self, client, db, app, initiator, business_head, hr_manager, head_hr):
+        from app.models import InitiatorRegion, BusinessHeadRegion
+        mumbai, _assam = self._make_two_region_plants(db)
+        db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=mumbai.id))
+        db.session.add(BusinessHeadRegion(business_head_id=business_head.id, cluster_id=mumbai.id))
+        db.session.commit()
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="RDC")
+        # designation "Engineer" isn't trainee-named, so submit_request()'s
+        # UAN check requires uan_number too — unrelated to region scoping,
+        # just test-data completeness for a clean pass-through.
+        req.form_data = dict(req.form_data, plant_location="MUM-Test Plant", uan_number="UAN123456789")
+        db.session.commit()
+        token = req.public_token
+        req_id = req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
+        assert resp.status_code == 200
+        updated = _db.session.get(OnboardingRequest, req_id)
+        assert updated.status == RequestStatus.PENDING_BH
 
 
 class TestManagerEmpIdPersistence:

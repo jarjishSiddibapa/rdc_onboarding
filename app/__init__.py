@@ -50,6 +50,7 @@ _REQUIRED_COLUMNS = [
     ("onboarding_requests", "candidate_email",           "VARCHAR(200) NULL"),
     ("onboarding_requests", "candidate_govt_id",         "VARCHAR(20) NULL"),
     ("onboarding_requests", "candidate_email_verified",  "VARCHAR(200) NULL"),
+    ("onboarding_requests", "candidate_mobile",          "VARCHAR(15) NULL"),
 ]
 
 
@@ -102,6 +103,7 @@ def _auto_migrate(engine):
             ("idx_emp_snapshot_computed_at",   "employee_location_snapshots", "computed_at"),
             ("idx_req_candidate_email",        "onboarding_requests",        "candidate_email"),
             ("idx_req_candidate_govt_id",      "onboarding_requests",        "candidate_govt_id"),
+            ("idx_req_candidate_mobile",       "onboarding_requests",        "candidate_mobile"),
         ]
         for idx_name, tbl, cols in _INDEXES:
             result = conn.execute(

@@ -125,6 +125,31 @@ def company_scope_ids(user_id) -> set[str]:
     return {r.company for r in UserCompanyScope.query.filter_by(user_id=user_id).all()}
 
 
+def initiator_region_cluster_ids(initiator_id):
+    """
+    Cluster (region) ids this initiator is assigned to via InitiatorRegion.
+    Returns None — not an empty set — when the initiator has zero region
+    rows, meaning "unscoped, every region" (same fail-open convention as
+    bh_ids_for_initiator's region half, deliberately not the company-scope
+    tables' fail-closed one, since a not-yet-region-assigned initiator must
+    still be able to submit *something* rather than seeing an empty plant
+    dropdown).
+
+    Added 2026-09-24 to fix a real gap: InitiatorRegion has driven which
+    Business Head sees/can act on a request since 2026-09-04, but the
+    initiator's own New Request plant picker never filtered by it at all —
+    a Mumbai-only initiator could freely pick a plant in Assam. Used to
+    narrow both the Plant Location dropdown (requests_bp.py's
+    _dvt_matched_plant_options()/plant_locations_api()/new_request()) and
+    the matching submit-time defense-in-depth check, RDC only — Ultrafine/
+    ROBO have no region concept at all (see bh_ids_for_initiator's own
+    docstring).
+    """
+    from .models import InitiatorRegion
+    ids = {r.cluster_id for r in InitiatorRegion.query.filter_by(initiator_id=initiator_id).all()}
+    return ids or None
+
+
 def hr_manager_ids_for_company(company_code) -> set[int]:
     """Active HR Manager user ids ticked for company_code. Fail-closed —
     empty set if nobody is ticked."""

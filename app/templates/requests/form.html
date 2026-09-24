@@ -206,8 +206,12 @@
                as valid here and only failed much later, at the Truein push. #}
             <input class="inp" type="tel" name="{{ field.field_key }}" value="{{ val }}"
               {% if field.is_required %}required{% endif %}
+              {% if field.field_key == 'mobile_number' %}id="mobile_number_input" onblur="checkMobileDuplicate()"{% endif %}
               pattern="[6-9][0-9]{9}" maxlength="10" title="Must be 10 digits, starting with 6, 7, 8, or 9"
               placeholder="{{ field.placeholder or '10-digit mobile number' }}"/>
+            {% if field.field_key == 'mobile_number' %}
+              <p id="mobile-dup-feedback" style="font-size:12px;margin-top:5px;margin-bottom:0;"></p>
+            {% endif %}
 
           <!-- ── NUMBER ── -->
           {% elif field.field_type == FieldType.NUMBER %}
@@ -528,6 +532,27 @@
       </div>
     </div>
   </div>
+
+  <div id="duplicate-mobile-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
+    <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="duplicate-mobile-modal-overlay"></div>
+    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
+        <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div>
+          <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Mobile Number Already Registered?</h3>
+          <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="duplicate-mobile-modal-msg"></p>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+        This is an early best-effort check, not a guarantee — please double-check the number before continuing. If it's genuinely correct, fix the collision (with HR) before this request can be approved.
+      </p>
+      <div style="display:flex;gap:10px;">
+        <button type="button" class="btn btn-primary" style="flex:1;justify-content:center;" id="duplicate-mobile-modal-ok">OK</button>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -757,6 +782,55 @@ function checkGovtIdDuplicate() {
   function close() {
     if (modal) modal.style.display = 'none';
     var inp = document.getElementById('aadhar_no_input');
+    if (inp) inp.focus();
+  }
+  if (okBtn) okBtn.addEventListener('click', close);
+  if (overlay) overlay.addEventListener('click', close);
+})();
+
+/* ── Mobile Number duplicate check — fires on blur, same "show it
+   immediately" pattern as the Aadhar check above. Added 2026-09-24 after a
+   real live incident (request #41 "Sponge Bob") where a Truein mobile
+   collision was only discovered at final-approval push time, well after
+   the initiator had already moved on. ── */
+var _CHECK_MOBILE_URL = "{{ url_for('requests_bp.check_mobile_number') }}";
+
+function checkMobileDuplicate() {
+  var inp = document.getElementById('mobile_number_input');
+  var fb  = document.getElementById('mobile-dup-feedback');
+  if (!inp) return;
+  var val = inp.value.trim();
+  inp.removeAttribute('data-mobile-dup');
+  if (fb) fb.textContent = '';
+  if (!/^[6-9][0-9]{9}$/.test(val)) return;   // incomplete/malformed — pattern validation covers this separately
+  fetch(_CHECK_MOBILE_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'csrf_token=' + encodeURIComponent(_CSRF) + '&mobile_number=' + encodeURIComponent(val)
+        + '&token=' + encodeURIComponent(_REQ_TOKEN || ''),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (!d.ok && d.duplicate) {
+      inp.setAttribute('data-mobile-dup', '1');
+      if (fb) { fb.textContent = d.error || 'This mobile number appears to already be registered.'; fb.style.color = 'var(--c-danger)'; }
+      var m = document.getElementById('duplicate-mobile-modal');
+      var mm = document.getElementById('duplicate-mobile-modal-msg');
+      if (mm) mm.textContent = d.error || 'This mobile number appears to already be registered.';
+      if (m) { m.style.display = 'flex'; }
+    }
+    if (window.refreshBlockingIssues) window.refreshBlockingIssues(false);
+  })
+  .catch(function() { /* fail open — a network error must never block the form */ });
+}
+
+(function() {
+  var modal = document.getElementById('duplicate-mobile-modal');
+  var overlay = document.getElementById('duplicate-mobile-modal-overlay');
+  var okBtn = document.getElementById('duplicate-mobile-modal-ok');
+  function close() {
+    if (modal) modal.style.display = 'none';
+    var inp = document.getElementById('mobile_number_input');
     if (inp) inp.focus();
   }
   if (okBtn) okBtn.addEventListener('click', close);
@@ -1335,6 +1409,13 @@ window.RDCCapacityGate = { blocked: false, message: '', el: null };
     var aadharInp = document.getElementById('aadhar_no_input');
     if (aadharInp && aadharInp.getAttribute('data-govtid-dup') === '1') {
       issues.push({ label: 'Aadhar Number — appears to already be registered, please double-check', el: aadharInp });
+    }
+
+    // Mobile Number: flagged as a duplicate by checkMobileDuplicate() on blur —
+    // same reasoning as the Aadhar check above.
+    var mobileInp = document.getElementById('mobile_number_input');
+    if (mobileInp && mobileInp.getAttribute('data-mobile-dup') === '1') {
+      issues.push({ label: 'Mobile Number — appears to already be registered, please double-check', el: mobileInp });
     }
 
     issuesList.innerHTML = '';

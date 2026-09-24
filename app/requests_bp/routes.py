@@ -103,6 +103,7 @@ def _sync_quick_access(req):
     req.designation = fd.get("designation", "") or ""
     req.candidate_email = (fd.get("email_id") or "").strip().lower()
     req.candidate_govt_id = re.sub(r"\D", "", fd.get("aadhar_no") or "")
+    req.candidate_mobile = re.sub(r"\D", "", fd.get("mobile_number") or "")
 
 
 def _validate_required(fields, form_data):
@@ -181,6 +182,33 @@ def _validate_approver_availability(req):
     if visits_hr_manager and not hr_manager_ids_for_company(company):
         return (f"No HR Manager is currently configured for {company}. "
                 f"Contact your administrator before submitting this request.")
+    return None
+
+
+def _validate_plant_region(req):
+    """
+    Defense-in-depth companion to the RDC plant dropdown's InitiatorRegion
+    filtering (new_request()/plant_locations_api(), 2026-09-24) — a crafted
+    POST could otherwise still submit a plant outside the initiator's
+    assigned regions even though it was never offered in their dropdown.
+    Fails open (returns None, i.e. no error) when the initiator has no
+    regions assigned at all (same convention as bh_ids_for_initiator's
+    region half — an unscoped initiator can pick anything), and doesn't
+    apply to Ultrafine/ROBO, which have no region concept. Returns an error
+    string to flash, or None if the plant is in scope (or the check
+    doesn't apply).
+    """
+    from ..utils import initiator_region_cluster_ids
+    company = req.form_data.get("company_code", "")
+    if company != "RDC":
+        return None
+    cluster_ids = initiator_region_cluster_ids(req.initiated_by)
+    if cluster_ids is None:
+        return None
+    plant_name = req.form_data.get("plant_location", "")
+    mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant_name, is_deleted=False).first()
+    if not mapping or mapping.cluster_id not in cluster_ids:
+        return "This plant is outside your assigned region(s). Contact your administrator if this is incorrect."
     return None
 
 
@@ -348,6 +376,54 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
     return None
 
 
+def _check_mobile_registered(mobile_number: str, exclude_token: str | None = None) -> str | None:
+    """
+    Best-effort early duplicate-mobile check — the same "show the problem
+    immediately" pattern as _check_email_registered/_check_govt_id_registered
+    above, added 2026-09-24 after a real live incident (request #41 "Sponge
+    Bob") where a mobile number Truein already had registered to a
+    different employee was only discovered at final-approval push time —
+    by then the request had already gone through the entire multi-step
+    approval chain (see truein.py's mobile_truein_rejected dropped-field
+    label, which already existed for exactly this rejection but only ever
+    surfaced it to Head HR/HR Manager after the fact, not to the initiator
+    while there was still time to just ask the candidate for a different
+    number). Not authoritative — Truein's own response at push time remains
+    the final say, but this catches the common case immediately.
+
+    Checks, in order (mirrors _check_govt_id_registered exactly):
+      1. Our own DB — any other non-deleted, non-rejected request already
+         using this mobile number, via the indexed candidate_mobile column
+         (kept in sync by _sync_quick_access() on every form save).
+      2. Truein's warm employee cache ONLY (never triggers a live pull).
+    Compares via the same 10-digit, +91-stripped normalization truein.py's
+    own _clean_mobile() uses for the push itself, so formatting differences
+    never cause a false negative.
+    """
+    from ..integrations.truein import _clean_mobile
+    digits, _err = _clean_mobile(mobile_number)
+    if not digits:
+        return None  # not a complete/valid number yet — format validation handles that separately
+
+    dup_q = OnboardingRequest.query.filter_by(is_deleted=False, candidate_mobile=digits).filter(
+        OnboardingRequest.status.notin_(REJECTED_STATUSES))
+    if exclude_token:
+        dup_q = dup_q.filter(OnboardingRequest.public_token != exclude_token)
+    if dup_q.first():
+        return "This mobile number is already used on another onboarding request in this system."
+
+    from ..integrations import truein
+    for e in (truein.get_cached_employees_if_warm() or []):
+        existing_mobile, _ = _clean_mobile(e.get("mobile"))
+        if existing_mobile and existing_mobile == digits:
+            name = (e.get("name") or "").strip()
+            code = (e.get("empId") or "").strip()
+            who = f" — matches existing employee {name} ({code})" if name else ""
+            return f"This mobile number appears to already be registered in Truein{who}."
+
+    return None
+
+
 # ── Email OTP (candidate email verification) ──────────────────────────────────
 
 # smtplib's own `timeout=` (see _send_smtp) only bounds each individual
@@ -465,9 +541,28 @@ def check_govt_id():
     return jsonify({"ok": True})
 
 
+@requests_bp.route("/check-mobile-number", methods=["POST"])
+@login_required
+@role_required(UserRole.INITIATOR)
+def check_mobile_number():
+    """
+    Live duplicate check for the Mobile Number field, fired on blur (see
+    form.html's checkMobileDuplicate()) — same "show the problem
+    immediately" pattern as check_govt_id() above, added 2026-09-24 after
+    a real live incident (request #41 "Sponge Bob") where a Truein-side
+    mobile collision was only discovered at final-approval push time.
+    """
+    mobile = request.form.get("mobile_number", "").strip()
+    token  = request.form.get("token", "").strip() or None
+    dup_reason = _check_mobile_registered(mobile, exclude_token=token)
+    if dup_reason:
+        return jsonify({"ok": False, "duplicate": True, "error": dup_reason})
+    return jsonify({"ok": True})
+
+
 # ── Truein lookup proxies ─────────────────────────────────────────────────────
 
-def _dvt_matched_plant_options() -> list[dict]:
+def _dvt_matched_plant_options(cluster_ids=None) -> list[dict]:
     """
     Plant Location dropdown options for the onboarding form — restricted to
     plants we actually have a confirmed Daily Volume Tracker mapping for
@@ -481,12 +576,21 @@ def _dvt_matched_plant_options() -> list[dict]:
     region/cluster name (or "Other" if never clustered) — used to drive the
     form's Cluster -> Plant cascading picker so the initiator isn't
     scrolling one 139-long flat list.
+
+    `cluster_ids` (added 2026-09-24): an optional set of ClusterNameMapping
+    ids to restrict to — the calling initiator's own InitiatorRegion scope
+    (see utils.initiator_region_cluster_ids()). None means unscoped (every
+    confirmed plant, the old unconditional behavior) — used both when the
+    initiator has zero regions assigned (fail-open, same convention as
+    bh_ids_for_initiator's region half) and for any non-RDC company, which
+    has no region concept at all.
     """
-    rows = (PlantDvtMapping.query
-            .filter_by(is_deleted=False)
-            .filter(PlantDvtMapping.dvt_plant_code.isnot(None))
-            .order_by(PlantDvtMapping.plant_location_name)
-            .all())
+    q = (PlantDvtMapping.query
+         .filter_by(is_deleted=False)
+         .filter(PlantDvtMapping.dvt_plant_code.isnot(None)))
+    if cluster_ids is not None:
+        q = q.filter(PlantDvtMapping.cluster_id.in_(cluster_ids))
+    rows = q.order_by(PlantDvtMapping.plant_location_name).all()
     return [{
         "value": p.plant_location_name,
         "label": p.display_name,
@@ -517,7 +621,12 @@ def plant_locations_api():
     company = request.args.get("company", "RDC")
     if company not in COMPANY_CHOICES:
         company = "RDC"
-    options = _dvt_matched_plant_options() if company == "RDC" else _company_plant_options(company)
+    if company == "RDC":
+        from ..utils import initiator_region_cluster_ids
+        cluster_ids = initiator_region_cluster_ids(current_user.id) if current_user.role == UserRole.INITIATOR else None
+        options = _dvt_matched_plant_options(cluster_ids)
+    else:
+        options = _company_plant_options(company)
     return jsonify({"ok": True, "data": options})
 
 
@@ -619,7 +728,11 @@ def new_request():
     _req_company = req.form_data.get("company_code") or "RDC"
     if _req_company not in COMPANY_CHOICES:
         _req_company = "RDC"
-    plants = _dvt_matched_plant_options() if _req_company == "RDC" else _company_plant_options(_req_company)
+    if _req_company == "RDC":
+        from ..utils import initiator_region_cluster_ids
+        plants = _dvt_matched_plant_options(initiator_region_cluster_ids(current_user.id))
+    else:
+        plants = _company_plant_options(_req_company)
     designations = Designation.query.filter_by(is_active=True, is_deleted=False).order_by(Designation.sort_order, Designation.name).all()
 
     if request.method == "POST":
@@ -767,6 +880,17 @@ def submit_request(token):
         flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
+    # Defense-in-depth: the RDC plant dropdown already filters to this
+    # initiator's own InitiatorRegion scope (see new_request()), but a
+    # crafted POST could still name a plant outside it — reject it the same
+    # way as an unticked company, above. Fails open when the initiator has
+    # no regions assigned (see utils.initiator_region_cluster_ids), and
+    # doesn't apply at all to Ultrafine/ROBO, which have no region concept.
+    region_error = _validate_plant_region(req)
+    if region_error:
+        flash(region_error, "danger")
+        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
     # UAN: mandatory for non-trainee designations
     designation_val = req.form_data.get("designation", "")
     if designation_val and "trainee" not in designation_val.lower():
@@ -838,6 +962,11 @@ def resubmit_request(token):
     from ..utils import company_scope_ids
     if req.form_data.get("company_code", "") not in company_scope_ids(current_user.id):
         flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
+        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
+    region_error = _validate_plant_region(req)
+    if region_error:
+        flash(region_error, "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     if req.form_data.get("company_code") == "RDC":

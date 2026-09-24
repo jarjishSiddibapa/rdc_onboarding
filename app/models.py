@@ -320,6 +320,11 @@ class OnboardingRequest(db.Model):
     # the DB level — see idx_req_candidate_email/idx_req_candidate_govt_id above.
     candidate_email = db.Column(db.String(200))    # = form_data['email_id'].strip().lower()
     candidate_govt_id = db.Column(db.String(20))   # = digits-only form_data['aadhar_no']
+    # Digits-only mirror of form_data['mobile_number'], same convention and
+    # reason as candidate_govt_id above — added 2026-09-24 so
+    # _check_mobile_registered() can filter at the DB level instead of a
+    # full scan (see idx_req_candidate_mobile).
+    candidate_mobile = db.Column(db.String(15))
     designation = db.Column(db.String(200))       # = form_data['designation']
     # The exact email address OTP-verified for THIS request (2026-09-23 fix)
     # — was previously tracked only in the Flask session (session['_email_otp_verified']),

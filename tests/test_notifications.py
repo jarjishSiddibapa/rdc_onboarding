@@ -105,3 +105,46 @@ class TestDuplicateEmailCheck:
         # (email service not configured) — the important assertion is that it
         # is NOT flagged as a duplicate.
         assert not data.get("duplicate")
+
+
+class TestSendOtpTimeout:
+    """
+    Regression coverage for the 2026-09-24 fix: a hung/slow SMTP send (a
+    real incident — smtplib's own timeout= doesn't bound the DNS lookup
+    that happens before the socket even exists, so a flaky factory-LAN
+    resolver could hang the request far longer than expected) used to
+    leave the request — and the browser's "Send OTP" button — hanging
+    indefinitely, with the request's DB connection held open the whole
+    time. send_email_otp() now runs the send in a bounded worker pool
+    (_OTP_EMAIL_EXECUTOR) and returns a clear, timely error instead of
+    hanging past _OTP_EMAIL_TIMEOUT.
+    """
+
+    def test_slow_smtp_send_times_out_with_a_clear_error_not_a_hang(self, client, db, app, monkeypatch):
+        import time as _time
+        initiator = _make_user("SlowSmtpInit", "slowsmtpinit@t.com", UserRole.INITIATOR, db)
+        db.session.commit()
+        initiator_email = initiator.email
+
+        def _hang(*args, **kwargs):
+            _time.sleep(0.5)
+
+        with app.app_context():
+            monkeypatch.setattr("app.requests_bp.routes._OTP_EMAIL_TIMEOUT", 0.1)
+            monkeypatch.setattr("app.utils._send_smtp", _hang)
+            monkeypatch.setattr(
+                "app.requests_bp.routes.get_db_mail_config",
+                lambda: {"server": "smtp.test", "port": 587, "username": "u", "password": "p", "sender": "u"},
+            )
+            login(client, initiator_email)
+            started = _time.time()
+            resp = client.post("/requests/send-email-otp", data={"email": "someone@candidate.com"})
+            elapsed = _time.time() - started
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is False
+        assert "taking too long" in data["error"]
+        # Bounded by the (monkeypatched) 0.1s timeout, not the full 0.5s hang —
+        # the whole point of the fix.
+        assert elapsed < 0.4

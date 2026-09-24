@@ -3,6 +3,7 @@ import re
 import time
 import uuid
 import random
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
 from datetime import datetime, date as _date
 from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify
 from flask_login import login_required, current_user
@@ -349,14 +350,35 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
 
 # ── Email OTP (candidate email verification) ──────────────────────────────────
 
+# smtplib's own `timeout=` (see _send_smtp) only bounds each individual
+# socket read/write — NOT the DNS lookup that happens before the socket
+# even exists (a real Python/stdlib gotcha, not specific to this app). On a
+# factory LAN where outbound SMTP is flaky or a DNS resolver hangs instead
+# of failing fast, that left send_email_otp() able to block the whole
+# request — and the DB connection it holds for the request's lifetime —
+# for far longer than 30s, with the browser's "Sending…" button never
+# resolving either way (confirmed incident, 2026-09-24: reported as the
+# button going "into a loop", then a stuck blank page on refresh). Running
+# the send in this dedicated worker pool and bounding it with .result()
+# guarantees the HTTP response — and the DB connection — is never held
+# past _OTP_EMAIL_TIMEOUT, no matter what hangs on the SMTP/DNS side. A
+# separate small pool (not the main Werkzeug request threads, not the DB
+# connection pool) also means a handful of stuck sends can only ever queue
+# future OTP sends, never stall unrelated page loads.
+_OTP_EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="otp-email")
+_OTP_EMAIL_TIMEOUT = 20  # seconds
+
+
 @requests_bp.route("/send-email-otp", methods=["POST"])
 @login_required
 @role_required(UserRole.INITIATOR)
+@limiter.limit("10 per hour")
 def send_email_otp():
     """Send a 6-digit OTP to the candidate email to prove it exists.
 
-    Uses synchronous SMTP so failures are caught and returned immediately —
-    async send_email() would silently swallow errors and show a false 'OTP sent'.
+    Uses synchronous SMTP (via a bounded worker, see _OTP_EMAIL_EXECUTOR
+    above) so failures are caught and returned immediately — async
+    send_email() would silently swallow errors and show a false 'OTP sent'.
     """
     from ..utils import _send_smtp
     email = request.form.get("email", "").strip().lower()
@@ -370,12 +392,17 @@ def send_email_otp():
     if not cfg["username"]:
         return jsonify({"ok": False, "error": "Email service is not configured on this server. Contact the administrator."})
     otp = f"{random.randint(0, 999999):06d}"
+    future = _OTP_EMAIL_EXECUTOR.submit(
+        _send_smtp, cfg, [email],
+        "Email Verification OTP — RDC Teamlease Onboarding",
+        f"Your OTP for email verification is: {otp}\n\n"
+        f"Valid for 10 minutes. Do not share it with anyone.\n\n"
+        f"— RDC Teamlease HR Onboarding Portal",
+    )
     try:
-        _send_smtp(cfg, [email],
-                   "Email Verification OTP — RDC Teamlease Onboarding",
-                   f"Your OTP for email verification is: {otp}\n\n"
-                   f"Valid for 10 minutes. Do not share it with anyone.\n\n"
-                   f"— RDC Teamlease HR Onboarding Portal")
+        future.result(timeout=_OTP_EMAIL_TIMEOUT)
+    except _FutureTimeoutError:
+        return jsonify({"ok": False, "error": "The email server is taking too long to respond. Please wait a moment and try again."})
     except Exception as exc:
         return jsonify({"ok": False, "error": f"Could not send OTP email: {exc}"})
     # Store in session only after confirmed delivery
@@ -386,6 +413,7 @@ def send_email_otp():
 @requests_bp.route("/verify-email-otp", methods=["POST"])
 @login_required
 @role_required(UserRole.INITIATOR)
+@limiter.limit("30 per hour")
 def verify_email_otp():
     """
     Check the OTP entered against what was sent, and persist the result onto

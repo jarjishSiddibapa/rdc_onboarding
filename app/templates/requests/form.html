@@ -660,14 +660,24 @@ function sendEmailOTP() {
   }
   var btn = document.getElementById('otp-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  // Client-side safety net matching the server's own bounded wait (see
+  // _OTP_EMAIL_TIMEOUT in routes.py) — even if a response never reaches
+  // the browser (a flaky network hop, not just a slow SMTP server), the
+  // button must recover on its own instead of sitting on "Sending…"
+  // forever with no way out except a page refresh (the reported incident).
+  var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timedOut = false;
+  var timer = controller ? setTimeout(function() { timedOut = true; controller.abort(); }, 25000) : null;
   fetch(_SEND_OTP_URL, {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: 'csrf_token=' + encodeURIComponent(_CSRF) + '&email=' + encodeURIComponent(email)
         + '&token=' + encodeURIComponent(_REQ_TOKEN || ''),
+    signal: controller ? controller.signal : undefined,
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
+    if (timer) clearTimeout(timer);
     if (btn) { btn.disabled = false; btn.textContent = 'Resend OTP'; }
     var sec = document.getElementById('otp-input-section');
     var fb  = document.getElementById('otp-feedback');
@@ -681,8 +691,11 @@ function sendEmailOTP() {
     }
   })
   .catch(function() {
+    if (timer) clearTimeout(timer);
     if (btn) { btn.disabled = false; btn.textContent = 'Resend OTP'; }
-    alert('Network error — please try again.');
+    alert(timedOut
+      ? 'This is taking too long — the email server may be unreachable. Please try again in a moment.'
+      : 'Network error — please try again.');
   });
 }
 

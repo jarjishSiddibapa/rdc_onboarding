@@ -107,8 +107,27 @@ FIELD_MAP = {
     # display field on Truein's side, unlike manager_emp_id which Truein
     # validates against its own employee list.
     "reporting_manager_name": "manager",
-    "l1_manager_emp_id":      "l1_manager_emp_id",
-    "l2_manager_emp_id":      "l2_manager_emp_id",
+    # CORRECTED 2026-09-24 — confirmed live (request #41 "Sponge Bob"): even
+    # after the 2026-09-24 fix that made _collect_form_data() actually save
+    # l1_manager_emp_id (see TestManagerEmpIdPersistence), Truein's Staff
+    # Directory still showed "Manager: -". Root cause: this line was mapping
+    # our validated l1_manager_emp_id onto an outgoing JSON key of the same
+    # name — but "l1_manager_emp_id" isn't a real Truein field at all
+    # (confirmed against Truein_API_Developer_Reference.html — the only
+    # manager-link field Truein's API documents is "manager_emp_id", the
+    # very one disabled above). Truein silently ignores unknown JSON keys
+    # rather than erroring, so the push always "succeeded" with no dropped-
+    # field warning, and Manager just never got set. l1_manager_emp_id is
+    # exactly the validated value manager_emp_id was disabled for lack of
+    # (see the NOTE above — it can only be set by the Reporting Manager
+    # typeahead in form.html actually picking a real Truein match, unlike
+    # the free-typed reporting_manager_code), so it's now mapped to the
+    # real field name instead. The existing "drop manager_emp_id and retry"
+    # fallback (see push_employee()) already operates on this same outgoing
+    # key, so a stale/no-longer-valid match is still handled gracefully.
+    # l2_manager_emp_id was dead code — no form field or JS ever set it, and
+    # it isn't a real Truein field either — removed rather than mapped.
+    "l1_manager_emp_id":      "manager_emp_id",
     # Site / location
     "site_code":             "siteCode",
     "siteCode":              "siteCode",

@@ -155,6 +155,43 @@ class TestBuildPayloadFieldCompleteness:
             assert payload["account_number"] == "1234567890"
             assert payload["ifsc_code"] == "TEST0001234"
 
+    def test_validated_manager_pick_reaches_truein_as_manager_emp_id(self, db, app):
+        """
+        Regression coverage for a real production incident (request #41
+        "Sponge Bob", 2026-09-24): Truein's Staff Directory still showed
+        "Manager: -" even after l1_manager_emp_id was confirmed correctly
+        saved to form_data. FIELD_MAP was mapping it onto an outgoing key
+        of the same name, "l1_manager_emp_id" — not a real Truein field at
+        all (Truein_API_Developer_Reference.html only documents
+        "manager_emp_id") — so Truein silently ignored it, no error, no
+        dropped-field warning, Manager just never got set. The Reporting
+        Manager typeahead in form.html only ever sets this field when the
+        initiator picks a real match from Truein's own manager list, so
+        it's exactly the validated value manager_emp_id (see the NOTE in
+        FIELD_MAP) was disabled for lack of — now mapped to that real
+        field instead.
+        """
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1, public_token=uuid.uuid4().hex,
+                candidate_name="Manager Link Candidate", designation="Electrician",
+                plant_location="BG-Test Plant", company_code="RDC",
+            )
+            req.form_data = {
+                "reporting_manager_name": "Ritik Raj",
+                "reporting_manager_code": "te00975",   # free-typed HR code — must NOT reach Truein
+                "l1_manager_emp_id": "R00263",          # validated Truein empId from the typeahead pick
+            }
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["manager_emp_id"] == "R00263"
+            assert payload["manager"] == "Ritik Raj"
+            assert "l1_manager_emp_id" not in payload
+            assert "reporting_manager_code" not in payload
+
     def test_category_falls_back_to_plant_name_when_no_cluster_reconciliation(self, db, app):
         """
         2026-09-23 fix: category was only ever set when a PlantDvtMapping

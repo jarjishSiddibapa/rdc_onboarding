@@ -954,6 +954,58 @@ def get_all_employees(source=None, designation=None, department=None, resolved=N
     return rows, total
 
 
+def get_rdc_unmapped_employees(exclude_ids: set, latest_run=None) -> list:
+    """
+    RDC employees (`company.is_(None)`) from the latest run that a caller's
+    own By Cluster/By Plant/By Employees traversal didn't already surface
+    (`exclude_ids` — the `EmployeeLocationSnapshot.id`s already emitted by
+    that traversal). In practice this is anyone whose location doesn't
+    resolve to a plant this app currently trusts: no `plant_location_key`
+    at all, or one set to a raw string with no CONFIRMED (AUTO_EXACT/MANUAL)
+    `PlantDvtMapping` row — an UNMATCHED/AUTO_FUZZY guess, a plant that's
+    been closed/decommissioned and dropped out of DVT's own list, or a
+    non-plant string like "MUM-Area Office" that was never meant to map to
+    a plant at all.
+
+    Added 2026-09-24 (stakeholder request). `staffing_status_download()`'s
+    By Plant/By Employees sheets only ever traverse
+    `get_plants_in_cluster()`'s CONFIRMED plants — deliberately, so an
+    unverified plant-name guess never shows fabricated volume/tier/allowed-
+    headcount data (see that function's docstring, and gotcha #13 in
+    CLAUDE.md). That's still correct for tier/hiring-gate data, but it also
+    meant a real employee at any unconfirmed or closed plant was completely
+    invisible in the download, with no way to even know they existed — a
+    live check (2026-09-24) found ~26 distinct raw location strings this
+    way, several hundred real employees combined. This function is pure
+    headcount visibility, no tier/volume/hiring-gate implication at all, so
+    it's safe to surface regardless of match confidence — the RDC
+    equivalent of `get_other_company_unresolved_count()` for Ultrafine/ROBO,
+    added the same day for the same reason.
+
+    `exclude_ids` is required, not inferred from match-confidence alone,
+    because the caller's own traversal is ALREADY correctly region/company
+    scoped (a Business Head only sees their own clusters) and already
+    covers "resolved to a cluster but not a specific plant" — recomputing
+    that scoping independently here would either duplicate rows already
+    shown, or leak an out-of-scope employee into a report the viewer isn't
+    supposed to see the rest of. Passing the exact set of ids the caller
+    already emitted keeps this function correct by construction instead of
+    by parallel, driftable logic.
+
+    `latest_run` — see get_employees_at_plant()'s docstring.
+    """
+    if latest_run is None:
+        latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+    if not latest_run:
+        return []
+    rows = (EmployeeLocationSnapshot.query
+            .filter_by(computed_at=latest_run)
+            .filter(EmployeeLocationSnapshot.company.is_(None))
+            .order_by(EmployeeLocationSnapshot.employee_name)
+            .all())
+    return [e for e in rows if e.id not in exclude_ids]
+
+
 # ── Ultrafine/ROBO — simple headcount views (added 2026-09-15) ────────────────
 # No production-volume gating, no DVT, no role-category classification for
 # these two companies (see COMPANY_CHOICES / PlantLocation.company) — these

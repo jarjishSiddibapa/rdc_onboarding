@@ -358,7 +358,7 @@ class TestStaffingStatusDownload:
         assert resp.status_code == 200
         assert resp.headers["Content-Type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         wb = load_workbook(BytesIO(resp.data))
-        assert wb.sheetnames == ["By Cluster", "By Plant", "By Employees"]
+        assert wb.sheetnames == ["By Cluster", "By Plant", "By Employees", "Unmapped Employees"]
         cluster_rows = list(wb["By Cluster"].iter_rows(min_row=2, values_only=True))
         plant_rows = list(wb["By Plant"].iter_rows(min_row=2, values_only=True))
         employee_rows = list(wb["By Employees"].iter_rows(min_row=2, values_only=True))
@@ -398,6 +398,61 @@ class TestStaffingStatusDownload:
         # BH is scoped to Chennai only, which has no snapshot rows -> no rows at all
         # (definitely not Bangalore's).
         assert all(r[0] != "Bangalore" for r in cluster_rows)
+
+    def test_unmapped_plant_employee_lands_in_unmapped_sheet_not_by_employees(self, client, db, app):
+        """Regression coverage for the 2026-09-24 fix (stakeholder request):
+        an employee whose plant has no CONFIRMED PlantDvtMapping row (closed,
+        decommissioned, or simply never matched) used to be completely
+        invisible in this download — get_plants_in_cluster() only traverses
+        AUTO_EXACT/MANUAL matches. They must now appear in a dedicated
+        Unmapped Employees sheet instead of vanishing."""
+        from io import BytesIO
+        from openpyxl import load_workbook
+        cluster = self._seed(db)
+        run_time = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+        db.session.add(EmployeeLocationSnapshot(
+            source=ExternalDesignationSource.ZINGHR, employee_code="E003",
+            employee_name="Closed Plant Employee", designation="Operator", department="Technical",
+            date_of_joining="01 Jan 2022", plant_location_key="Closed Plant Y",
+            cluster_location_key=None, computed_at=run_time,
+        ))
+        db.session.commit()
+        admin = _make_user("DlAdmin2", "dladmin2@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/download")
+        wb = load_workbook(BytesIO(resp.data))
+        employee_names = {r[2] for r in wb["By Employees"].iter_rows(min_row=2, values_only=True)}
+        assert "Closed Plant Employee" not in employee_names
+        unmapped_rows = list(wb["Unmapped Employees"].iter_rows(min_row=2, values_only=True))
+        by_name = {r[1]: r for r in unmapped_rows}
+        assert by_name["Closed Plant Employee"][0] == "Closed Plant Y"
+
+    def test_business_head_sees_empty_unmapped_sheet(self, client, db, app):
+        """An unmapped employee can't be attributed to any region, so a
+        region-scoped Business Head must never see other regions' unmapped
+        employees leak into their download — same 'hide, don't guess'
+        convention as staffing_status()'s own unmapped_plants list."""
+        from io import BytesIO
+        from openpyxl import load_workbook
+        cluster = self._seed(db)
+        run_time = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+        db.session.add(EmployeeLocationSnapshot(
+            source=ExternalDesignationSource.ZINGHR, employee_code="E004",
+            employee_name="Some Unmapped Employee", designation="Operator", department="Technical",
+            date_of_joining="01 Jan 2022", plant_location_key="Some Other Closed Plant",
+            cluster_location_key=None, computed_at=run_time,
+        ))
+        bh = _make_user("DlBh2", "dlbh2@t.com", UserRole.BUSINESS_HEAD, db)
+        db.session.add(BusinessHeadRegion(business_head_id=bh.id, cluster_id=cluster.id))
+        db.session.commit()
+        with app.app_context():
+            login(client, bh.email)
+            resp = client.get("/requests/staffing-status/download")
+        wb = load_workbook(BytesIO(resp.data))
+        unmapped_rows = list(wb["Unmapped Employees"].iter_rows(min_row=2, values_only=True))
+        assert unmapped_rows == []
 
 
 class TestStaffingStatusRegionEmployeePanel:

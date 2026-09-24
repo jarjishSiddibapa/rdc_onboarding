@@ -1112,6 +1112,7 @@ def staffing_status_download():
     latest_employee_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
 
     cluster_rows, plant_rows, employee_rows = [], [], []
+    shown_employee_ids = set()   # feeds Unmapped Employees below — see its comment
     for c in clusters:
         for s in headcount.get_snapshot_rows_for_location(c.canonical_cluster_name, NormScope.CLUSTER, latest_run=latest_snapshot_run):
             cluster_rows.append((c.canonical_cluster_name, s.production_volume, s.tier_label,
@@ -1124,12 +1125,44 @@ def staffing_status_download():
                                     _can_hire_label(s.can_hire)))
             for e in headcount.get_employees_at_plant(p.plant_location_name, latest_run=latest_employee_run):
                 employee_rows.append(_employee_row(c.canonical_cluster_name, p.display_name, e))
+                shown_employee_ids.add(e.id)
         # Employees resolved to this cluster but not to any specific plant
         # within it (e.g. regional/HQ roles) — same "cluster-only staff"
         # concept as the cluster detail page, Plant left blank here.
         for e in headcount.get_employees_at_cluster(c.canonical_cluster_name, unassigned_to_plant_only=True, latest_run=latest_employee_run):
             employee_rows.append(_employee_row(c.canonical_cluster_name, "", e))
+            shown_employee_ids.add(e.id)
     employee_rows.sort(key=lambda r: (r[0] or "", r[1] or "", r[2] or ""))
+
+    # Unmapped Employees (added 2026-09-24, stakeholder request): every real
+    # employee whose location doesn't resolve to a CONFIRMED plant is
+    # invisible in By Plant/By Employees above by design (get_plants_in_cluster()
+    # only traverses AUTO_EXACT/MANUAL matches, so an unverified guess never
+    # shows fabricated volume/tier data) — but that also silently dropped
+    # anyone at a closed/decommissioned plant or an unmapped one, with no way
+    # to trace them. This sheet is pure headcount visibility (raw recorded
+    # location + employee detail), independent of match confidence, so a
+    # closed/unmapped plant's real headcount is still traceable somewhere in
+    # this report.
+    #
+    # An unmapped employee has no resolvable region to scope by — a
+    # Business Head restricted to their own clusters above would otherwise
+    # leak every other region's unmapped employees into their download, the
+    # exact leak `clusters` filtering exists to prevent. Hidden entirely for
+    # BUSINESS_HEAD, same "no cluster to attribute to a region — hide,
+    # don't guess" convention staffing_status()'s own unmapped_plants list
+    # already uses. HR_MANAGER (never region-scoped) and HEAD_HR/DR_BHOON/
+    # SUPER_ADMIN (always unscoped) see the full list.
+    if current_user.role == UserRole.BUSINESS_HEAD:
+        unmapped_rows = []
+    else:
+        unmapped_rows = [
+            (e.plant_location_key or "(no location on record)", e.employee_name, e.employee_code,
+             e.designation, e.department, e.date_of_joining, e.source.value)
+            for e in headcount.get_rdc_unmapped_employees(shown_employee_ids, latest_run=latest_employee_run)
+        ]
+    unmapped_cols = [("Location (as recorded)", 30), ("Employee Name", 26), ("Employee Code", 16),
+                      ("Designation", 26), ("Department", 20), ("Date of Joining", 16), ("Source", 10)]
 
     wb = Workbook()
     ws1 = wb.active
@@ -1139,6 +1172,8 @@ def staffing_status_download():
     _write_sheet(ws2, plant_cols, plant_rows)
     ws3 = wb.create_sheet("By Employees")
     _write_sheet(ws3, employee_cols, employee_rows)
+    ws4 = wb.create_sheet("Unmapped Employees")
+    _write_sheet(ws4, unmapped_cols, unmapped_rows)
 
     buf = io.BytesIO()
     wb.save(buf)

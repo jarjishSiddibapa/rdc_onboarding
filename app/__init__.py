@@ -49,6 +49,7 @@ _REQUIRED_COLUMNS = [
     ("employee_location_snapshots", "company",           "VARCHAR(20) NULL"),
     ("onboarding_requests", "candidate_email",           "VARCHAR(200) NULL"),
     ("onboarding_requests", "candidate_govt_id",         "VARCHAR(20) NULL"),
+    ("onboarding_requests", "candidate_email_verified",  "VARCHAR(200) NULL"),
 ]
 
 

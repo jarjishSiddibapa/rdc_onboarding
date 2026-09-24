@@ -203,6 +203,25 @@ def _bh_region_ids(user) -> set[int]:
     return {r.cluster_id for r in BusinessHeadRegion.query.filter_by(business_head_id=user.id)}
 
 
+def _staffing_company_scope(user):
+    """
+    Company-scope gate for every Staffing Status route (added 2026-09-23 —
+    these pages predate the company-scope tick-mark feature and were never
+    updated to respect it: a Business Head or HR Manager ticked only for
+    ROBO could still browse full RDC/Ultrafine data here). Returns None for
+    unscoped roles (HEAD_HR/DR_BHOON/SUPER_ADMIN — see any of their
+    company's data), otherwise the set of companies this user is ticked
+    for (possibly empty). Every staffing-status route must check this
+    BEFORE returning any company's data, not just filter what a template
+    happens to render — a scoped-out user must get a 403/404 on direct URL
+    access too, not just a hidden tab.
+    """
+    from ..utils import company_scope_ids
+    if user.role in (UserRole.BUSINESS_HEAD, UserRole.HR_MANAGER):
+        return company_scope_ids(user.id)
+    return None
+
+
 def _special_case_counts_by_category(plant_name: str) -> dict:
     """Count of ACTIVE, is_special_case requests at this plant, by norm_category_id."""
     rows = (
@@ -353,9 +372,20 @@ def send_email_otp():
 @login_required
 @role_required(UserRole.INITIATOR)
 def verify_email_otp():
-    """Check the OTP entered against what was sent."""
+    """
+    Check the OTP entered against what was sent, and persist the result onto
+    the request itself (candidate_email_verified) — not just the Flask
+    session (session['_email_otp_verified'], still set too, for any
+    same-request-object-not-yet-available caller). Session-only storage
+    meant any session loss (the 10-min inactivity auto-logout, resuming the
+    draft from a different device, or just a long enough gap between
+    sessions) forced re-verifying an email already proven once for this
+    exact draft — a real reported gap (2026-09-23), since "save as draft,
+    come back later" is a normal, expected flow for this multi-step form.
+    """
     otp_input = request.form.get("otp", "").strip()
     email     = request.form.get("email", "").strip().lower()
+    token     = request.form.get("token", "").strip() or None
     stored    = session.get("_email_otp", {})
     if not stored:
         return jsonify({"ok": False, "error": "No OTP has been sent. Click 'Send OTP' first."})
@@ -367,6 +397,11 @@ def verify_email_otp():
         return jsonify({"ok": False, "error": "Incorrect OTP. Please try again."})
     session["_email_otp"]["verified"] = True
     session["_email_otp_verified"] = email
+    if token:
+        req = OnboardingRequest.query.filter_by(public_token=token, is_deleted=False).first()
+        if req and req.initiated_by == current_user.id:
+            req.candidate_email_verified = email
+            db.session.commit()
     return jsonify({"ok": True, "msg": "Email verified!"})
 
 
@@ -532,7 +567,16 @@ def new_request():
 
     step_fields = _get_active_fields(step)
     all_fields = _get_active_fields()
-    plants = _dvt_matched_plant_options()
+    # Server-rendered fallback must already match the request's own saved
+    # company — this used to be unconditionally _dvt_matched_plant_options()
+    # (RDC-only), so a Ultrafine/ROBO draft's step 2/3 always rendered RDC's
+    # cluster-plant picker on first paint, even before the client-side JS
+    # re-fetch (see form.html) had a chance to correct it. If that fetch
+    # ever failed, the wrong company's plants stayed on screen indefinitely.
+    _req_company = req.form_data.get("company_code") or "RDC"
+    if _req_company not in COMPANY_CHOICES:
+        _req_company = "RDC"
+    plants = _dvt_matched_plant_options() if _req_company == "RDC" else _company_plant_options(_req_company)
     designations = Designation.query.filter_by(is_active=True, is_deleted=False).order_by(Designation.sort_order, Designation.name).all()
 
     if request.method == "POST":
@@ -588,9 +632,13 @@ def new_request():
 
         # ── Step-specific validation before advancing ─────────────────────────
         if action == "next" and step == 1:
-            # 1a. Email OTP — must be verified before leaving step 1
+            # 1a. Email OTP — must be verified before leaving step 1. Checks
+            # the DB-persisted candidate_email_verified first (durable across
+            # session loss — see verify_email_otp()) and the session as a
+            # fallback for the same request within the same page load.
             email_val = form_data.get("email_id", "").strip().lower()
-            if email_val and session.get("_email_otp_verified", "") != email_val:
+            if (email_val and req.candidate_email_verified != email_val
+                    and session.get("_email_otp_verified", "") != email_val):
                 flash("Please verify the candidate's email address with OTP before proceeding.", "danger")
                 return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
             # 1b. PAN number format — 5 letters + 4 digits + 1 letter
@@ -872,6 +920,8 @@ def staffing_status():
     from ..models import ClusterNameMapping, PlantDvtMapping, NormScope, MatchConfidence
     from ..services import headcount
 
+    my_companies = _staffing_company_scope(current_user)
+
     def _hiring_rollup(rows):
         agg = {}
         for row in rows:
@@ -898,9 +948,13 @@ def staffing_status():
         plants_by_cluster_id.setdefault(p.cluster_id, []).append(p)
 
     clusters = ClusterNameMapping.query.filter_by(is_deleted=False).order_by(ClusterNameMapping.canonical_cluster_name).all()
-    if current_user.role == UserRole.BUSINESS_HEAD:
+    if my_companies is not None and "RDC" not in my_companies:
+        clusters = []   # not ticked for RDC at all — the RDC tab shows nothing
+    elif current_user.role == UserRole.BUSINESS_HEAD:
         allowed_ids = _bh_region_ids(current_user)
         clusters = [c for c in clusters if c.id in allowed_ids]
+    # HR_MANAGER never gets region-narrowing (see CLAUDE.md) — an
+    # RDC-ticked HR Manager sees every RDC region, same as before.
     regions = []
     for c in clusters:
         plants = plants_by_cluster_id.get(c.id, [])
@@ -915,7 +969,9 @@ def staffing_status():
         h = hiring_by_plant.get(p.plant_location_name)
         return bool(h and (h["can_hire_roles"] or h["at_capacity_roles"]))
 
-    if current_user.role == UserRole.BUSINESS_HEAD:
+    if my_companies is not None and "RDC" not in my_companies:
+        unmapped_plants = []
+    elif current_user.role == UserRole.BUSINESS_HEAD:
         unmapped_plants = []   # no cluster to attribute to a region — hide, don't guess
     else:
         unmapped_plants = [
@@ -928,23 +984,58 @@ def staffing_status():
 
     # Ultrafine/ROBO (added 2026-09-15) — flat plant list + simple
     # headcount, no region drill-down and no production-volume gating (see
-    # COMPANY_CHOICES / PlantLocation.company). No Business-Head region
-    # scoping applies here — neither company has a region concept, so
-    # every role that can see this page sees all of that company's plants.
-    other_company_summaries = {
-        c: headcount.get_other_company_plant_summary(c)
-        for c in COMPANY_CHOICES if c != "RDC"
-    }
-    other_company_unresolved = {
-        c: headcount.get_other_company_unresolved_count(c)
-        for c in COMPANY_CHOICES if c != "RDC"
-    }
+    # COMPANY_CHOICES / PlantLocation.company). Neither company has a
+    # region concept, so no _bh_region_ids-style narrowing applies — but
+    # company-scope gating (my_companies, above) still must: a Business
+    # Head/HR Manager only sees a company's tab at all if they're ticked
+    # for it. Unscoped roles (my_companies is None) see every company.
+    other_companies = [c for c in COMPANY_CHOICES if c != "RDC"
+                        and (my_companies is None or c in my_companies)]
+    other_company_summaries = {c: headcount.get_other_company_plant_summary(c) for c in other_companies}
+    other_company_unresolved = {c: headcount.get_other_company_unresolved_count(c) for c in other_companies}
+    visible_companies = (["RDC"] if (my_companies is None or "RDC" in my_companies) else []) + other_companies
 
     return render_template("requests/staffing_status.html", regions=regions,
                            hiring_by_plant=hiring_by_plant,
                            unmapped_plants=unmapped_plants, has_snapshot=has_snapshot,
                            other_company_summaries=other_company_summaries,
-                           other_company_unresolved=other_company_unresolved)
+                           other_company_unresolved=other_company_unresolved,
+                           visible_companies=visible_companies)
+
+
+def _xlsx_report_style():
+    """
+    Shared header/data cell styling for every Staffing Status Excel export
+    (RDC's staffing_status_download() and the Ultrafine/ROBO
+    staffing_status_company_download() below) — factored out 2026-09-23 so
+    the two reports render identically instead of drifting apart.
+    """
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    hdr_fill  = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
+    hdr_font  = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    dat_font  = Font(name="Calibri", size=10)
+    thin      = Side(style="thin", color="CCCCCC")
+    bdr       = Border(left=thin, right=thin, top=thin, bottom=thin)
+    alt_fill  = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
+    return hdr_fill, hdr_font, hdr_align, dat_font, bdr, alt_fill
+
+
+def _write_xlsx_sheet(ws, columns, rows, style):
+    from openpyxl.utils import get_column_letter
+    hdr_fill, hdr_font, hdr_align, dat_font, bdr, alt_fill = style
+    for ci, (label, width) in enumerate(columns, 1):
+        c = ws.cell(row=1, column=ci, value=label)
+        c.font = hdr_font; c.fill = hdr_fill; c.alignment = hdr_align; c.border = bdr
+        ws.column_dimensions[get_column_letter(ci)].width = width
+    ws.row_dimensions[1].height = 26
+    ws.freeze_panes = "A2"
+    for ri, row in enumerate(rows, 2):
+        for ci, val in enumerate(row, 1):
+            c = ws.cell(row=ri, column=ci, value=val)
+            c.font = dat_font; c.border = bdr
+            if ri % 2 == 0:
+                c.fill = alt_fill
 
 
 @requests_bp.route("/staffing-status/download")
@@ -965,37 +1056,21 @@ def staffing_status_download():
     from datetime import datetime as _dt
     from flask import make_response
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
     from ..models import ClusterNameMapping, NormScope, StaffingSnapshot, EmployeeLocationSnapshot
     from ..services import headcount
 
+    my_companies = _staffing_company_scope(current_user)
     clusters = ClusterNameMapping.query.filter_by(is_deleted=False).order_by(ClusterNameMapping.canonical_cluster_name).all()
-    if current_user.role == UserRole.BUSINESS_HEAD:
+    if my_companies is not None and "RDC" not in my_companies:
+        clusters = []   # not ticked for RDC — an HR Manager/BH scoped to ROBO/Ultrafine only gets an empty report
+    elif current_user.role == UserRole.BUSINESS_HEAD:
         allowed_ids = _bh_region_ids(current_user)
         clusters = [c for c in clusters if c.id in allowed_ids]
 
-    hdr_fill  = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
-    hdr_font  = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    dat_font  = Font(name="Calibri", size=10)
-    thin      = Side(style="thin", color="CCCCCC")
-    bdr       = Border(left=thin, right=thin, top=thin, bottom=thin)
-    alt_fill  = PatternFill(start_color="EEF2FF", end_color="EEF2FF", fill_type="solid")
+    style = _xlsx_report_style()
 
     def _write_sheet(ws, columns, rows):
-        for ci, (label, width) in enumerate(columns, 1):
-            c = ws.cell(row=1, column=ci, value=label)
-            c.font = hdr_font; c.fill = hdr_fill; c.alignment = hdr_align; c.border = bdr
-            ws.column_dimensions[get_column_letter(ci)].width = width
-        ws.row_dimensions[1].height = 26
-        ws.freeze_panes = "A2"
-        for ri, row in enumerate(rows, 2):
-            for ci, val in enumerate(row, 1):
-                c = ws.cell(row=ri, column=ci, value=val)
-                c.font = dat_font; c.border = bdr
-                if ri % 2 == 0:
-                    c.fill = alt_fill
+        _write_xlsx_sheet(ws, columns, rows, style)
 
     def _can_hire_label(v):
         return "Yes" if v is True else ("No" if v is False else "Unknown")
@@ -1069,6 +1144,79 @@ def staffing_status_download():
     return resp
 
 
+@requests_bp.route("/staffing-status/download/<company>")
+@login_required
+@role_required(UserRole.HR_MANAGER, UserRole.HEAD_HR, UserRole.DR_BHOON, UserRole.SUPER_ADMIN, UserRole.BUSINESS_HEAD)
+def staffing_status_company_download(company):
+    """
+    Excel download for the Ultrafine/ROBO Staffing Status tabs (added
+    2026-09-23) — the RDC tab already had this above; Ultrafine/ROBO didn't.
+    Two sheets: By Plant (plant, headcount — no volume/tier/allowed-headcount
+    columns, since neither company is production-volume gated, same as their
+    staffing_status.html tab) and By Employees (one row per actual employee,
+    plus any whose ZingHR Location didn't resolve to a known plant — see
+    headcount.get_other_company_unresolved_count(), already surfaced as a
+    count on the dashboard tab but never previously downloadable as rows).
+    """
+    if company not in COMPANY_CHOICES or company == "RDC":
+        abort(404)
+    my_companies = _staffing_company_scope(current_user)
+    if my_companies is not None and company not in my_companies:
+        abort(403)
+    import io
+    from datetime import datetime as _dt
+    from flask import make_response
+    from openpyxl import Workbook
+    from ..models import EmployeeLocationSnapshot
+    from ..services import headcount
+
+    style = _xlsx_report_style()
+    plant_summary = headcount.get_other_company_plant_summary(company)
+    plant_rows = [(p["plant"].name, p["headcount"]) for p in plant_summary]
+
+    employee_cols = [("Plant", 26), ("Employee Name", 26), ("Employee Code", 16),
+                      ("Designation", 26), ("Department", 20), ("Date of Joining", 16), ("Source", 10)]
+    employee_rows = []
+    for p in plant_summary:
+        for e in headcount.get_other_company_employees_at_plant(company, p["plant"].name):
+            employee_rows.append((p["plant"].name, e.employee_name, e.employee_code,
+                                   e.designation, e.department, e.date_of_joining, e.source.value))
+
+    latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+    if latest_run:
+        unresolved = (EmployeeLocationSnapshot.query
+                      .filter_by(company=company, plant_location_key=None, computed_at=latest_run)
+                      .order_by(EmployeeLocationSnapshot.employee_name).all())
+        for e in unresolved:
+            employee_rows.append(("(Unresolved)", e.employee_name, e.employee_code,
+                                   e.designation, e.department, e.date_of_joining, e.source.value))
+
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "By Plant"
+    _write_xlsx_sheet(ws1, [("Plant", 30), ("Headcount", 14)], plant_rows, style)
+    ws2 = wb.create_sheet("By Employees")
+    _write_xlsx_sheet(ws2, employee_cols, employee_rows, style)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    data = buf.getvalue()
+
+    filename = f"{company.lower()}_staffing_status_{_dt.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    log_audit("EXPORT", "EXPORT_DOWNLOADED", resource_type="StaffingStatus",
+              resource_label=f"{company} Staffing Status report")
+    db.session.commit()
+
+    resp = make_response(data)
+    resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    resp.headers["Content-Length"] = len(data)
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 @requests_bp.route("/staffing-status/cluster/<path:cluster_name>")
 @login_required
 @role_required(UserRole.HR_MANAGER, UserRole.HEAD_HR, UserRole.DR_BHOON, UserRole.SUPER_ADMIN, UserRole.BUSINESS_HEAD)
@@ -1076,6 +1224,9 @@ def staffing_status_cluster(cluster_name):
     from ..models import ClusterNameMapping, NormScope
     from ..services import headcount
     cluster = ClusterNameMapping.query.filter_by(canonical_cluster_name=cluster_name, is_deleted=False).first_or_404()
+    my_companies = _staffing_company_scope(current_user)
+    if my_companies is not None and "RDC" not in my_companies:
+        abort(403)
     if current_user.role == UserRole.BUSINESS_HEAD and cluster.id not in _bh_region_ids(current_user):
         abort(403)
     plants = headcount.get_plants_in_cluster(cluster.id)
@@ -1124,8 +1275,11 @@ def staffing_status_employees():
     resolved = request.args.get("resolved", "").strip().lower() or None
     search = request.args.get("q", "").strip() or None
     cluster_filter = request.args.get("cluster", "").strip() or None
+    my_companies = _staffing_company_scope(current_user)
     cluster_names = None
-    if current_user.role == UserRole.BUSINESS_HEAD:
+    if my_companies is not None and "RDC" not in my_companies:
+        cluster_names = set()   # not ticked for RDC at all — this RDC-wide directory shows nobody
+    elif current_user.role == UserRole.BUSINESS_HEAD:
         allowed_ids = _bh_region_ids(current_user)
         cluster_names = {c.canonical_cluster_name for c in
                           ClusterNameMapping.query.filter(ClusterNameMapping.id.in_(allowed_ids)).all()} if allowed_ids else set()
@@ -1152,6 +1306,9 @@ def staffing_status_plant(plant_name):
     from ..models import PlantDvtMapping, NormScope
     from ..services import headcount
     mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant_name, is_deleted=False).first_or_404()
+    my_companies = _staffing_company_scope(current_user)
+    if my_companies is not None and "RDC" not in my_companies:
+        abort(403)
     if current_user.role == UserRole.BUSINESS_HEAD:
         if mapping.cluster_id is None or mapping.cluster_id not in _bh_region_ids(current_user):
             abort(403)
@@ -1184,6 +1341,9 @@ def staffing_status_company_plant(company, plant_name):
     from ..services import headcount
     if company not in COMPANY_CHOICES or company == "RDC":
         abort(404)
+    my_companies = _staffing_company_scope(current_user)
+    if my_companies is not None and company not in my_companies:
+        abort(403)
     plant = PlantLocation.query.filter_by(
         name=plant_name, company=company, is_deleted=False).first_or_404()
     employees = headcount.get_other_company_employees_at_plant(company, plant_name)
@@ -1237,6 +1397,18 @@ def view_request(token):
     # Initiators can only see their own requests (any status)
     if current_user.role == UserRole.INITIATOR and req.initiated_by != current_user.id:
         abort(403)
+
+    # Company-scope gating (added 2026-09-23 — same gap class as Staffing
+    # Status/admin requests_list: this route predates the company-scope
+    # tick-mark feature). Without this, any Business Head/HR Manager could
+    # view full request detail for a company they aren't ticked for at all,
+    # simply by having/guessing the public_token — can_act_on() below only
+    # ever gated the Approve/Reject buttons, never the page itself.
+    # HEAD_HR/DR_BHOON/SUPER_ADMIN stay unscoped by design.
+    if current_user.role in (UserRole.BUSINESS_HEAD, UserRole.HR_MANAGER):
+        from ..utils import company_scope_ids
+        if req.company_code not in company_scope_ids(current_user.id):
+            abort(403)
 
     can_approve = can_act_on(req, current_user)
     can_submit = (req.status == RequestStatus.DRAFT and

@@ -127,16 +127,22 @@ FIELD_MAP = {
 REQUIRED_TRUEIN_FIELDS = ["empId", "name", "siteName"]
 
 # ── Company gate ────────────────────────────────────────────────────────────
-# Confirmed 2026-09-15 (see CLAUDE.md "Multi-Company Support"): this Truein
-# account/subscription tracks exactly two site_name values, "RDC Concrete"
-# and "RDC Drivers" — Robo Silicon and Ultrafine are not tracked in Truein
-# under this account at all. build_payload() hardcodes siteName to
-# "RDC Concrete" regardless of caller — before this gate, a Ultrafine/ROBO
-# request reaching ACTIVE would still be pushed and silently mislabeled as
-# an RDC Concrete employee, corrupting the very headcount data the RDC
-# staffing-norms gate reconciles against. Every push/preflight/dry-run call
-# site must check this before calling into Truein at all.
-TRUEIN_TRACKED_COMPANIES = {"RDC"}
+# Revised 2026-09-23 — corrects the 2026-09-15 "Robo/Ultrafine aren't
+# tracked in Truein at all" finding, which was true about *sites* but not
+# about *employees*: this account genuinely only has two site_name values
+# ("RDC Concrete"/"RDC Drivers"), but real Ultrafine/ROBO employees ARE
+# registered there too, filed under the "RDC Concrete" site (the only one
+# available) with their real plant (e.g. "ROBO - Mumbai", "ULT-Wada") as
+# the distinguishing signal — confirmed live: 28 real Ultrafine/ROBO
+# employees found this way, same designations you'd expect (Plant Helper,
+# Senior Mechanic, ...). So a Ultrafine/ROBO hire SHOULD be pushed the same
+# way — build_payload() already hardcodes siteName to "RDC Concrete"
+# regardless of company, and already falls back to the raw plant_location
+# name for sitePoint/sub_site when no PlantDvtMapping exists (which is
+# always the case for these two companies — see build_payload()'s comment).
+# All three companies are tracked; this gate is now a no-op kept only so a
+# genuinely untracked company (if one is ever added) has one place to gate.
+TRUEIN_TRACKED_COMPANIES = {"RDC", "ROBO", "Ultrafine"}
 
 
 def is_company_tracked_in_truein(company_code) -> bool:
@@ -227,6 +233,14 @@ def build_payload(req) -> dict:
     if plant:
         payload["sitePoint"] = plant
         payload["sub_site"]  = plant
+        # category defaults to the plant name too — Truein shows this as
+        # "Staff Category" and silently defaults it to "Other" when the
+        # field is omitted entirely (confirmed live 2026-09-23: every
+        # Ultrafine/ROBO push showed "Other" there, since those companies
+        # never have a PlantDvtMapping/cluster to derive a real category
+        # from — the block below overrides this with the reconciled
+        # cluster name whenever one exists, same as sitePoint/sub_site).
+        payload["category"] = plant
         try:
             from ..models import PlantDvtMapping as _PDM
             plant_map = _PDM.query.filter_by(plant_location_name=plant, is_deleted=False).first()

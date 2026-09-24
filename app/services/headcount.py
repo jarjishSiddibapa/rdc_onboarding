@@ -332,6 +332,35 @@ def _compute_and_store_snapshot() -> dict:
     tr_employees_deduped = [e for e in tr_employees if _normalize_code(e.get("empId")) not in zh_codes]
     dedup_count = len(tr_employees) - len(tr_employees_deduped)
 
+    # Plant-name-based company override (added 2026-09-23, confirmed with the
+    # stakeholder): Truein has no Ultrafine/ROBO concept at all in this
+    # account — every Truein record's site_name is "RDC Concrete"/"RDC
+    # Drivers" regardless of who the employee actually works for, since
+    # those two companies were never given their own Truein subscription.
+    # Before this fix, a real Ultrafine/ROBO employee whose attendance is
+    # tracked through Truein (or a ZingHR record with a blank Company
+    # attribute — see the _NON_RDC_COMPANIES filter above, which only
+    # excludes a *confirmed* non-RDC Company) was silently counted as an
+    # unclassified RDC employee the moment their raw Location/sub_site
+    # string happened to match one of these companies' own plant names
+    # (e.g. real employees at "ULT-Wada"/"Robo-AP_RO" were showing up as
+    # RDC headcount under a stale, unmatched RDC-tagged PlantLocation row
+    # with the same name). The stakeholder's rule: an employee's plant name
+    # is the authoritative signal of which company they belong to — if it
+    # matches a known Ultrafine/ROBO plant, they ARE that company's
+    # employee, full stop, regardless of what source system reported them
+    # or what that system's own company/site field says. Checked BEFORE the
+    # RDC plant-matching below in both the ZingHR and Truein loops; a match
+    # here means the employee is written to other_company_employee_rows
+    # instead of counted toward RDC at all.
+    other_company_plants_by_norm = {
+        _normalize_name(p.name): (p.company, p.name)
+        for p in PlantLocation.query.filter(
+            PlantLocation.company.in_(("ROBO", "Ultrafine")),
+            PlantLocation.is_deleted == False, PlantLocation.is_active == True).all()
+    }
+    other_company_employee_rows = []  # dicts backing EmployeeLocationSnapshot(company=...), written alongside RDC's own employee_rows
+
     plant_mappings = PlantDvtMapping.query.filter_by(is_deleted=False).all()
     plant_name_by_norm = {_normalize_name(p.plant_location_name): p.plant_location_name for p in plant_mappings}
     plant_name_by_truein_sub_site = {
@@ -377,6 +406,28 @@ def _compute_and_store_snapshot() -> dict:
         unclassified_by_key[k] = unclassified_by_key.get(k, 0) + 1
 
     for e in zh_employees:
+        # Plant-name company override — see other_company_plants_by_norm's
+        # docstring above. A blank/unconfirmed ZingHR Company attribute made
+        # it this far (the _NON_RDC_COMPANIES filter only excludes a
+        # *confirmed* non-RDC value), so this is the only remaining signal
+        # for a genuine Ultrafine/ROBO employee ZingHR didn't tag correctly.
+        _other = other_company_plants_by_norm.get(_normalize_name(e.get("Location")))
+        if _other:
+            _other_company, _other_plant_name = _other
+            other_company_employee_rows.append({
+                "source": ExternalDesignationSource.ZINGHR,
+                "employee_code": e.get("employeeCode"),
+                "employee_name": e.get("employeeName"),
+                "designation": e.get("Designation"),
+                "department": (e.get("Department") or "").strip() or None,
+                "date_of_joining": e.get("dateOfJoining"),
+                "norm_role_category_id": None,
+                "plant_location_key": _other_plant_name,
+                "cluster_location_key": None,
+                "company": _other_company,
+            })
+            continue
+
         department = (e.get("Department") or "").strip()
         date_of_joining = e.get("dateOfJoining")
         norm_cat_id = _classify_by_department(department, e.get("Designation"), date_of_joining, cat_id_by_name)
@@ -413,6 +464,28 @@ def _compute_and_store_snapshot() -> dict:
         })
 
     for e in tr_employees_deduped:
+        # Plant-name company override — see other_company_plants_by_norm's
+        # docstring above. Every Truein record in this account carries
+        # site_name "RDC Concrete"/"RDC Drivers" regardless of the
+        # employee's real company (Ultrafine/ROBO were never given their
+        # own Truein subscription), so sub_site is the only signal here.
+        _other = other_company_plants_by_norm.get(_normalize_name(e.get("sub_site")))
+        if _other:
+            _other_company, _other_plant_name = _other
+            other_company_employee_rows.append({
+                "source": ExternalDesignationSource.TRUEIN,
+                "employee_code": e.get("empId"),
+                "employee_name": e.get("name"),
+                "designation": e.get("designation"),
+                "department": (e.get("department") or "").strip() or None,
+                "date_of_joining": e.get("joining_date"),
+                "norm_role_category_id": None,
+                "plant_location_key": _other_plant_name,
+                "cluster_location_key": None,
+                "company": _other_company,
+            })
+            continue
+
         department = (e.get("department") or "").strip()
         date_of_joining = e.get("joining_date")
         norm_cat_id = _classify_by_department(department, e.get("designation"), date_of_joining, cat_id_by_name)
@@ -589,10 +662,19 @@ def _compute_and_store_snapshot() -> dict:
     for row in employee_rows:
         db.session.add(EmployeeLocationSnapshot(computed_at=now, **row))
 
+    # Employees reclassified to Ultrafine/ROBO by plant name (see
+    # other_company_plants_by_norm above) — written with the exact same
+    # `now` as everything else in this run, alongside (not instead of) the
+    # ZingHR-sourced other-company pass compute_and_store_snapshot() runs
+    # right after this function returns. Never counted toward RDC above.
+    for row in other_company_employee_rows:
+        db.session.add(EmployeeLocationSnapshot(computed_at=now, **row))
+
     db.session.commit()
     return {
         "snapshots_written": written,
         "employee_rows_written": len(employee_rows),
+        "other_company_employee_rows_written": len(other_company_employee_rows),
         "zinghr_employees": len(zh_employees),
         "truein_employees_considered": len(tr_employees_deduped),
         "deduped_count": dedup_count,
@@ -620,7 +702,22 @@ def _compute_and_store_other_company_snapshot(now=None) -> dict:
     production-volume gating exists for these companies (see
     COMPANY_CHOICES / PlantLocation.company in models.py), so this only
     needs "who works where," not "is that allowed" — no
-    NormRequirement/NormTier/DVT/Truein involvement at all.
+    NormRequirement/NormTier/DVT involvement at all.
+
+    ZingHR-only in THIS function specifically — but this is no longer the
+    complete picture for Ultrafine/ROBO headcount (revised 2026-09-23).
+    Truein has no Ultrafine/ROBO concept at all in this account (every
+    record's site_name reads "RDC Concrete"/"RDC Drivers" regardless of the
+    employee's real company), so a real Ultrafine/ROBO employee tracked via
+    Truein could never be caught here. That gap is now closed on the OTHER
+    side: _compute_and_store_snapshot() (the RDC pass, called right before
+    this one) checks every ZingHR/Truein employee's raw Location/sub_site
+    against other_company_plants_by_norm (this same PlantLocation.company
+    IN ('ROBO','Ultrafine') table) BEFORE counting them toward RDC, and
+    writes any match here as its own EmployeeLocationSnapshot(company=...)
+    row using this run's exact `now` — see that function's docstring. This
+    function still only pulls ZingHR (nothing changed in its own logic),
+    but the two passes together now cover both source systems.
 
     Reuses zinghr.fetch_active_employees()'s own 1h cache (no extra live
     API call — see zinghr._fetch_all_employees_raw()) and this module's own

@@ -13,6 +13,7 @@ Tests for the company-scoped approval routing feature (2026-09-21):
     scoped roles.
 """
 import uuid
+from unittest.mock import patch
 import pytest
 from app.models import (
     UserRole, RequestStatus, OnboardingRequest, UserCompanyScope,
@@ -159,36 +160,62 @@ class TestUltrafineRoboFullChain:
             assert can_act_on(req, bh) is True
 
     @pytest.mark.parametrize("company", ["Ultrafine", "ROBO"])
-    def test_activation_never_attempts_a_truein_push(self, client, db, app, company):
+    def test_activation_pushes_to_truein_with_rdc_concrete_site(self, client, db, app, company):
         """
-        2026-09-22 fix: Truein tracks only RDC under this account/subscription
-        (confirmed — see is_company_tracked_in_truein() docstring). Before this
-        fix, build_payload()'s hardcoded siteName="RDC Concrete" meant an
-        Ultrafine/ROBO hire reaching ACTIVE would still be pushed and
-        mislabeled as an RDC Concrete employee. Activation must now skip the
-        push entirely — no push error, no push log, no retry thread.
+        Revised 2026-09-23: the 2026-09-22 fix wrongly assumed Truein
+        doesn't track Ultrafine/ROBO at all (based on the 2026-09-15
+        finding that this account only has two *site_name* values). Live
+        data later showed real Ultrafine/ROBO employees ARE registered in
+        Truein — filed under the "RDC Concrete" site (the only one that
+        exists) with their real plant name as the distinguishing signal —
+        so a hire reaching ACTIVE should push there too, the same way.
+        push_employee() is mocked here so this test never makes a live
+        network call, matching the "never browser-test an approval through
+        to ACTIVE without warning" standing rule for this integration.
         """
         tag = company.lower()
-        drb = _make_user(f"NoPushDrb_{tag}", f"nopushdrb_{tag}@t.com", UserRole.DR_BHOON, db)
-        initiator = _make_user(f"NoPushInit_{tag}", f"nopushinit_{tag}@t.com", UserRole.INITIATOR, db,
+        drb = _make_user(f"PushDrb_{tag}", f"pushdrb_{tag}@t.com", UserRole.DR_BHOON, db)
+        initiator = _make_user(f"PushInit_{tag}", f"pushinit_{tag}@t.com", UserRole.INITIATOR, db,
                                 companies=[company])
         req = _create_request(db, initiator, RequestStatus.PENDING_DR_BHOON, company_code=company)
         db.session.commit()
         drb_email = drb.email
 
-        with app.app_context():
-            login(client, drb_email)
-            resp = client.post(f"/requests/{req.public_token}/approve",
-                                data={"remark": "ok drb"}, follow_redirects=True)
+        fake_result = {
+            "success": True, "empId": "NEWJOINEE0101990001", "message": "Success",
+            "http_status": 200, "raw_response": {}, "payload_sent": {}, "dropped_fields": [],
+        }
+        with patch("app.integrations.truein.push_employee", return_value=fake_result):
+            with app.app_context():
+                login(client, drb_email)
+                resp = client.post(f"/requests/{req.public_token}/approve",
+                                    data={"remark": "ok drb"}, follow_redirects=True)
         assert resp.status_code == 200
 
         with app.app_context():
             from app.models import TrueinPushLog
             updated = _db.session.get(OnboardingRequest, req.id)
             assert updated.status == RequestStatus.ACTIVE
-            assert updated.truein_pushed_at is None
-            assert updated.truein_push_error is None
-            assert TrueinPushLog.query.filter_by(request_id=req.id).count() == 0
+            assert updated.truein_pushed_at is not None
+            assert TrueinPushLog.query.filter_by(request_id=req.id).count() == 1
+
+    def test_build_payload_uses_rdc_concrete_site_for_ultrafine_plant(self, db, app):
+        """build_payload() itself must never need a company check — siteName
+        is already unconditional, sitePoint/sub_site already fall back to
+        the raw plant name (no PlantDvtMapping exists for Ultrafine/ROBO)."""
+        from app.integrations.truein import build_payload
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1, public_token="tok-uf-payload",
+                candidate_name="UF Payload Candidate", designation="Electrician",
+                plant_location="ROBO - Mumbai", company_code="ROBO",
+            )
+            db.session.add(req)
+            db.session.flush()
+            payload = build_payload(req)
+            assert payload["siteName"] == "RDC Concrete"
+            assert payload["sitePoint"] == "ROBO - Mumbai"
+            assert payload["sub_site"] == "ROBO - Mumbai"
 
 
 class TestRdcUnaffected:

@@ -580,16 +580,31 @@ def requests_list():
     company_filter = request.args.get("company")
     show_deleted   = request.args.get("show_deleted") == "1"
 
+    # Company-scope gating (added 2026-09-23 — same gap class as Staffing
+    # Status: this page predates the company-scope tick-mark feature and
+    # was never updated to respect it). SUPER_ADMIN/HEAD_HR stay unscoped
+    # by design; HR_MANAGER is the only role reaching this route that's
+    # company-scoped (BUSINESS_HEAD/INITIATOR/DR_BHOON can't reach it at
+    # all — see _admin_or_hr()). An HR Manager ticked only for ROBO could
+    # otherwise browse every company's requests here, candidate PII
+    # included.
+    from ..utils import company_scope_ids
+    my_companies = company_scope_ids(current_user.id) if current_user.role == UserRole.HR_MANAGER else None
+
     companies = [c[0] for c in
                  db.session.query(OnboardingRequest.company_code)
                  .filter(OnboardingRequest.is_deleted == False)
                  .distinct().all() if c[0]]
+    if my_companies is not None:
+        companies = [c for c in companies if c in my_companies]
 
     # ── Filtered view (single-table, status explicitly chosen) ────────────────
     if status_filter:
         query = OnboardingRequest.query
         if not show_deleted:
             query = query.filter_by(is_deleted=False)
+        if my_companies is not None:
+            query = query.filter(OnboardingRequest.company_code.in_(my_companies))
         try:
             query = query.filter_by(status=RequestStatus(status_filter))
         except ValueError:
@@ -618,6 +633,8 @@ def requests_list():
     base = OnboardingRequest.query
     if not show_deleted:
         base = base.filter_by(is_deleted=False)
+    if my_companies is not None:
+        base = base.filter(OnboardingRequest.company_code.in_(my_companies))
     if company_filter:
         base = base.filter_by(company_code=company_filter)
 

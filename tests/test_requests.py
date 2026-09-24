@@ -9,7 +9,7 @@ import uuid
 import pytest
 from app.models import (
     UserRole, RequestStatus, OnboardingRequest, ApprovalAction, ApprovalActionType,
-    FormField, FieldType, PlantLocation,
+    FormField, FieldType, PlantLocation, OptionsSource,
 )
 from app.extensions import db as _db
 from .conftest import login, _make_user
@@ -103,6 +103,48 @@ class TestNormalApprovalPath:
             assert updated.status == RequestStatus.ACTIVE
 
 
+class TestHiringTypeXssFix:
+    """
+    Regression coverage for a real stored-XSS found in a 2026-09-23 audit:
+    form.html embedded form_data['hiring_type'] into a <script> block by
+    manually wrapping it in quotes and marking the whole thing `| safe`
+    (`{{ ('"' ~ form_data.get('hiring_type', '') ~ '"') | safe }}`) — no JS
+    string escaping at all. hiring_type is a radio field, but
+    _collect_form_data() never validates a submission against the field's
+    actual option set, so a crafted POST could set it to any string,
+    including one that breaks out of the JS string literal and injects
+    arbitrary script — executed the next time that draft/rejected request
+    was viewed. Fixed by using the same `| tojson | safe` pattern already
+    used correctly elsewhere in this file for JS-embedded values.
+    """
+
+    def test_hiring_type_with_quote_and_script_is_properly_escaped(self, client, db, app, initiator):
+        db.session.add_all([
+            FormField(field_key="hiring_type", field_label="Hiring Type",
+                      field_type=FieldType.RADIO, step=2, is_required=False, is_active=True),
+            FormField(field_key="replacement_employee", field_label="Replacement Employee",
+                      field_type=FieldType.TEXT, step=2, is_required=False, is_active=True),
+        ])
+        req = _create_request(db, initiator, RequestStatus.DRAFT)
+        malicious = '";alert(document.cookie);var x="'
+        req.form_data = dict(req.form_data, hiring_type=malicious)
+        db.session.commit()
+        token = req.public_token
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.get(f"/requests/new?step=2&token={token}")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # The vulnerable pattern rendered the value as a bare, unescaped
+        # break-out of the JS string literal — this exact sequence must
+        # never appear.
+        assert 'var hv = "";alert(document.cookie);var x="";' not in html
+        # The fixed (tojson) pattern backslash-escapes the embedded quote,
+        # keeping it a single, harmless JS string literal.
+        assert 'var hv = "\\";alert(document.cookie);var x=\\"";' in html
+
+
 class TestFormMobileFieldValidation:
     """
     Regression coverage for the 2026-09-10 fix: the onboarding form's mobile
@@ -192,6 +234,62 @@ class TestGovtIdDuplicateCheck:
         assert 'pattern="[0-9]{12}"' in html
 
 
+class TestEmailOtpPersistence:
+    """
+    Regression coverage for the 2026-09-23 fix: email OTP verification was
+    tracked only in the Flask session (session['_email_otp_verified']), so
+    any session loss — the 10-min inactivity auto-logout, resuming a saved
+    draft later, a different device — forced re-verifying an email already
+    proven once for that exact draft. Now persisted on the request itself
+    (OnboardingRequest.candidate_email_verified), checked in addition to the
+    session so it survives across logins.
+    """
+
+    def test_verify_otp_persists_email_on_the_request(self, client, db, app, initiator):
+        req = _create_request(db, initiator, RequestStatus.DRAFT)
+        db.session.commit()
+        req_id = req.id
+        token = req.public_token
+        email = "candidate@test.com"
+
+        with app.app_context():
+            login(client, initiator.email)
+            with client.session_transaction() as sess:
+                sess["_email_otp"] = {"email": email, "code": "123456", "at": __import__("time").time(), "verified": False}
+            resp = client.post("/requests/verify-email-otp",
+                                data={"email": email, "otp": "123456", "token": token})
+            assert resp.status_code == 200
+            assert resp.get_json()["ok"] is True
+            updated = _db.session.get(OnboardingRequest, req_id)
+            assert updated.candidate_email_verified == email
+
+    def test_step1_shows_verified_after_fresh_login_with_no_session_otp(self, client, db, app, initiator):
+        """The core of the reported bug: DB-persisted verification must show
+        as verified even with a completely empty session (e.g. after
+        logging back in to resume a saved draft)."""
+        db.session.add(FormField(
+            field_key="email_id", field_label="Email ID",
+            field_type=FieldType.EMAIL, step=1, is_required=True, is_active=True,
+        ))
+        email = "candidate@test.com"
+        req = _create_request(db, initiator, RequestStatus.DRAFT)
+        req.candidate_email_verified = email
+        req.form_data = dict(req.form_data, email_id=email)
+        db.session.commit()
+        token = req.public_token
+
+        with app.app_context():
+            # A fresh login gives a brand-new session with no _email_otp_verified key.
+            login(client, initiator.email)
+            resp = client.get(f"/requests/new?step=1&token={token}")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "Email verified" in html
+        import re
+        m = re.search(r'id="email_verified_flag"[^>]*value="([^"]*)"', html)
+        assert m and m.group(1) == "1"
+
+
 class TestCompanyAwarePlantLocationsApi:
     """
     Coverage for the 2026-09-15 multi-company fix: /requests/api/plant-locations
@@ -261,6 +359,42 @@ class TestCompanyAwarePlantLocationsApi:
         html = resp.get_data(as_text=True)
         assert "fetchPlantsForCompany" in html
         assert "'select[name=\"company_code\"]'" in html
+
+    def test_step2_server_render_shows_saved_companys_plants_not_rdc(self, client, db, app, initiator):
+        """
+        Regression for the 2026-09-23 bug: Company Code lives on step 1,
+        Plant Location on step 2 — new_request()'s `plants` template var used
+        to be unconditionally _dvt_matched_plant_options() (RDC-only) no
+        matter what company the request was actually saved under, so a
+        ROBO/Ultrafine draft's step 2 server-rendered RDC's cluster/plant
+        list on first paint (before the client-side JS re-fetch could
+        correct it, and permanently if that fetch ever failed — see the
+        docstring above the cascading-picker JS in form.html, which already
+        documented the server-rendered options as the trusted fallback).
+        """
+        db.session.add(FormField(
+            field_key="plant_location", field_label="Plant Location",
+            field_type=FieldType.DROPDOWN, options_source=OptionsSource.PLANT_LOCATION,
+            step=2, is_required=True, is_active=True,
+        ))
+        db.session.add(PlantLocation(name="ROBO Only Plant", company="ROBO", is_active=True))
+        db.session.commit()
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="ROBO")
+        req.form_data = dict(req.form_data, company_code="ROBO")
+        db.session.commit()
+        token = req.public_token
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.get(f"/requests/new?step=2&token={token}")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        # No PlantDvtMapping rows exist in this test DB, so
+        # _dvt_matched_plant_options() (the old, always-RDC behavior) would
+        # render zero plant options here — seeing the ROBO plant confirms
+        # the company-aware branch actually ran.
+        assert "ROBO Only Plant" in html
 
 
 class TestNonRdcCompanyBypassesCapacityGate:

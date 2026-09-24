@@ -18,6 +18,24 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
+# Safety net (added 2026-09-23, found during a live-behavior audit): app/config.py
+# calls load_dotenv() at import time (default override=False, so anything already
+# set here wins), which means every test run has always had the REAL
+# Truein/ZingHR/DVT credentials from .env available — any test path that reaches
+# an integration call without mocking it (confirmed to happen: re-enabling
+# Ultrafine/ROBO Truein pushes exposed an existing, unmocked full-chain-to-ACTIVE
+# test that made a real live POST to Truein's production addEmployeeDtls during
+# a routine test run) silently makes a REAL external API call instead of failing
+# loudly. Every test in this suite is expected to mock external calls explicitly
+# (see zinghr.fetch_active_employees / truein._fetch_all_employees_raw /
+# truein.push_employee / dvt.fetch_all_plants patches throughout) — blanking
+# these here means an accidentally-unmocked path now fails fast with a clear
+# "not configured" error instead of silently touching production systems.
+for _cred in ("TRUEIN_SUBSCRIPTION_KEY", "TRUEIN_ACCESS_KEY", "TRUEIN_SECRET_KEY",
+              "ZINGHR_CLIENT_ID", "ZINGHR_CLIENT_SECRET",
+              "DVT_BASE_URL", "DVT_USERNAME", "DVT_PASSWORD"):
+    os.environ[_cred] = ""
+
 import pytest
 import sqlalchemy as sa
 from app import create_app

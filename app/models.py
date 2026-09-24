@@ -321,6 +321,14 @@ class OnboardingRequest(db.Model):
     candidate_email = db.Column(db.String(200))    # = form_data['email_id'].strip().lower()
     candidate_govt_id = db.Column(db.String(20))   # = digits-only form_data['aadhar_no']
     designation = db.Column(db.String(200))       # = form_data['designation']
+    # The exact email address OTP-verified for THIS request (2026-09-23 fix)
+    # — was previously tracked only in the Flask session (session['_email_otp_verified']),
+    # so any session loss (10-min inactivity auto-logout, a different device,
+    # closing the browser) forced re-verification of an email already proven
+    # once for this same draft. NULL = never verified. Compared against the
+    # live email_id value, never blindly trusted — changing the email after
+    # verification correctly requires re-verifying the new address.
+    candidate_email_verified = db.Column(db.String(200))
 
     # All form responses stored as JSON {field_key: value}
     _form_data = db.Column("form_data", db.Text, default="{}")

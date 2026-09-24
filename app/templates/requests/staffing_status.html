@@ -13,18 +13,32 @@
      drill-down and production-volume gating below, unchanged; Ultrafine/
      ROBO are flat plant lists with simple headcount only — see
      staffing_status_company_plant.html for their plant-level detail. #}
+  {# Company-scope gating (added 2026-09-23): a Business Head/HR Manager
+     only sees a tab for a company they're actually ticked for —
+     visible_companies (from staffing_status()) is None-safe here since the
+     route always passes a concrete list; HEAD_HR/DR_BHOON/SUPER_ADMIN see
+     every tab (visible_companies includes all 3 for those unscoped roles). #}
   <div class="card" style="overflow:hidden;margin-bottom:20px;">
     <div style="display:flex;border-bottom:2px solid var(--c-border);padding:0 4px;">
+      {% if 'RDC' in visible_companies %}
       <button id="ctab-btn-rdc" onclick="switchCTab('rdc')"
         style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">RDC</button>
+      {% endif %}
+      {% if 'Ultrafine' in visible_companies %}
       <button id="ctab-btn-ultrafine" onclick="switchCTab('ultrafine')"
         style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">Ultrafine</button>
+      {% endif %}
+      {% if 'ROBO' in visible_companies %}
       <button id="ctab-btn-robo" onclick="switchCTab('robo')"
         style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">ROBO</button>
+      {% endif %}
+      {% if not visible_companies %}
+      <p style="padding:12px 20px;font-size:13px;color:var(--c-text-4);">No company is assigned to your account — contact your administrator.</p>
+      {% endif %}
     </div>
   </div>
 
-  <div id="ctab-panel-rdc">
+  <div id="ctab-panel-rdc" style="display:none;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
     <div>
       <h2 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0;">RDC — by Region</h2>
@@ -103,9 +117,14 @@
   </div>
 
   {% macro _other_company_panel(company, summary, unresolved) %}
-  <div style="margin-bottom:20px;">
-    <h2 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0;">{{ company }} — by Plant</h2>
-    <p class="page-sub" style="margin-top:4px;">Simple headcount only — no production-volume restriction applies to {{ company }}.</p>
+  <div style="margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+    <div>
+      <h2 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0;">{{ company }} — by Plant</h2>
+      <p class="page-sub" style="margin-top:4px;">Simple headcount only — no production-volume restriction applies to {{ company }}.</p>
+    </div>
+    {% if summary %}
+    <a href="{{ url_for('requests_bp.staffing_status_company_download', company=company) }}" class="btn btn-secondary btn-sm" style="white-space:nowrap;">⬇ Download Report</a>
+    {% endif %}
   </div>
   <div class="card" style="overflow:hidden;margin-bottom:16px;">
     {% if not summary %}
@@ -151,7 +170,14 @@ function switchCTab(tab) {
     btn.style.borderBottomColor = on ? 'var(--c-primary)' : 'transparent';
   });
 }
-switchCTab('rdc');
+// Default to the first tab this user can actually see — was hardcoded to
+// 'rdc', which broke once tabs started hiding by company scope (a user
+// with no RDC access would land on a panel with no visible active button).
+(function() {
+  var order = ['rdc', 'ultrafine', 'robo'];
+  var first = order.find(function(t) { return document.getElementById('ctab-btn-' + t); });
+  if (first) switchCTab(first);
+})();
 
 // "leads to a blank page, takes too long" fix: this link had zero loading
 // feedback — the file build+download used to take well over a minute (see

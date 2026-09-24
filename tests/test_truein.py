@@ -155,6 +155,51 @@ class TestBuildPayloadFieldCompleteness:
             assert payload["account_number"] == "1234567890"
             assert payload["ifsc_code"] == "TEST0001234"
 
+    def test_category_falls_back_to_plant_name_when_no_cluster_reconciliation(self, db, app):
+        """
+        2026-09-23 fix: category was only ever set when a PlantDvtMapping
+        row AND its cluster existed — Ultrafine/ROBO plants never have a
+        PlantDvtMapping row at all (confirmed live: every push for these
+        companies showed "Staff Category: Other" in Truein, since the field
+        was omitted entirely and Truein defaults it). Now falls back to the
+        plant name, same convention as sitePoint/sub_site.
+        """
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1, public_token=uuid.uuid4().hex,
+                candidate_name="No Cluster Candidate", designation="Electrician",
+                plant_location="ROBO - Mumbai", company_code="ROBO",
+            )
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["category"] == "ROBO - Mumbai"
+
+    def test_category_still_prefers_reconciled_cluster_name_when_available(self, db, app):
+        """The plant-name fallback must never override a real DVT-reconciled
+        cluster match — this is an RDC plant with a confirmed cluster."""
+        with app.app_context():
+            cluster = ClusterNameMapping(canonical_cluster_name="BG Region", truein_category="Bangalore")
+            db.session.add(cluster)
+            db.session.flush()
+            db.session.add(PlantDvtMapping(
+                plant_location_name="BG-Category-Test Plant", cluster_id=cluster.id,
+                dvt_plant_code="BGCAT1",
+            ))
+            req = OnboardingRequest(
+                initiated_by=1, public_token=uuid.uuid4().hex,
+                candidate_name="Cluster Candidate", designation="Officer",
+                plant_location="BG-Category-Test Plant", company_code="RDC",
+            )
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["category"] == "Bangalore"
+
     def test_sub_site_and_category_derived_from_plant_mapping(self, db, app):
         with app.app_context():
             cluster = ClusterNameMapping(canonical_cluster_name="BG Region", truein_category="Bangalore")
@@ -229,7 +274,10 @@ class TestBuildPayloadFieldCompleteness:
             payload = build_payload(req)
 
             assert payload["sub_site"] == "BG-Test Plant 3"
-            assert "category" not in payload
+            # 2026-09-23: category now falls back to the plant name too,
+            # instead of being omitted (see TestBuildPayloadFieldCompleteness
+            # ::test_category_falls_back_to_plant_name_when_no_cluster_reconciliation).
+            assert payload["category"] == "BG-Test Plant 3"
 
     def test_sub_site_not_empty_when_plant_has_no_dvt_mapping_row_at_all(self, db, app):
         """
@@ -258,7 +306,12 @@ class TestBuildPayloadFieldCompleteness:
 
             assert payload["sitePoint"] == "UF-Test Plant"
             assert payload["sub_site"] == "UF-Test Plant"
-            assert "category" not in payload
+            # 2026-09-23: category now falls back to the plant name too —
+            # this was the exact live bug (every Ultrafine/ROBO push showed
+            # "Staff Category: Other" in Truein since this field was
+            # omitted entirely, having no PlantDvtMapping/cluster to derive
+            # a real category from).
+            assert payload["category"] == "UF-Test Plant"
 
     def test_department_derived_from_designation_norm_category(self, db, app):
         with app.app_context():

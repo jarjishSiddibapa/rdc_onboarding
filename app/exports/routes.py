@@ -1,7 +1,7 @@
 import io
 from datetime import datetime, timedelta
 from flask import make_response, render_template, request, jsonify
-from flask_login import login_required
+from flask_login import login_required, current_user
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -52,7 +52,7 @@ def _collect_filter_params(args):
 
 # ── Shared: apply filters and return records ──────────────────────────────────
 
-def _apply_filters(params):
+def _apply_filters(params, viewer=None):
     """Build query from filter params dict; return list of matching records."""
     p = params
     # initiator/actions are lazy="select" by default (actions.actor too) —
@@ -64,6 +64,17 @@ def _apply_filters(params):
         joinedload(OnboardingRequest.initiator),
         selectinload(OnboardingRequest.actions).joinedload(ApprovalAction.actor),
     )
+
+    # Company-scope gating (added 2026-09-23 — same gap class fixed across
+    # Staffing Status/admin requests_list/view_request: this export predates
+    # the company-scope tick-mark feature). HR_MANAGER is the only scoped
+    # role in _ALLOWED_ROLES (SUPER_ADMIN/HEAD_HR/DR_BHOON stay unscoped) —
+    # without this, an HR Manager ticked only for ROBO could export a full
+    # Excel of every company's candidates, including RDC/Ultrafine PII.
+    if viewer is not None and viewer.role == UserRole.HR_MANAGER:
+        from ..utils import company_scope_ids
+        my_companies = company_scope_ids(viewer.id)
+        q = q.filter(OnboardingRequest.company_code.in_(my_companies)) if my_companies else q.filter(db.false())
 
     # Status
     if p["statuses_raw"]:
@@ -369,6 +380,10 @@ def active_employees():
         "WHERE is_deleted=0 AND company_code IS NOT NULL AND company_code != '' "
         "ORDER BY company_code"
     )).fetchall()]
+    if current_user.role == UserRole.HR_MANAGER:
+        from ..utils import company_scope_ids
+        my_companies = company_scope_ids(current_user.id)
+        companies = [c for c in companies if c in my_companies]
 
     initiators = User.query.filter_by(
         role=UserRole.INITIATOR, is_active=True
@@ -401,7 +416,7 @@ _PREVIEW_ROWS = 10   # rows shown in the preview table
 def preview_excel():
     """Return JSON preview: columns, first N rows, total count, filter chips."""
     params  = _collect_filter_params(request.args)
-    records = _apply_filters(params)
+    records = _apply_filters(params, viewer=current_user)
     title   = _report_title(params)
     chips   = _filter_chips(params)
 
@@ -447,7 +462,7 @@ def preview_excel():
 @role_required(*_ALLOWED_ROLES)
 def download_excel():
     params  = _collect_filter_params(request.args)
-    records = _apply_filters(params)
+    records = _apply_filters(params, viewer=current_user)
     title   = _report_title(params)
 
     buf  = _build_excel(records, title)

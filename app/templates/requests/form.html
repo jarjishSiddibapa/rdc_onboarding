@@ -153,7 +153,10 @@
           <!-- ── EMAIL ── -->
           {% elif field.field_type == FieldType.EMAIL %}
             {% if field.field_key == 'email_id' and step == 1 %}
-              {%- set _otp_ok = val and session.get('_email_otp_verified', '') == val -%}
+              {#- Checks the DB-persisted verification first (durable across
+                 session loss — see verify_email_otp()), falling back to the
+                 session for the same in-progress page load. -#}
+              {%- set _otp_ok = val and (req.candidate_email_verified == val or session.get('_email_otp_verified', '') == val) -%}
               <div style="display:flex;gap:8px;align-items:stretch;">
                 <input class="inp" type="email" name="{{ field.field_key }}" id="email_id_input" value="{{ val }}"
                   {% if field.is_required %}required{% endif %}
@@ -383,7 +386,14 @@
         {% if field.field_key == 'replacement_employee' %}
         <script>
           (function() {
-            var hv = {{ ('"' ~ form_data.get('hiring_type', '') ~ '"') | safe }};
+            {#- hiring_type is raw user-submitted text (a radio field's value
+               is never server-validated against its actual option set — see
+               _collect_form_data()), so it must go through tojson for real
+               JS-string escaping, not a manually-quoted `| safe` string
+               (found 2026-09-23: that pattern let a crafted value break out
+               of the JS string literal — a real stored-XSS vector, since a
+               later view of this same draft would execute it). -#}
+            var hv = {{ form_data.get('hiring_type', '') | tojson | safe }};
             var show = hv === 'Replacement';
             var fw1 = document.getElementById('fw_replacement_employee');
             var fw2 = document.getElementById('fw_replacement_employee_code');
@@ -396,7 +406,7 @@
         {% if field.field_key == 'replacement_employee_code' %}
         <script>
           (function() {
-            var hv = {{ ('"' ~ form_data.get('hiring_type', '') ~ '"') | safe }};
+            var hv = {{ form_data.get('hiring_type', '') | tojson | safe }};
             var fw = document.getElementById('fw_replacement_employee_code');
             if (fw) fw.style.display = (hv === 'Replacement') ? '' : 'none';
           })();
@@ -743,7 +753,8 @@ function verifyEmailOTP() {
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: 'csrf_token=' + encodeURIComponent(_CSRF)
         + '&email=' + encodeURIComponent(emailInp.value.trim())
-        + '&otp='   + encodeURIComponent(otpInp.value.trim()),
+        + '&otp='   + encodeURIComponent(otpInp.value.trim())
+        + '&token=' + encodeURIComponent(_REQ_TOKEN || ''),
   })
   .then(function(r) { return r.json(); })
   .then(function(d) {
@@ -961,6 +972,16 @@ document.addEventListener('DOMContentLoaded', function() {
   var companySel = document.querySelector('select[name="company_code"]');
   if (!sel || !clusterSel) return;
   var currentVal = '{{ form_data.get("plant_location", "") | e }}';
+  // Company Code lives on step 1, Plant Location on step 2 — companySel is
+  // null whenever this step's DOM doesn't include the company_code select
+  // (i.e. every time except while step 1 itself is on screen). Before this
+  // fix, the initial fetch below silently fell back to the 'RDC' literal in
+  // that case, ignoring whatever company was actually saved in step 1 — a
+  // Ultrafine/ROBO initiator always got RDC's cluster-plant picker and plant
+  // list on step 2. form_data.company_code is already persisted by the time
+  // a later step renders (same source currentVal above reads from), so it's
+  // the correct fallback whenever companySel isn't on this page.
+  var savedCompany = '{{ form_data.get("company_code", "") | e }}';
   var allPlants = []; // [{value, label, cluster}]
   var flatMode = false; // true when every plant has cluster === null (non-RDC)
 
@@ -1036,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', function() {
     return { value: o.value, label: o.textContent, cluster: o.getAttribute('data-cluster') || 'Other' };
   }));
 
-  fetchPlantsForCompany(companySel ? companySel.value : 'RDC', false);
+  fetchPlantsForCompany(companySel ? companySel.value : (savedCompany || 'RDC'), false);
 
   if (companySel) {
     companySel.addEventListener('change', function() {

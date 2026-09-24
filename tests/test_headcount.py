@@ -81,6 +81,83 @@ class TestComputeAndStoreOtherCompanySnapshot:
             assert row.plant_location_key is None
 
 
+def _tr_employee(emp_id, name, sub_site, category="Bangalore"):
+    return {
+        "empId": emp_id, "name": name, "sub_site": sub_site, "category": category,
+        "status": "active", "site_name": "RDC Concrete",
+        "department": "Technical", "designation": "Officer", "joining_date": "2025-01-01",
+    }
+
+
+class TestPlantNameCompanyOverride:
+    """
+    Regression coverage for the 2026-09-23 fix: Truein has no Ultrafine/ROBO
+    concept at all in this account (every record's site_name reads "RDC
+    Concrete" regardless of the employee's real company), and a ZingHR
+    record with a blank Company attribute isn't excluded by the
+    _NON_RDC_COMPANIES filter either. Real employees at real Ultrafine/ROBO
+    plants were being silently counted as RDC headcount the moment their
+    raw Location/sub_site string matched one of those companies' own plant
+    names. _compute_and_store_snapshot() (the RDC pass) now checks every
+    employee's Location/sub_site against PlantLocation rows tagged
+    company IN ('ROBO','Ultrafine') BEFORE counting them toward RDC at all.
+    """
+
+    def _run_rdc_snapshot(self, zh_raw, tr_raw):
+        with patch("app.services.headcount.zinghr.fetch_active_employees", return_value=zh_raw), \
+             patch("app.services.headcount.truein._fetch_all_employees_raw", return_value=tr_raw), \
+             patch("app.services.headcount.dvt.fetch_all_plants", return_value=[]):
+            return headcount._compute_and_store_snapshot()
+
+    def test_truein_employee_at_ultrafine_plant_reclassified_not_counted_as_rdc(self, db, app):
+        with app.app_context():
+            db.session.add(PlantLocation(name="ULT-Raipur", company="Ultrafine", is_active=True))
+            db.session.commit()
+
+            tr_raw = [_tr_employee("T1", "Real Ultrafine Worker", sub_site="ULT-Raipur")]
+            result = self._run_rdc_snapshot(zh_raw=[], tr_raw=tr_raw)
+            db.session.commit()
+
+            assert result["other_company_employee_rows_written"] == 1
+            assert result["employee_rows_written"] == 0  # never counted toward RDC at all
+            row = EmployeeLocationSnapshot.query.filter_by(employee_code="T1").first()
+            assert row is not None
+            assert row.company == "Ultrafine"
+            assert row.plant_location_key == "ULT-Raipur"
+            assert row.source == headcount.ExternalDesignationSource.TRUEIN
+
+    def test_zinghr_employee_blank_company_at_robo_plant_reclassified(self, db, app):
+        with app.app_context():
+            db.session.add(PlantLocation(name="Robo-AP_RO", company="ROBO", is_active=True))
+            db.session.commit()
+
+            zh_raw = [_zh_employee("Z1", "Real Robo Worker", company="", location="Robo-AP_RO")]
+            result = self._run_rdc_snapshot(zh_raw=zh_raw, tr_raw=[])
+            db.session.commit()
+
+            assert result["other_company_employee_rows_written"] == 1
+            assert result["employee_rows_written"] == 0
+            row = EmployeeLocationSnapshot.query.filter_by(employee_code="Z1").first()
+            assert row.company == "ROBO"
+            assert row.plant_location_key == "Robo-AP_RO"
+
+    def test_real_rdc_employee_unaffected(self, db, app):
+        """A plant name that doesn't match any Ultrafine/ROBO plant must
+        still flow through the normal RDC path untouched."""
+        with app.app_context():
+            db.session.add(PlantLocation(name="ULT-Raipur", company="Ultrafine", is_active=True))
+            db.session.commit()
+
+            tr_raw = [_tr_employee("T2", "Genuine RDC Worker", sub_site="Some Real RDC Plant")]
+            result = self._run_rdc_snapshot(zh_raw=[], tr_raw=tr_raw)
+            db.session.commit()
+
+            assert result["other_company_employee_rows_written"] == 0
+            assert result["employee_rows_written"] == 1
+            row = EmployeeLocationSnapshot.query.filter_by(employee_code="T2").first()
+            assert row.company is None
+
+
 class TestSharedTimestampAndCompanyIsolation:
     """
     Two real bugs found and fixed while building _compute_and_store_other_company_snapshot():

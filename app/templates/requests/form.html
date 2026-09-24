@@ -128,8 +128,15 @@
                 id="manager-code-input" value="{{ val }}"
                 readonly style="background:var(--c-surface-2);cursor:default;"
                 placeholder="Auto-filled when a manager is selected above"/>
+              {# Was defaulting to reporting_manager_code's own value (`val`) when
+                 l1_manager_emp_id was absent from form_data — that silently satisfied
+                 the "must pick a validated match" blocking check below using an
+                 unvalidated free-text code, and (before the 2026-09-24 backend fix in
+                 _collect_form_data()) l1_manager_emp_id was NEVER actually saved, so
+                 every re-render fell into this fallback. Must default to empty so a
+                 request that was never genuinely validated is correctly re-flagged. #}
               <input type="hidden" name="l1_manager_emp_id" id="l1_manager_emp_id_input"
-                value="{{ form_data.get('l1_manager_emp_id', val) }}"/>
+                value="{{ form_data.get('l1_manager_emp_id', '') }}"/>
               <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">
                 Filled automatically from the search above. The Truein employee ID is stored alongside.
               </p>

@@ -5,6 +5,9 @@ Pure logic + DB reads (NormTier/NormRequirement config, and the cached
 StaffingSnapshot table via app/services/headcount.py) plus a live call to
 the Daily Volume Tracker for the plant/cluster's production volume — never
 calls ZingHR/Truein live (that only happens in the 2-hourly background job).
+The volume used is the trailing 3-month average (see dvt.get_average_plant_volume
+/ get_average_cluster_total_volume), not a single month's figure — stakeholder
+rule, 2026-09-24.
 
 This is what app/requests_bp/routes.py::submit_request()/resubmit_request()
 call when form_data['company_code'] == 'RDC', right before the
@@ -32,18 +35,23 @@ _FAIL_OPEN_REASONS = {
 
 def _plant_volume_or_fallback(dvt_plant_code: str) -> float | None:
     """
-    Live DVT volume lookup for one plant, falling back to the last
-    known-good volume (from cached StaffingSnapshot data — see
-    headcount.get_last_known_plant_volumes()) if the live call fails or
-    raises, e.g. a transient DVT network timeout (confirmed happening
-    repeatedly against the real DVT server during testing). A stale-but-real
-    number is far better than silently skipping a genuine capacity block —
-    only returns None if there's truly no volume available either live or
+    Live DVT trailing-3-month-average volume lookup for one plant (see
+    dvt.get_average_plant_volume() — stakeholder rule, 2026-09-24: tier
+    classification uses the average of the last 3 completed calendar
+    months, not a single month's figure, so one anomalous month doesn't
+    misclassify a plant's tier), falling back to the last known-good
+    volume (from cached StaffingSnapshot data — see
+    headcount.get_last_known_plant_volumes(), itself now populated from
+    the same trailing-average figure) if the live call fails or raises,
+    e.g. a transient DVT network timeout (confirmed happening repeatedly
+    against the real DVT server during testing). A stale-but-real number
+    is far better than silently skipping a genuine capacity block — only
+    returns None if there's truly no volume available either live or
     cached, in which case the caller reports "no_volume_data" and fails
     open as before.
     """
     try:
-        volume = dvt.get_plant_volume(dvt_plant_code)
+        volume = dvt.get_average_plant_volume(dvt_plant_code)
         if volume is not None:
             return volume
     except Exception:
@@ -52,9 +60,9 @@ def _plant_volume_or_fallback(dvt_plant_code: str) -> float | None:
 
 
 def _cluster_volume_or_fallback(plant_codes: list) -> float:
-    """Same fallback philosophy as _plant_volume_or_fallback(), summed across a cluster's plants."""
+    """Same fallback philosophy as _plant_volume_or_fallback(), summed across a cluster's plants, trailing-3-month average."""
     try:
-        return dvt.get_cluster_total_volume(plant_codes)
+        return dvt.get_average_cluster_total_volume(plant_codes)
     except Exception:
         fallback = headcount.get_last_known_plant_volumes()
         return sum(fallback.get(c, 0.0) for c in plant_codes)
@@ -71,11 +79,11 @@ def _find_tier(scope: NormScope, sheet: NormSheet, value: float):
 
 
 def get_tier_for_plant(plant_name: str, sheet: NormSheet = NormSheet.SHEET1):
-    """Resolve last month's DVT volume for plant_name and find the matching NormTier. None if unresolvable."""
+    """Resolve plant_name's trailing 3-month average DVT volume and find the matching NormTier. None if unresolvable."""
     mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant_name, is_deleted=False).first()
     if not mapping or not mapping.dvt_plant_code:
         return None
-    volume = dvt.get_plant_volume(mapping.dvt_plant_code)
+    volume = dvt.get_average_plant_volume(mapping.dvt_plant_code)
     if volume is None:
         return None
     return _find_tier(NormScope.PLANT, sheet, volume)
@@ -183,7 +191,7 @@ def check_rdc_staffing_gate(form_data: dict) -> dict:
             volume = _plant_volume_or_fallback(mapping.dvt_plant_code)
             if volume is None:
                 return _result(True, "no_volume_data", {
-                    "message": "No production volume data available for this plant last month.",
+                    "message": "No production volume data available for this plant over the last 3 months.",
                     "plant_name": plant_name, "dvt_plant_code": mapping.dvt_plant_code,
                 })
 

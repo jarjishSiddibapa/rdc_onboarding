@@ -15,7 +15,7 @@
   <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">
     <div>
       <h1 class="page-title">Plant ↔ Volume Tracker Mappings</h1>
-      <p class="page-sub">Maps our plant names to the Daily Volume Tracker's plant_code, so the RDC staffing gate can look up last month's production. <strong>{{ rows|length }}</strong> plant(s) tracked.</p>
+      <p class="page-sub">Maps our plant names to the Daily Volume Tracker's plant_code, so the RDC staffing gate can look up the plant's average production over the last 3 months. <strong>{{ rows|length }}</strong> plant(s) tracked.</p>
     </div>
     <div style="display:flex;gap:10px;">
       <form method="POST" action="{{ url_for('admin.run_plant_auto_match') }}">

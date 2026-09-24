@@ -2,7 +2,7 @@
 Unit tests for app/services/staffing_norms.py — the RDC hiring-gate logic.
 
 Everything here is DB-only (StaffingSnapshot rows seeded directly) plus a
-mocked dvt.get_plant_volume()/get_cluster_total_volume() — no live API
+mocked dvt.get_average_plant_volume()/get_average_cluster_total_volume() — no live API
 calls, matching how check_rdc_staffing_gate() actually behaves at request
 time (it never calls ZingHR/Truein/DVT synchronously except the one DVT
 volume lookup, which we mock here).
@@ -98,7 +98,7 @@ class TestPlantScopeFixed:
 
     def test_under_norm_allows(self, db, initiator):
         req = self._setup(db, initiator, current_headcount=1)
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4000.0):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", return_value=4000.0):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["allowed"] is True
         assert result["reason"] == "ok"
@@ -108,7 +108,7 @@ class TestPlantScopeFixed:
 
     def test_at_norm_blocks(self, db, initiator):
         req = self._setup(db, initiator, current_headcount=2)
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4000.0):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", return_value=4000.0):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["allowed"] is False
         assert result["reason"] == "at_or_over_norm"
@@ -123,7 +123,7 @@ class TestPlantScopeFixed:
         db.session.add(plant_map)
         db.session.flush()
         req = _make_request(db, initiator, "Batcher", "PlantX")
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4000.0):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", return_value=4000.0):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["allowed"] is True
         assert result["reason"] == "no_snapshot_yet"
@@ -179,10 +179,10 @@ class TestAdjacentTierBoundaries:
         ))
         db.session.flush()
         req = _make_request(db, initiator, "Batcher", "PlantX")
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=1200.0):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", return_value=1200.0):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["details"]["allowed_headcount"] == 1
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=1500.0):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", return_value=1500.0):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["details"]["allowed_headcount"] == 2
 
@@ -206,7 +206,7 @@ class TestRateBasedRounding:
         ))
         db.session.flush()
         req = _make_request(db, initiator, "TM Driver", "PlantX")
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", return_value=4200.0):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", return_value=4200.0):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["details"]["allowed_headcount"] == 5  # rounds up from 4.6667, not floors to 4
         assert result["allowed"] is True  # 4 current + 1 = 5 <= 5 allowed
@@ -262,7 +262,7 @@ class TestErrorHandling:
         db.session.add(plant_map)
         db.session.flush()
         req = _make_request(db, initiator, "Batcher", "PlantX")
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", side_effect=RuntimeError("DVT down")):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", side_effect=RuntimeError("DVT down")):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["allowed"] is True
         assert result["reason"] == "no_volume_data"
@@ -287,7 +287,7 @@ class TestErrorHandling:
         ))
         db.session.flush()
         req = _make_request(db, initiator, "Batcher", "PlantX")
-        with patch("app.services.staffing_norms.dvt.get_plant_volume", side_effect=RuntimeError("DVT down")):
+        with patch("app.services.staffing_norms.dvt.get_average_plant_volume", side_effect=RuntimeError("DVT down")):
             result = staffing_norms.check_rdc_staffing_gate(req.form_data)
         assert result["allowed"] is False
         assert result["reason"] == "at_or_over_norm"

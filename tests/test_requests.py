@@ -397,6 +397,67 @@ class TestCompanyAwarePlantLocationsApi:
         assert "ROBO Only Plant" in html
 
 
+class TestManagerEmpIdPersistence:
+    """
+    Regression for the 2026-09-24 bug found while investigating real
+    requests #37/#38 showing no Manager in Truein: l1_manager_emp_id (the
+    validated Truein manager link, set by the form's manager-typeahead JS
+    only when the initiator picks an actual match) was never an
+    admin-configured FormField, so _collect_form_data() — which only reads
+    keys from the current step's configured fields — silently dropped it on
+    every save, even after a genuinely validated pick. Truein's own
+    "Manager" column reflects only this link, never the free-text
+    reporting_manager_name, so every push before this fix looked like the
+    manager was never set at all.
+    """
+
+    def test_l1_manager_emp_id_is_saved_alongside_reporting_manager_code(self, client, db, app, initiator):
+        db.session.add(FormField(
+            field_key="reporting_manager_code", field_label="Reporting Manager Employee Code",
+            field_type=FieldType.TEXT, step=2, is_required=False, is_active=True,
+        ))
+        db.session.commit()
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT)
+        token = req.public_token
+        req_id = req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            client.post(f"/requests/new?step=2&token={token}", data={
+                "action": "save",
+                "reporting_manager_code": "T00123",
+                "l1_manager_emp_id": "T00123",
+            })
+            updated = db.session.get(OnboardingRequest, req_id)
+            assert updated.form_data.get("l1_manager_emp_id") == "T00123"
+
+    def test_l1_manager_emp_id_cleared_when_resaved_without_a_pick(self, client, db, app, initiator):
+        """A step-2 resave with the manager field left empty (never
+        validated, or cleared) must not keep a stale/unvalidated id around."""
+        db.session.add(FormField(
+            field_key="reporting_manager_code", field_label="Reporting Manager Employee Code",
+            field_type=FieldType.TEXT, step=2, is_required=False, is_active=True,
+        ))
+        db.session.commit()
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT)
+        req.form_data = dict(req.form_data, l1_manager_emp_id="T00123", reporting_manager_code="T00123")
+        db.session.commit()
+        token = req.public_token
+        req_id = req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            client.post(f"/requests/new?step=2&token={token}", data={
+                "action": "save",
+                "reporting_manager_code": "",
+                "l1_manager_emp_id": "",
+            })
+            updated = db.session.get(OnboardingRequest, req_id)
+            assert updated.form_data.get("l1_manager_emp_id") == ""
+
+
 class TestNonRdcCompanyBypassesCapacityGate:
     """
     Regression-lock for a finding made during the 2026-09-15 multi-company

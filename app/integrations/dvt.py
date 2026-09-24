@@ -134,3 +134,106 @@ def fetch_all_plants(month: str | None = None) -> list[dict]:
     """
     data = fetch_monthly_volumes(month) if month else fetch_last_months_volumes()
     return data.get("plants", [])
+
+
+# ── Trailing 3-month average (2026-09-24 stakeholder rule) ─────────────────────
+# The RDC staffing-norms hiring gate used to classify a plant's tier off a
+# single month's raw volume (last calendar month). Stakeholder confirmed the
+# actual rule is the AVERAGE of the last 3 completed calendar months — a
+# single anomalous month (maintenance shutdown, a monsoon slowdown, a
+# one-off spike) must not by itself push a plant into a different tier and
+# change how many people it's allowed to hire. Everything below is additive
+# — get_plant_volume()/get_cluster_total_volume()/fetch_all_plants() above
+# are untouched and still serve their existing single-month callers
+# (matching.py's name reconciliation, the admin plant-mappings page's
+# informational display) where "which month" doesn't affect a hiring
+# decision. Only the two call sites that actually feed the hiring gate —
+# app/services/staffing_norms.py's live check and
+# app/services/headcount.py's _compute_and_store_snapshot() — were switched
+# to the functions below.
+_AVG_WINDOW_MONTHS = 3
+
+
+def _trailing_month_strs(months: int) -> list[str]:
+    """Last `months` completed calendar months as YYYY-MM, most recent first."""
+    result = []
+    cursor = datetime.utcnow().replace(day=1)
+    for _ in range(months):
+        last_of_previous_month = cursor - timedelta(days=1)
+        result.append(last_of_previous_month.strftime("%Y-%m"))
+        cursor = last_of_previous_month.replace(day=1)
+    return result
+
+
+def get_average_plant_volume(plant_code: str, months: int = _AVG_WINDOW_MONTHS) -> float | None:
+    """
+    Average of plant_code's volume across the trailing `months` completed
+    calendar months (default 3). Averages only over the months the plant
+    actually appears in with a non-null volume — a month DVT has no data
+    for (e.g. a newly commissioned plant) is skipped rather than counted
+    as a zero, which would otherwise wrongly drag the average down.
+    Returns None only if the plant has no volume in any of the months.
+    """
+    total, count = 0.0, 0
+    for month in _trailing_month_strs(months):
+        data = fetch_monthly_volumes(month)
+        for plant in data.get("plants", []):
+            if plant.get("plant_code") == plant_code and plant.get("volume") is not None:
+                total += plant["volume"]
+                count += 1
+                break
+    return (total / count) if count else None
+
+
+def get_average_cluster_total_volume(plant_codes: list[str], months: int = _AVG_WINDOW_MONTHS) -> float:
+    """
+    Average, across the trailing `months` completed calendar months
+    (default 3), of the summed volume for the given plant_codes — same
+    trailing-average rule as get_average_plant_volume(), applied to a
+    cluster/region total (e.g. the Accounts RATE_PER_VOLUME norm).
+    """
+    wanted = set(plant_codes)
+    monthly_totals = []
+    for month in _trailing_month_strs(months):
+        data = fetch_monthly_volumes(month)
+        monthly_totals.append(sum(p.get("volume", 0.0) for p in data.get("plants", []) if p.get("plant_code") in wanted))
+    return sum(monthly_totals) / len(monthly_totals) if monthly_totals else 0.0
+
+
+def fetch_all_plants_with_avg_volume(months: int = _AVG_WINDOW_MONTHS) -> list[dict]:
+    """
+    Same shape as fetch_all_plants() — one dict per plant with
+    plant_code/region/erp_name/daily_tracker_name/etc. — but `volume` is
+    replaced by the trailing `months`-month average (see
+    get_average_plant_volume()) instead of a single month's figure. Used
+    by headcount.py's _compute_and_store_snapshot(), which needs both the
+    identity fields (for plant/cluster resolution) and the volume (for
+    tier classification) in one bulk call per background refresh.
+    Identity fields (region/erp_name/daily_tracker_name) are taken from
+    the most recent month a plant appears in, since those can be corrected
+    over time upstream in DVT and the newest is the best guess; a plant
+    missing from the latest month but present in an older one is still
+    included (e.g. briefly absent from one month's export).
+    """
+    month_strs = _trailing_month_strs(months)
+    plants_by_code: dict[str, dict] = {}
+    volume_sums: dict[str, float] = {}
+    volume_counts: dict[str, int] = {}
+    for month in reversed(month_strs):  # oldest first, so newest overwrites identity fields last
+        data = fetch_monthly_volumes(month)
+        for plant in data.get("plants", []):
+            code = plant.get("plant_code")
+            if not code:
+                continue
+            plants_by_code[code] = plant
+            volume = plant.get("volume")
+            if volume is not None:
+                volume_sums[code] = volume_sums.get(code, 0.0) + volume
+                volume_counts[code] = volume_counts.get(code, 0) + 1
+    merged = []
+    for code, plant in plants_by_code.items():
+        row = dict(plant)
+        if code in volume_sums:
+            row["volume"] = volume_sums[code] / volume_counts[code]
+        merged.append(row)
+    return merged

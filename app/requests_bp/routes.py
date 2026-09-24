@@ -55,6 +55,21 @@ def _collect_form_data(fields, existing=None):
         if f.allow_other and val == "Other":
             other_val = request.form.get(f"{f.field_key}_other", "").strip()
             data[f"{f.field_key}_other"] = other_val
+        # l1_manager_emp_id (confirmed bug, found 2026-09-24 while
+        # investigating real requests #37/#38 showing no Manager in
+        # Truein): companion hidden input to reporting_manager_code, set by
+        # the Truein-manager-typeahead JS in form.html only when the
+        # initiator picks a VALIDATED match. It has never been an
+        # admin-configured FormField, so this loop — which only reads keys
+        # from `fields` — silently dropped it on every save, even when the
+        # initiator correctly picked a validated manager and the client-side
+        # "must pick a match" check passed. Truein's own "Manager" column
+        # reflects only this validated link, never the free-text `manager`/
+        # reporting_manager_name field (see app/integrations/truein.py's
+        # FIELD_MAP manager_emp_id note) — so every push before this fix
+        # sent a name but never the piece Truein actually displays.
+        if f.field_key == "reporting_manager_code":
+            data["l1_manager_emp_id"] = request.form.get("l1_manager_emp_id", "").strip()
     return data
 
 
@@ -1747,11 +1762,17 @@ def approve_request(token):
     flash(f"Approved. Status: {req.status_label}", "success")
 
     # ── Auto-push to Truein when request reaches ACTIVE ───────────────────────
-    # Gated to companies Truein actually tracks under this account/subscription
-    # (RDC only, confirmed 2026-09-15 — see CLAUDE.md "Multi-Company Support"
-    # and is_company_tracked_in_truein()'s docstring). Without this gate, a
-    # Ultrafine/ROBO request reaching ACTIVE would still be pushed and
-    # mislabeled as an RDC Concrete employee (siteName is hardcoded).
+    # Runs synchronously, right here, the moment this approval activates the
+    # request — never deferred, never waiting on a human to notice and ask.
+    # is_company_tracked_in_truein() covers all 3 companies (RDC/ROBO/Ultrafine
+    # — corrected 2026-09-23, see its docstring in truein.py; ROBO/Ultrafine
+    # employees ARE registered in this Truein account, just filed under the
+    # only site it has, "RDC Concrete") — this is effectively unconditional
+    # today, kept only as a single choke point for a genuinely untracked
+    # company if one is ever added. On failure the request is NOT left
+    # silent: a background retry thread starts immediately (unless the
+    # failure is a non-retryable data collision) and HR Manager/Head HR/
+    # Admin are notified by email + in-app right here, synchronously.
     _push_issue = False
     from ..integrations.truein import is_company_tracked_in_truein
     if new_status == RequestStatus.ACTIVE and is_company_tracked_in_truein(req.company_code):

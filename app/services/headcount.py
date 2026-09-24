@@ -528,7 +528,9 @@ def _compute_and_store_snapshot() -> dict:
     # dashboard can answer "can we hire here?" even for currently-empty
     # roles, not just show historical headcount.
     try:
-        dvt_plants_raw = dvt.fetch_all_plants()
+        # Trailing 3-month average, not a single month's figure — stakeholder
+        # rule, 2026-09-24 (see dvt.fetch_all_plants_with_avg_volume() docstring).
+        dvt_plants_raw = dvt.fetch_all_plants_with_avg_volume()
     except Exception as exc:
         warnings.append(f"DVT fetch failed: {exc}")
         dvt_plants_raw = []

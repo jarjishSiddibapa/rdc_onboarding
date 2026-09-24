@@ -106,7 +106,7 @@ class TestPlantNameCompanyOverride:
     def _run_rdc_snapshot(self, zh_raw, tr_raw):
         with patch("app.services.headcount.zinghr.fetch_active_employees", return_value=zh_raw), \
              patch("app.services.headcount.truein._fetch_all_employees_raw", return_value=tr_raw), \
-             patch("app.services.headcount.dvt.fetch_all_plants", return_value=[]):
+             patch("app.services.headcount.dvt.fetch_all_plants_with_avg_volume", return_value=[]):
             return headcount._compute_and_store_snapshot()
 
     def test_truein_employee_at_ultrafine_plant_reclassified_not_counted_as_rdc(self, db, app):

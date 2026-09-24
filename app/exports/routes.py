@@ -118,15 +118,25 @@ def _apply_filters(params, viewer=None):
     elif p["bh_id_s"]:
         try:
             bh_int = int(p["bh_id_s"])
-            rows = db.session.execute(
-                db.text("SELECT id FROM users WHERE business_head_id = :bh"),
-                {"bh": bh_int}
-            ).fetchall()
-            initiator_ids = [r[0] for r in rows]
-            if initiator_ids:
-                q = q.filter(OnboardingRequest.initiated_by.in_(initiator_ids))
-            else:
-                q = q.filter(OnboardingRequest.id == -1)
+            # NOT business_head_id (legacy/unwritten since the 2026-09-04
+            # region-routing redesign — see that column's docstring in
+            # models.py). Real BH eligibility is per-request, since it
+            # depends on both the initiator's regions and the request's own
+            # company_code (bh_ids_for_initiator's signature). Re-derive it
+            # per company via the same canonical routing function so this
+            # filter can never drift from actual approval-routing behavior.
+            from ..utils import bh_ids_for_initiator
+            from ..models import COMPANY_CHOICES
+            all_initiators = User.query.filter_by(role=UserRole.INITIATOR).all()
+            clauses = []
+            for company in COMPANY_CHOICES:
+                ids = [u.id for u in all_initiators if bh_int in bh_ids_for_initiator(u, company)]
+                if ids:
+                    clauses.append(db.and_(
+                        OnboardingRequest.company_code == company,
+                        OnboardingRequest.initiated_by.in_(ids),
+                    ))
+            q = q.filter(db.or_(*clauses)) if clauses else q.filter(OnboardingRequest.id == -1)
         except ValueError:
             pass
 

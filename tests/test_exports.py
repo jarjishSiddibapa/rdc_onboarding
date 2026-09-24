@@ -7,7 +7,7 @@ Tests for the exports blueprint:
 import json
 import uuid
 import pytest
-from app.models import UserRole, RequestStatus, OnboardingRequest
+from app.models import UserRole, RequestStatus, OnboardingRequest, ClusterNameMapping, InitiatorRegion, BusinessHeadRegion
 from app.extensions import db as _db
 from .conftest import login, _make_user
 
@@ -90,6 +90,51 @@ class TestPreviewEndpoint:
         if company_col_idx is not None:
             for row in data["rows"]:
                 assert row[company_col_idx] == "ALPHA"
+
+
+# ── Filter by Business Head ─────────────────────────────────────────────────────
+# Regression coverage for a real bug found 2026-09-24: this filter used to
+# resolve via the legacy, unwritten User.business_head_id column (dead since
+# the 2026-09-04 region-routing redesign), so picking ANY Business Head in
+# the dropdown always returned zero rows. Fixed to re-derive eligibility via
+# the canonical bh_ids_for_initiator() routing function instead.
+
+class TestBusinessHeadFilter:
+    def test_unscoped_initiator_request_matches_any_rdc_bh(self, client, db, app):
+        admin = _make_user("AdminBH1", "adminbh1@t.com", UserRole.SUPER_ADMIN, db)
+        initiator = _make_user("InitBH1", "initbh1@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        bh = _make_user("BhBH1", "bhbh1@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        _create_active_request(db, initiator, candidate_name="Unscoped Candidate", company_code="RDC")
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get(f"/exports/active-employees/preview?bh_id={bh.id}")
+        data = json.loads(resp.data)
+        # Fail-open: an initiator with no InitiatorRegion rows is reachable
+        # by every RDC-ticked active BH, so this must be >=1, not 0 (the
+        # dead-column bug always returned 0 here regardless of routing).
+        assert data["total"] >= 1
+
+    def test_region_scoped_bh_only_sees_own_region_requests(self, client, db, app):
+        admin = _make_user("AdminBH2", "adminbh2@t.com", UserRole.SUPER_ADMIN, db)
+        initiator = _make_user("InitBH2", "initbh2@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        bh_a = _make_user("BhA", "bha@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        bh_b = _make_user("BhB", "bhb@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        region = ClusterNameMapping(canonical_cluster_name="TestRegionBH")
+        db.session.add(region)
+        db.session.flush()
+        db.session.add(InitiatorRegion(initiator_id=initiator.id, cluster_id=region.id))
+        db.session.add(BusinessHeadRegion(business_head_id=bh_a.id, cluster_id=region.id))
+        _create_active_request(db, initiator, candidate_name="Region Scoped Candidate", company_code="RDC")
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp_a = client.get(f"/exports/active-employees/preview?bh_id={bh_a.id}")
+            resp_b = client.get(f"/exports/active-employees/preview?bh_id={bh_b.id}")
+        data_a = json.loads(resp_a.data)
+        data_b = json.loads(resp_b.data)
+        assert data_a["total"] == 1
+        assert data_b["total"] == 0
 
 
 # ── Download endpoint ──────────────────────────────────────────────────────────

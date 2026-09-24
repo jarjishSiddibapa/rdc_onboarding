@@ -352,12 +352,20 @@ def _compute_and_store_snapshot() -> dict:
     # or what that system's own company/site field says. Checked BEFORE the
     # RDC plant-matching below in both the ZingHR and Truein loops; a match
     # here means the employee is written to other_company_employee_rows
-    # instead of counted toward RDC at all.
+    # instead of counted toward RDC at all. Deliberately NOT filtered to
+    # is_active=True (fixed 2026-09-24, stakeholder request): a plant being
+    # closed/deactivated in admin doesn't mean its former employees stop
+    # existing in ZingHR/Truein — excluding closed plants here would have
+    # let a real ROBO/Ultrafine employee at a since-closed plant fall
+    # through and get miscounted as RDC (or unclassified RDC) instead of
+    # correctly attributed to their own company. Only is_deleted (a genuine
+    # data-entry mistake being undone) should ever remove a plant from this
+    # lookup.
     other_company_plants_by_norm = {
         _normalize_name(p.name): (p.company, p.name)
         for p in PlantLocation.query.filter(
             PlantLocation.company.in_(("ROBO", "Ultrafine")),
-            PlantLocation.is_deleted == False, PlantLocation.is_active == True).all()
+            PlantLocation.is_deleted == False).all()
     }
     other_company_employee_rows = []  # dicts backing EmployeeLocationSnapshot(company=...), written alongside RDC's own employee_rows
 
@@ -749,9 +757,16 @@ def _compute_and_store_other_company_snapshot(now=None) -> dict:
     """
     zh_employees_raw = zinghr.fetch_active_employees()
 
+    # Deliberately not filtered to is_active=True (fixed 2026-09-24,
+    # stakeholder request): a closed/inactive plant can still have real
+    # employees on it in ZingHR (closure lags separation) — excluding it
+    # here silently dropped them into "Unresolved" instead of correctly
+    # counting them against their actual plant. Only is_deleted removes a
+    # plant from this lookup; get_other_company_plant_summary() below is
+    # what decides whether a closed plant is still shown/labeled.
     plants_by_company: dict[str, dict[str, str]] = {}
     for p in (PlantLocation.query
-              .filter_by(is_deleted=False, is_active=True)
+              .filter_by(is_deleted=False)
               .filter(PlantLocation.company.in_(_ZINGHR_COMPANY_TO_CODE.values()))
               .all()):
         plants_by_company.setdefault(p.company, {})[_normalize_name(p.name)] = p.name
@@ -948,16 +963,24 @@ def get_all_employees(source=None, designation=None, department=None, resolved=N
 
 def get_other_company_plant_summary(company: str) -> list[dict]:
     """
-    One row per active PlantLocation for `company`, with its current
-    headcount from the latest EmployeeLocationSnapshot run — the data
-    source for that company's tab on the Staffing Status page. A plant
-    with zero matched employees still appears, with headcount 0 (visible,
-    not hidden, same as RDC's own convention for a plant with no snapshot
-    data yet).
+    One row per PlantLocation for `company` — active AND closed/inactive
+    (changed 2026-09-24, stakeholder request) — with its current headcount
+    from the latest EmployeeLocationSnapshot run — the data source for that
+    company's tab on the Staffing Status page. A plant with zero matched
+    employees still appears, with headcount 0 (visible, not hidden, same as
+    RDC's own convention for a plant with no snapshot data yet).
+
+    Closed plants are deliberately still included: a plant being marked
+    inactive in admin doesn't mean its former employees have all left —
+    hiding the plant here used to make their headcount silently vanish from
+    every report instead of still being attributable to the plant they're
+    actually on. `is_active` is carried through per row so callers can
+    label a closed plant instead of pretending it's indistinguishable from
+    an open one.
     """
     plants = (PlantLocation.query
-              .filter_by(is_deleted=False, is_active=True, company=company)
-              .order_by(PlantLocation.sort_order, PlantLocation.name)
+              .filter_by(is_deleted=False, company=company)
+              .order_by(PlantLocation.is_active.desc(), PlantLocation.sort_order, PlantLocation.name)
               .all())
     latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
     counts = {}

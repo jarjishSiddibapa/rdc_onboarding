@@ -533,6 +533,59 @@ class TestStaffingStatusCompanyTabs:
             resp = client.get("/requests/staffing-status/company/NotAThing/plant/Anything")
         assert resp.status_code == 404
 
+    def test_company_download_has_three_sheets_closed_plant_and_unmapped_employee(self, client, db, app):
+        """Regression coverage for the 2026-09-24 fix (stakeholder request):
+        a closed plant's real employees must still show up in By Plant
+        (with a Status column distinguishing Active/Closed), and anyone who
+        genuinely doesn't match any known plant must land in a dedicated
+        Unmapped Employees sheet, not be silently dropped or buried inside
+        By Employees."""
+        from io import BytesIO
+        from openpyxl import load_workbook
+        admin = _make_user("CompanyDownloadAdmin", "companydownloadadmin@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.add_all([
+            PlantLocation(name="ROBO Open Plant", company="ROBO", is_active=True),
+            PlantLocation(name="ROBO Shut Plant", company="ROBO", is_active=False),
+        ])
+        db.session.commit()
+        shared_now = datetime.utcnow()
+        db.session.add_all([
+            EmployeeLocationSnapshot(
+                computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
+                employee_code="ROPEN1", employee_name="Robo Open Employee",
+                plant_location_key="ROBO Open Plant", company="ROBO",
+            ),
+            EmployeeLocationSnapshot(
+                computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
+                employee_code="RSHUT1", employee_name="Robo Shut Employee",
+                plant_location_key="ROBO Shut Plant", company="ROBO",
+            ),
+            EmployeeLocationSnapshot(
+                computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
+                employee_code="RGHOST1", employee_name="Robo Ghost Employee",
+                plant_location_key=None, company="ROBO",
+            ),
+        ])
+        db.session.commit()
+        with app.app_context():
+            login(client, admin.email)
+            resp = client.get("/requests/staffing-status/download/ROBO")
+        assert resp.status_code == 200
+        wb = load_workbook(BytesIO(resp.data))
+        assert wb.sheetnames == ["By Plant", "By Employees", "Unmapped Employees"]
+
+        plant_rows = {r[0]: r for r in wb["By Plant"].iter_rows(min_row=2, values_only=True)}
+        assert plant_rows["ROBO Open Plant"] == ("ROBO Open Plant", 1, "Active")
+        assert plant_rows["ROBO Shut Plant"] == ("ROBO Shut Plant", 1, "Closed")
+
+        employee_names = {r[1] for r in wb["By Employees"].iter_rows(min_row=2, values_only=True)}
+        assert "Robo Open Employee" in employee_names
+        assert "Robo Shut Employee" in employee_names   # closed plant's employee still counted, not lost
+        assert "Robo Ghost Employee" not in employee_names
+
+        unmapped_names = {r[0] for r in wb["Unmapped Employees"].iter_rows(min_row=2, values_only=True)}
+        assert unmapped_names == {"Robo Ghost Employee"}
+
 
 class TestStaffingStatusCompanyScopeGating:
     """

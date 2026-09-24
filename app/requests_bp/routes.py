@@ -1166,12 +1166,23 @@ def staffing_status_company_download(company):
     """
     Excel download for the Ultrafine/ROBO Staffing Status tabs (added
     2026-09-23) — the RDC tab already had this above; Ultrafine/ROBO didn't.
-    Two sheets: By Plant (plant, headcount — no volume/tier/allowed-headcount
-    columns, since neither company is production-volume gated, same as their
-    staffing_status.html tab) and By Employees (one row per actual employee,
-    plus any whose ZingHR Location didn't resolve to a known plant — see
-    headcount.get_other_company_unresolved_count(), already surfaced as a
-    count on the dashboard tab but never previously downloadable as rows).
+    Three sheets: By Plant (plant, headcount, and a Status column — see
+    below — no volume/tier/allowed-headcount columns, since neither company
+    is production-volume gated, same as their staffing_status.html tab), By
+    Employees (one row per employee actually resolved to a plant), and
+    Unmapped Employees (added 2026-09-24, stakeholder request — anyone whose
+    ZingHR Location didn't resolve to ANY known plant for their company, so
+    HR can trace and correct them — previously only a count on the
+    dashboard tab, or mixed into By Employees as "(Unresolved)" rows).
+
+    Closed/inactive plants (fixed 2026-09-24, stakeholder request) are now
+    included in By Plant with their real headcount, not silently dropped —
+    get_other_company_plant_summary() stopped filtering to is_active plants
+    only, since a plant being closed in admin doesn't mean its employees
+    have all left; they were previously falling into "Unresolved" purely
+    because the plant lookup used to skip closed plants. Status distinguishes
+    Active from Closed so a closed plant's headcount isn't mistaken for a
+    currently-hiring-eligible one.
     """
     if company not in COMPANY_CHOICES or company == "RDC":
         abort(404)
@@ -1187,7 +1198,8 @@ def staffing_status_company_download(company):
 
     style = _xlsx_report_style()
     plant_summary = headcount.get_other_company_plant_summary(company)
-    plant_rows = [(p["plant"].name, p["headcount"]) for p in plant_summary]
+    plant_rows = [(p["plant"].name, p["headcount"], "Active" if p["plant"].is_active else "Closed")
+                  for p in plant_summary]
 
     employee_cols = [("Plant", 26), ("Employee Name", 26), ("Employee Code", 16),
                       ("Designation", 26), ("Department", 20), ("Date of Joining", 16), ("Source", 10)]
@@ -1197,21 +1209,26 @@ def staffing_status_company_download(company):
             employee_rows.append((p["plant"].name, e.employee_name, e.employee_code,
                                    e.designation, e.department, e.date_of_joining, e.source.value))
 
+    unmapped_cols = [("Employee Name", 26), ("Employee Code", 16), ("Designation", 26),
+                      ("Department", 20), ("Date of Joining", 16), ("Source", 10)]
+    unmapped_rows = []
     latest_run = db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
     if latest_run:
         unresolved = (EmployeeLocationSnapshot.query
                       .filter_by(company=company, plant_location_key=None, computed_at=latest_run)
                       .order_by(EmployeeLocationSnapshot.employee_name).all())
         for e in unresolved:
-            employee_rows.append(("(Unresolved)", e.employee_name, e.employee_code,
-                                   e.designation, e.department, e.date_of_joining, e.source.value))
+            unmapped_rows.append((e.employee_name, e.employee_code, e.designation,
+                                   e.department, e.date_of_joining, e.source.value))
 
     wb = Workbook()
     ws1 = wb.active
     ws1.title = "By Plant"
-    _write_xlsx_sheet(ws1, [("Plant", 30), ("Headcount", 14)], plant_rows, style)
+    _write_xlsx_sheet(ws1, [("Plant", 30), ("Headcount", 14), ("Status", 12)], plant_rows, style)
     ws2 = wb.create_sheet("By Employees")
     _write_xlsx_sheet(ws2, employee_cols, employee_rows, style)
+    ws3 = wb.create_sheet("Unmapped Employees")
+    _write_xlsx_sheet(ws3, unmapped_cols, unmapped_rows, style)
 
     buf = io.BytesIO()
     wb.save(buf)

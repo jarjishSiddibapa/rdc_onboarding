@@ -69,7 +69,13 @@ class TestComputeAndStoreOtherCompanySnapshot:
                 db.session.commit()
             assert result["employee_rows_written"] == 0
 
-    def test_inactive_plant_never_matched(self, db, app):
+    def test_inactive_plant_is_still_matched(self, db, app):
+        """CORRECTED 2026-09-24 (stakeholder request) — this used to assert
+        the opposite (an inactive/closed plant is never matched, so its
+        employees fell into Unresolved). That was the bug: a plant being
+        closed in admin doesn't mean its employees stopped existing in
+        ZingHR. See TestClosedPlantStillCounted for the fuller regression
+        coverage of this fix."""
         with app.app_context():
             db.session.add(PlantLocation(name="Disabled UF Plant", company="Ultrafine", is_active=False))
             db.session.commit()
@@ -78,7 +84,7 @@ class TestComputeAndStoreOtherCompanySnapshot:
                 headcount._compute_and_store_other_company_snapshot()
                 db.session.commit()
             row = EmployeeLocationSnapshot.query.filter_by(employee_code="UF3").first()
-            assert row.plant_location_key is None
+            assert row.plant_location_key == "Disabled UF Plant"
 
 
 def _tr_employee(emp_id, name, sub_site, category="Bangalore"):
@@ -262,3 +268,68 @@ class TestOtherCompanyReadHelpers:
             at_plant = headcount.get_other_company_employees_at_plant("ROBO", "ROBO Real Plant")
             assert len(at_plant) == 1
             assert at_plant[0].employee_code == "RB5"
+
+
+class TestClosedPlantStillCounted:
+    """
+    Regression coverage for the 2026-09-24 fix (stakeholder request): a
+    plant being marked inactive/closed in admin must not make its real
+    employees vanish from headcount — before this fix, both the plant-name
+    lookups below were filtered to is_active=True plants only, so an
+    employee whose ZingHR Location matched a since-closed plant fell
+    through into "Unresolved" (or, for the RDC cross-check, risked being
+    miscounted as RDC) purely because the plant record was deactivated.
+    """
+
+    def test_other_company_snapshot_resolves_employee_at_closed_plant(self, db, app):
+        with app.app_context():
+            db.session.add(PlantLocation(name="ROBO Closed Plant", company="ROBO", is_active=False))
+            db.session.commit()
+
+            zh_raw = [_zh_employee("RB7", "Robo Seven", "Robo Silicon Pvt. Ltd.", "ROBO Closed Plant")]
+            with patch("app.services.headcount.zinghr.fetch_active_employees", return_value=zh_raw):
+                headcount._compute_and_store_other_company_snapshot()
+                db.session.commit()
+
+            # Correctly attributed to the closed plant, not dropped into Unresolved.
+            assert headcount.get_other_company_unresolved_count("ROBO") == 0
+            at_plant = headcount.get_other_company_employees_at_plant("ROBO", "ROBO Closed Plant")
+            assert len(at_plant) == 1
+            assert at_plant[0].employee_code == "RB7"
+
+    def test_plant_summary_includes_closed_plant_with_real_headcount(self, db, app):
+        with app.app_context():
+            db.session.add(PlantLocation(name="Ultrafine Closed Plant", company="Ultrafine", is_active=False))
+            db.session.commit()
+
+            zh_raw = [_zh_employee("UF9", "Uma Nine", "Ultrafine Mineral and Admixtures Pvt Ltd", "Ultrafine Closed Plant")]
+            with patch("app.services.headcount.zinghr.fetch_active_employees", return_value=zh_raw):
+                headcount._compute_and_store_other_company_snapshot()
+                db.session.commit()
+
+            summary = headcount.get_other_company_plant_summary("Ultrafine")
+            row = next(r for r in summary if r["plant"].name == "Ultrafine Closed Plant")
+            assert row["headcount"] == 1
+            assert row["plant"].is_active is False
+
+    def test_rdc_cross_check_still_catches_a_closed_other_company_plant(self, db, app):
+        """A closed Ultrafine/ROBO plant must still be recognized by the RDC
+        pass's plant-name company override, so a real Ultrafine/ROBO
+        employee at that plant is never miscounted as RDC just because the
+        plant was deactivated."""
+        with app.app_context():
+            db.session.add(PlantLocation(name="ULT-Closed-Raipur", company="Ultrafine", is_active=False))
+            db.session.commit()
+
+            tr_raw = [_tr_employee("T3", "Closed Plant Worker", sub_site="ULT-Closed-Raipur")]
+            with patch("app.services.headcount.zinghr.fetch_active_employees", return_value=[]), \
+                 patch("app.services.headcount.truein._fetch_all_employees_raw", return_value=tr_raw), \
+                 patch("app.services.headcount.dvt.fetch_all_plants_with_avg_volume", return_value=[]):
+                result = headcount._compute_and_store_snapshot()
+            db.session.commit()
+
+            assert result["other_company_employee_rows_written"] == 1
+            assert result["employee_rows_written"] == 0
+            row = EmployeeLocationSnapshot.query.filter_by(employee_code="T3").first()
+            assert row.company == "Ultrafine"
+            assert row.plant_location_key == "ULT-Closed-Raipur"

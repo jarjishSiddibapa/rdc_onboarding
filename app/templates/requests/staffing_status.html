@@ -134,8 +134,8 @@
       <thead><tr><th>Plant</th><th>Headcount</th></tr></thead>
       <tbody>
         {% for row in summary %}
-        <tr>
-          <td><a href="{{ url_for('requests_bp.staffing_status_company_plant', company=company, plant_name=row.plant.name) }}" style="font-weight:600;">{{ row.plant.name }} →</a></td>
+        <tr{% if not row.plant.is_active %} style="opacity:0.65;"{% endif %}>
+          <td><a href="{{ url_for('requests_bp.staffing_status_company_plant', company=company, plant_name=row.plant.name) }}" style="font-weight:600;">{{ row.plant.name }} →</a>{% if not row.plant.is_active %} <span style="font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.04em;">(Closed)</span>{% endif %}</td>
           <td class="mono" style="font-size:13px;color:var(--c-text-2);">{{ row.headcount }}</td>
         </tr>
         {% endfor %}

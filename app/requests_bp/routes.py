@@ -366,7 +366,7 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
 # connection pool) also means a handful of stuck sends can only ever queue
 # future OTP sends, never stall unrelated page loads.
 _OTP_EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="otp-email")
-_OTP_EMAIL_TIMEOUT = 20  # seconds
+_OTP_EMAIL_TIMEOUT = 30  # seconds — comfortably more than any legitimate SMTP send needs (those normally finish in a few seconds), but still short enough that a real hang gives feedback before it feels broken again (2026-09-24)
 
 
 @requests_bp.route("/send-email-otp", methods=["POST"])

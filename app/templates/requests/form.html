@@ -665,9 +665,12 @@ function sendEmailOTP() {
   // the browser (a flaky network hop, not just a slow SMTP server), the
   // button must recover on its own instead of sitting on "Sending…"
   // forever with no way out except a page refresh (the reported incident).
+  // Kept longer than the server's own _OTP_EMAIL_TIMEOUT (30s) so this
+  // never fires first and shows a false "network error" while the server
+  // is still legitimately within its own bound.
   var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   var timedOut = false;
-  var timer = controller ? setTimeout(function() { timedOut = true; controller.abort(); }, 25000) : null;
+  var timer = controller ? setTimeout(function() { timedOut = true; controller.abort(); }, 40000) : null;
   fetch(_SEND_OTP_URL, {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},

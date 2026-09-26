@@ -192,6 +192,53 @@ class TestBuildPayloadFieldCompleteness:
             assert "l1_manager_emp_id" not in payload
             assert "reporting_manager_code" not in payload
 
+    def test_pincode_folded_into_address_since_truein_has_no_postal_code_field(self, db, app):
+        """
+        2026-09-24 fix, confirmed via a live full-field-completeness push:
+        the form collects pincode as a required field, but Truein's schema
+        (verified against a live pull of a real employee record) has no
+        dedicated postal-code field at all — only a single free-text
+        address field. Previously pincode was silently dropped entirely;
+        now it's appended to address so it isn't lost.
+        """
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1,
+                public_token=uuid.uuid4().hex,
+                candidate_name="Test Candidate",
+                designation="Batching Plant Operator",
+                plant_location="BG-Test Plant",
+                company_code="RDC",
+            )
+            req.form_data = {
+                "permanent_address": "123 Test Street, Test Nagar",
+                "pincode": "400605",
+            }
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["address"] == "123 Test Street, Test Nagar - 400605"
+
+    def test_no_pincode_leaves_address_untouched(self, db, app):
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1,
+                public_token=uuid.uuid4().hex,
+                candidate_name="Test Candidate 2",
+                designation="Batching Plant Operator",
+                plant_location="BG-Test Plant",
+                company_code="RDC",
+            )
+            req.form_data = {"permanent_address": "123 Test Street, Test Nagar"}
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["address"] == "123 Test Street, Test Nagar"
+
     def test_category_falls_back_to_plant_name_when_no_cluster_reconciliation(self, db, app):
         """
         2026-09-23 fix: category was only ever set when a PlantDvtMapping

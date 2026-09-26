@@ -278,6 +278,17 @@ def build_payload(req) -> dict:
         if val and truein_key not in payload:
             payload[truein_key] = val
 
+    # 2b. pincode — confirmed 2026-09-24 (live full-field-completeness test):
+    # the form collects it, but Truein's schema has no dedicated postal-code
+    # field at all (confirmed against a live pull of Truein's own ~100-field
+    # employee record — nothing resembling pincode/postal_code/zip exists
+    # anywhere in it). Truein does have a single free-text "address" field,
+    # so fold pincode into it rather than dropping it silently, the same way
+    # a person would naturally write a postal address.
+    pincode = fd.get("pincode")
+    if pincode and "address" in payload and str(pincode) not in payload["address"]:
+        payload["address"] = f"{payload['address']} - {pincode}"
+
     # 3. Normalize marital_status — Truein only accepts "Married" or "Unmarried".
     #    Our form uses Single/Married/Divorced/Widowed. Map or drop.
     _MARITAL_MAP = {

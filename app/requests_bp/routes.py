@@ -3,7 +3,8 @@ import re
 import time
 import uuid
 import random
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
+import queue
+import threading
 from datetime import datetime, date as _date
 from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify
 from flask_login import login_required, current_user
@@ -435,14 +436,32 @@ def _check_mobile_registered(mobile_number: str, exclude_token: str | None = Non
 # for far longer than 30s, with the browser's "Sending…" button never
 # resolving either way (confirmed incident, 2026-09-24: reported as the
 # button going "into a loop", then a stuck blank page on refresh). Running
-# the send in this dedicated worker pool and bounding it with .result()
-# guarantees the HTTP response — and the DB connection — is never held
-# past _OTP_EMAIL_TIMEOUT, no matter what hangs on the SMTP/DNS side. A
-# separate small pool (not the main Werkzeug request threads, not the DB
-# connection pool) also means a handful of stuck sends can only ever queue
-# future OTP sends, never stall unrelated page loads.
-_OTP_EMAIL_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="otp-email")
+# the send on a dedicated thread and bounding the WAIT with a queue.get()
+# timeout guarantees the HTTP response — and the DB connection — is never
+# held past _OTP_EMAIL_TIMEOUT, no matter what hangs on the SMTP/DNS side.
+#
+# Fixed 2026-09-26 — this used to submit to a shared, FIXED-SIZE
+# ThreadPoolExecutor(max_workers=8). A genuine DNS hang (getaddrinfo has no
+# timeout of its own, and a Python thread can never be forcibly killed once
+# started) permanently pins whichever worker picked it up; 8 concurrent
+# hangs exhausts the entire pool forever, and every subsequent OTP-send
+# request then queues behind dead workers and times out too — a transient
+# DNS/SMTP outage becoming a permanent, silent OTP outage with no recovery
+# short of restarting the process. Spawning a fresh daemon thread per
+# request instead means a hang can only ever strand the one thread that
+# hit it (harmless — daemon threads don't block process exit and OTP sends
+# are already rate-limited to 10/hour/client), never reduce capacity for
+# any other request.
 _OTP_EMAIL_TIMEOUT = 30  # seconds — comfortably more than any legitimate SMTP send needs (those normally finish in a few seconds), but still short enough that a real hang gives feedback before it feels broken again (2026-09-24)
+
+
+def _send_smtp_to_queue(result_q, cfg, recipients, subject, body):
+    from ..utils import _send_smtp
+    try:
+        _send_smtp(cfg, recipients, subject, body)
+        result_q.put(("ok", None))
+    except Exception as exc:
+        result_q.put(("error", exc))
 
 
 @requests_bp.route("/send-email-otp", methods=["POST"])
@@ -452,11 +471,11 @@ _OTP_EMAIL_TIMEOUT = 30  # seconds — comfortably more than any legitimate SMTP
 def send_email_otp():
     """Send a 6-digit OTP to the candidate email to prove it exists.
 
-    Uses synchronous SMTP (via a bounded worker, see _OTP_EMAIL_EXECUTOR
-    above) so failures are caught and returned immediately — async
-    send_email() would silently swallow errors and show a false 'OTP sent'.
+    Uses synchronous SMTP (via a dedicated per-request thread — see the
+    comment above _send_smtp_to_queue) so failures are caught and returned
+    immediately — async send_email() would silently swallow errors and show
+    a false 'OTP sent'.
     """
-    from ..utils import _send_smtp
     email = request.form.get("email", "").strip().lower()
     token = request.form.get("token", "").strip() or None
     if not email or "@" not in email or "." not in email.split("@")[-1]:
@@ -468,19 +487,22 @@ def send_email_otp():
     if not cfg["username"]:
         return jsonify({"ok": False, "error": "Email service is not configured on this server. Contact the administrator."})
     otp = f"{random.randint(0, 999999):06d}"
-    future = _OTP_EMAIL_EXECUTOR.submit(
-        _send_smtp, cfg, [email],
-        "Email Verification OTP — RDC Teamlease Onboarding",
-        f"Your OTP for email verification is: {otp}\n\n"
-        f"Valid for 10 minutes. Do not share it with anyone.\n\n"
-        f"— RDC Teamlease HR Onboarding Portal",
-    )
+    result_q = queue.Queue(maxsize=1)
+    threading.Thread(
+        target=_send_smtp_to_queue,
+        args=(result_q, cfg, [email],
+              "Email Verification OTP — RDC Teamlease Onboarding",
+              f"Your OTP for email verification is: {otp}\n\n"
+              f"Valid for 10 minutes. Do not share it with anyone.\n\n"
+              f"— RDC Teamlease HR Onboarding Portal"),
+        daemon=True, name="otp-email-send",
+    ).start()
     try:
-        future.result(timeout=_OTP_EMAIL_TIMEOUT)
-    except _FutureTimeoutError:
+        status, err = result_q.get(timeout=_OTP_EMAIL_TIMEOUT)
+    except queue.Empty:
         return jsonify({"ok": False, "error": "The email server is taking too long to respond. Please wait a moment and try again."})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not send OTP email: {exc}"})
+    if status == "error":
+        return jsonify({"ok": False, "error": f"Could not send OTP email: {err}"})
     # Store in session only after confirmed delivery
     session["_email_otp"] = {"email": email, "code": otp, "at": time.time(), "verified": False}
     return jsonify({"ok": True, "msg": f"OTP sent to {email}. Check inbox (and spam folder)."})
@@ -891,6 +913,23 @@ def submit_request(token):
         flash(region_error, "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
+    # Authoritative duplicate check (2026-09-26) — _check_email_registered/
+    # _check_govt_id_registered/_check_mobile_registered were only ever wired
+    # into the on-blur AJAX endpoints (pure advisory UX). Nothing re-ran them
+    # at the actual submit, so a crafted POST — or simply two drafts saved
+    # with the same Aadhar/email/mobile before either is submitted — bypassed
+    # them completely, exactly the "Barkha Patil" collision class this
+    # checking exists to catch. Re-run all three here, authoritatively,
+    # right before the request leaves DRAFT.
+    for _dup_reason in (
+        _check_email_registered(req.form_data.get("email_id", ""), exclude_token=req.public_token),
+        _check_govt_id_registered(req.form_data.get("aadhar_no", ""), exclude_token=req.public_token),
+        _check_mobile_registered(req.form_data.get("mobile_number", ""), exclude_token=req.public_token),
+    ):
+        if _dup_reason:
+            flash(_dup_reason, "danger")
+            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
     # UAN: mandatory for non-trainee designations
     designation_val = req.form_data.get("designation", "")
     if designation_val and "trainee" not in designation_val.lower():
@@ -968,6 +1007,20 @@ def resubmit_request(token):
     if region_error:
         flash(region_error, "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
+    # Authoritative duplicate check — see the matching comment in
+    # submit_request() above. A resubmit after rejection is exactly the
+    # kind of second attempt that could otherwise reintroduce a collision
+    # (e.g. the initiator "fixes" one field but the Aadhar/email/mobile
+    # duplicate was never the field they touched).
+    for _dup_reason in (
+        _check_email_registered(req.form_data.get("email_id", ""), exclude_token=req.public_token),
+        _check_govt_id_registered(req.form_data.get("aadhar_no", ""), exclude_token=req.public_token),
+        _check_mobile_registered(req.form_data.get("mobile_number", ""), exclude_token=req.public_token),
+    ):
+        if _dup_reason:
+            flash(_dup_reason, "danger")
+            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     if req.form_data.get("company_code") == "RDC":
         from ..services.staffing_norms import check_rdc_staffing_gate
@@ -1060,11 +1113,21 @@ def submit_as_special_case(token):
     if req.status != RequestStatus.DRAFT:
         flash("Only DRAFT requests can be submitted.", "warning")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
-    req.is_special_case = True
-    log_audit("REQUEST", "STAFFING_GATE_BLOCKED_PROCEEDING_AS_SPECIAL_CASE",
-              resource_type="OnboardingRequest", resource_id=req.id,
-              resource_label=f"Request #{req.id} — {req.candidate_name}",
-              detail={"acknowledged_at": "submit-time fallback"})
+    # Guard added 2026-09-26 — this route had no company check at all, so a
+    # request for it (crafted POST, or a stale hiring_not_possible.html page
+    # reached some other way) could set is_special_case=True on an
+    # Ultrafine/ROBO request. There's no staffing gate for those companies
+    # to ever legitimately trigger this fallback, and a stuck True flag on
+    # a non-RDC request wrongly forces the 20-char over-norm remark rule on
+    # every approver (see get_new_status()/approve_request()) and makes
+    # _send_approval_notifications() claim "Approved by Business Head" to
+    # Head HR when the HR Manager actually approved.
+    if req.form_data.get("company_code") == "RDC":
+        req.is_special_case = True
+        log_audit("REQUEST", "STAFFING_GATE_BLOCKED_PROCEEDING_AS_SPECIAL_CASE",
+                  resource_type="OnboardingRequest", resource_id=req.id,
+                  resource_label=f"Request #{req.id} — {req.candidate_name}",
+                  detail={"acknowledged_at": "submit-time fallback"})
     _finalize_submission(req)
     return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
@@ -1945,6 +2008,32 @@ def approve_request(token):
     except ValueError:
         abort(400)
     _from_status = req.status
+
+    # Atomic conditional transition (2026-09-26) — _get_req_by_token() loads
+    # the request with a plain SELECT and nothing locks it, so two eligible
+    # approvers (e.g. two HR Managers ticked for the same company, or two
+    # Business Heads sharing a region) can both load the same PENDING_* row,
+    # both pass can_act_on() against the same stale status, and both reach
+    # here. Without this guard both would add a duplicate ApprovalAction,
+    # double the notifications, and — worse — if new_status is ACTIVE, both
+    # would independently call push_employee() synchronously below,
+    # double-pushing the same employee to Truein. This UPDATE only succeeds
+    # if status is still exactly what we read; InnoDB's UPDATE...WHERE does
+    # a current (not snapshot) read for the WHERE match, so the loser of a
+    # real race gets rowcount 0 rather than silently overwriting the
+    # winner's transition.
+    _updated = db.session.query(OnboardingRequest).filter(
+        OnboardingRequest.id == req.id,
+        OnboardingRequest.status == _from_status,
+    ).update(
+        {OnboardingRequest.status: new_status, OnboardingRequest.updated_at: datetime.utcnow()},
+        synchronize_session=False,
+    )
+    if not _updated:
+        db.session.rollback()
+        flash("This request was already acted on by someone else. Refresh the page to see its current status.", "warning")
+        return redirect(url_for("requests_bp.view_request", token=req.public_token))
+
     action = ApprovalAction(request_id=req.id, actor_id=current_user.id,
                             action=ApprovalActionType.APPROVED, remark=remark)
     db.session.add(action)
@@ -1984,7 +2073,8 @@ def approve_request(token):
     # Admin are notified by email + in-app right here, synchronously.
     _push_issue = False
     from ..integrations.truein import is_company_tracked_in_truein
-    if new_status == RequestStatus.ACTIVE and is_company_tracked_in_truein(req.company_code):
+    if (new_status == RequestStatus.ACTIVE and is_company_tracked_in_truein(req.company_code)
+            and not req.truein_pushed_at):
         from ..integrations.truein import (
             push_employee, start_retry_thread, _write_push_log,
             _handle_dropped_fields, _notify_push_failed,
@@ -2076,6 +2166,21 @@ def reject_request(token):
     except ValueError:
         abort(400)
     _from_status_r = req.status
+
+    # Atomic conditional transition — see the matching comment in
+    # approve_request(). Guards the same double-action race for rejection.
+    _updated_r = db.session.query(OnboardingRequest).filter(
+        OnboardingRequest.id == req.id,
+        OnboardingRequest.status == _from_status_r,
+    ).update(
+        {OnboardingRequest.status: new_status, OnboardingRequest.updated_at: datetime.utcnow()},
+        synchronize_session=False,
+    )
+    if not _updated_r:
+        db.session.rollback()
+        flash("This request was already acted on by someone else. Refresh the page to see its current status.", "warning")
+        return redirect(url_for("requests_bp.view_request", token=req.public_token))
+
     action = ApprovalAction(request_id=req.id, actor_id=current_user.id,
                             action=ApprovalActionType.REJECTED, remark=remark)
     db.session.add(action)

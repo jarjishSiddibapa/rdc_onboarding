@@ -182,6 +182,11 @@ def dashboard():
         queue = base_q.filter_by(status=pending_status).order_by(
             OnboardingRequest.updated_at.asc()).all()
 
+        # Snapshot the scoped (company/region-filtered) query, before any
+        # ?status= narrows all_q below, so the summary cards can be counted
+        # from the SAME scope as the table beneath them.
+        _scoped_q = all_q
+
         # All requests with optional status filter + paginate
         if status_filter:
             try:
@@ -195,11 +200,21 @@ def dashboard():
         all_requests = all_pagination.items
     else:
         all_pagination = None
+        _scoped_q = None
 
+    # Fixed 2026-09-26 — these two cards used to query OnboardingRequest
+    # unfiltered, regardless of role. base_q/all_q above are correctly
+    # company/region-scoped for BUSINESS_HEAD and HR_MANAGER (fail-closed
+    # since 2026-09-21), but that scoping was never applied here: a BH
+    # ticked only for "ROBO" (or with zero region overlap) saw a correctly
+    # empty queue/table but a "Total"/"Active" card showing every company's
+    # combined totals — a real cross-company/region count leak. Deriving
+    # both from _scoped_q (unscoped for HEAD_HR/DR_BHOON, exactly as
+    # intended for those two roles) fixes it without changing their view.
     counts = {
         "pending": len(queue),
-        "total":   OnboardingRequest.query.filter_by(is_deleted=False).count(),
-        "active":  OnboardingRequest.query.filter_by(status=RequestStatus.ACTIVE, is_deleted=False).count(),
+        "total":   _scoped_q.count() if _scoped_q is not None else 0,
+        "active":  _scoped_q.filter_by(status=RequestStatus.ACTIVE).count() if _scoped_q is not None else 0,
     }
 
     return render_template(

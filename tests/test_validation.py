@@ -133,3 +133,35 @@ class TestValidateMime:
         ]:
             f = self._make_file(header)
             assert validate_mime(f) is True, f"Default set should accept {ext}"
+
+    # ── Masquerading files (fixed 2026-09-26) ────────────────────────────────
+    # Real uploads come through as werkzeug FileStorage, which always carries
+    # a .filename — attach one here to exercise the same code path.
+
+    def _make_named_file(self, header: bytes, filename: str, padding: int = 100) -> io.BytesIO:
+        f = self._make_file(header, padding)
+        f.filename = filename
+        return f
+
+    def test_masquerading_file_with_known_signature_ext_is_rejected(self):
+        """A plain-text/random file renamed to a trusted .pdf extension must
+        be rejected outright now, not waved through as before."""
+        f = self._make_named_file(b"\x00\x00\x00\x00", "resume.pdf")
+        assert validate_mime(f, {"pdf"}) is False
+
+    def test_masquerading_file_renamed_to_jpg_is_rejected(self):
+        f = self._make_named_file(b"not a real image", "photo.jpg")
+        assert validate_mime(f, {"jpg", "jpeg"}) is False
+
+    def test_unknown_signature_extension_stays_conservative_allow(self):
+        """gif/webp have no magic-byte entry at all — stay allowed, since the
+        extension check remains the primary gate for those (avatar uploads)."""
+        f = self._make_named_file(b"GIF89a\x00\x00", "avatar.gif")
+        assert validate_mime(f, {"gif", "webp"}) is True
+
+    def test_genuine_file_with_filename_still_accepted(self):
+        """A real PDF with a filename attached must still pass — the new
+        rejection only fires on a genuine mismatch, not on having a filename
+        at all."""
+        f = self._make_named_file(b"\x25\x50\x44\x46", "real_resume.pdf")
+        assert validate_mime(f, {"pdf"}) is True

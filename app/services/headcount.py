@@ -145,7 +145,20 @@ def _normalize_name(name: str) -> str:
 
 
 def _find_tier(tiers: list, value: float):
-    for t in tiers:
+    """
+    Returns the first NormTier row whose [min_value, max_value) contains
+    value. Defense-in-depth (2026-09-26) against CLAUDE.md gotcha #17 —
+    NormTier ranges for a (scope, sheet) are supposed to be a strict
+    non-overlapping partition, but nothing in the DB enforces that (no admin
+    UI edits NormTier; only one-off root scripts do), so a future manual
+    tier insert/edit could reintroduce an overlap exactly like the one
+    narrowly caught before add_lt1500_tier.py shipped. Sorting by min_value
+    first (None/unbounded-lower sorts first) makes the match deterministic
+    — the tightest lower-bounded tier wins on an overlap — instead of
+    depending on whatever order the caller happened to fetch tiers in.
+    """
+    ordered = sorted(tiers, key=lambda t: (t.min_value is not None, t.min_value or 0))
+    for t in ordered:
         lo_ok = t.min_value is None or value >= t.min_value
         hi_ok = t.max_value is None or value < t.max_value
         if lo_ok and hi_ok:

@@ -255,7 +255,7 @@ def new_user():
                 role=parsed_role,
             )
             db.session.add(user)
-            db.session.commit()
+            db.session.flush()   # assign user.id without committing yet — see below
 
             # Company scope, then region assignment (region only relevant —
             # and only offered/saved — for RDC-ticked BH/Initiator; HR
@@ -278,7 +278,22 @@ def new_user():
                               "username": username, "employee_code": employee_code,
                               "companies": scope_changes["to"] if scope_changes else None,
                               "regions": region_changes["to"] if region_changes else None})
-            db.session.commit()
+            # Single commit (2026-09-26 fix) — the user row and its scope/
+            # region rows used to commit separately; if the second commit
+            # raised (e.g. a UserCompanyScope unique-constraint race), the
+            # user was already persisted with a role but zero scope rows,
+            # which — since scoping is fail-closed — silently locks the
+            # brand-new account out of everything with no indication why.
+            # One atomic commit means either the whole account is created
+            # correctly, or nothing is.
+            try:
+                db.session.commit()
+            except SQLAlchemyError:
+                db.session.rollback()
+                flash("An unexpected error occurred while creating the user. Please try again.", "danger")
+                return render_template("admin/user_form.html", user=None, UserRole=UserRole,
+                                       clusters=clusters, current_region_ids=[],
+                                       companies=COMPANY_CHOICES, current_companies=[])
             flash(f"User {name} created successfully.", "success")
             return redirect(url_for("admin.users_list"))
     return render_template("admin/user_form.html", user=None, UserRole=UserRole,
@@ -360,9 +375,6 @@ def edit_user(user_id):
         user.employee_code = new_empcode
         user.role = _effective_role
 
-        # Commit name/email/role/username changes first
-        db.session.commit()
-
         # Company scope, then region assignment — Business Heads and
         # Initiators both pick region(s) from the same checkbox set, but
         # only when "RDC" is ticked among their companies; HR Manager never
@@ -395,8 +407,6 @@ def edit_user(user_id):
             if InitiatorRegion.query.filter_by(initiator_id=user.id).first():
                 _set_initiator_regions(user, [])
 
-        db.session.commit()
-
         # Build granular before/after diff
         _changes = {}
         if _old_name != new_name:
@@ -426,7 +436,25 @@ def edit_user(user_id):
                       resource_label=user.name,
                       detail={"from_role": _changes["role"]["from"],
                                "to_role": _changes["role"]["to"]})
-        db.session.commit()
+
+        # Single commit (2026-09-26 fix) — this used to be two separate
+        # commits (profile/role fields, then scope/region rows). If the
+        # second raised (e.g. a UserCompanyScope unique-constraint race from
+        # a concurrent edit), the role change from the first was already
+        # persisted while the region/scope cleanup it depends on wasn't —
+        # e.g. a user left as HR_MANAGER while still holding stale
+        # BusinessHeadRegion rows from their old BUSINESS_HEAD role, the
+        # exact thing this cleanup exists to prevent — and the admin got a
+        # raw 500 instead of a flashed error. One atomic commit means either
+        # the whole edit applies, or nothing does.
+        try:
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            flash("An unexpected error occurred while saving changes. Please try again.", "danger")
+            return render_template("admin/user_form.html", user=user, UserRole=UserRole,
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
 
         flash("User updated.", "success")
         return redirect(url_for("admin.users_list"))

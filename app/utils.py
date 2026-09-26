@@ -347,12 +347,32 @@ _MAGIC = {
     b"\xd0\xcf\x11\xe0":          "doc",   # OLE2 compound (doc, xls …)
 }
 
+# Extensions we have a magic-byte signature for (keys of _MAGIC, plus xlsx
+# which shares docx's ZIP signature) — used by validate_mime() below to tell
+# "this extension has no known signature at all" (gif/webp — stay
+# conservative) apart from "this extension has a signature and the content
+# didn't match it" (a real, positively-identified mismatch).
+_KNOWN_SIGNATURE_EXTS = {"pdf", "doc", "jpg", "jpeg", "png", "docx", "xlsx"}
+
+
 def validate_mime(file_obj, allowed_exts=None):
     """
     Read the first 8 bytes of *file_obj*, check them against known magic bytes,
-    then seek back to 0.  Returns True if the file's magic matches an allowed
-    extension (or if we have no signature for this ext — conservative allow).
-    Returns False only when we *positively* identify a mismatch.
+    then seek back to 0. Returns True if the file's magic matches an allowed
+    extension, or if the file's own claimed extension has no known signature
+    at all (conservative allow — extension check remains the primary gate for
+    those, e.g. gif/webp avatar uploads). Returns False when the claimed
+    extension DOES have a known signature but the content doesn't match it —
+    e.g. a plain text file renamed to "resume.pdf".
+
+    Fixed 2026-09-26 — this used to return True unconditionally whenever no
+    magic matched, regardless of the claimed extension, which defeated the
+    documented purpose (CLAUDE.md: "Always run validate_mime() ... in
+    addition to extension checking") for every one of the 6 default allowed
+    extensions, since all 6 (pdf/doc/docx/jpg/jpeg/png) DO have a signature
+    here — a masquerading file renamed to a trusted-looking extension sailed
+    through untouched, to later be opened by HR/approvers under that
+    trusted-looking filename.
     """
     if allowed_exts is None:
         allowed_exts = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}
@@ -367,8 +387,10 @@ def validate_mime(file_obj, allowed_exts=None):
             ok_exts = {"docx", "xlsx"} if detected_ext == "docx" else {detected_ext}
             return bool(ok_exts & allowed_exts)
 
-    # No magic matched → we can't positively identify the type.
-    # Be conservative: allow it through (extension check is the primary gate).
+    filename = getattr(file_obj, "filename", "") or ""
+    claimed_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if claimed_ext in _KNOWN_SIGNATURE_EXTS:
+        return False
     return True
 
 

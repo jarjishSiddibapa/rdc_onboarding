@@ -8,22 +8,46 @@ from ..utils import send_email, validate_password, log_audit
 from . import auth_bp
 
 
-def _make_reset_token(email):
+def _make_reset_token(user):
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
-    return s.dumps(email, salt=current_app.config["PASSWORD_RESET_SALT"])
+    return s.dumps({"email": user.email, "pwd": user.password_hash},
+                    salt=current_app.config["PASSWORD_RESET_SALT"])
 
 
 def _verify_reset_token(token):
+    """
+    Returns the User a still-valid token was issued for, or None if
+    invalid/expired/already used.
+
+    Fixed 2026-09-26 — the token used to sign only the email, with no
+    server-side record of which tokens had been issued or consumed, so the
+    identical reset link could be replayed any number of times inside its
+    30-minute window (e.g. still sitting in an email client, a proxy/gateway
+    log, or browser history) — silently resetting the password again after
+    the user had already used it once. Binding the token to the
+    password_hash at issue time means the FIRST successful reset changes
+    that hash, which makes every other copy of the same link fail
+    verification immediately afterward — no new table needed, the same
+    trick Django's PasswordResetTokenGenerator uses.
+    """
     s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
     try:
-        email = s.loads(
+        payload = s.loads(
             token,
             salt=current_app.config["PASSWORD_RESET_SALT"],
             max_age=current_app.config["PASSWORD_RESET_MAX_AGE"],
         )
     except (SignatureExpired, BadSignature):
         return None
-    return email
+    if not isinstance(payload, dict):
+        return None  # pre-2026-09-26 token format (bare email string) — reject rather than guess
+    email = payload.get("email")
+    if not email:
+        return None
+    user = User.query.filter_by(email=email).first()
+    if not user or payload.get("pwd") != user.password_hash:
+        return None
+    return user
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────
@@ -121,7 +145,7 @@ def forgot_password():
 
         # Always show success even if email not found (prevents user enumeration)
         if user and user.is_active:
-            token = _make_reset_token(user.email)
+            token = _make_reset_token(user)
             reset_url = url_for("auth.reset_password", token=token, _external=True)
             body = (
                 f"Hello {user.name},\n\n"
@@ -160,13 +184,12 @@ def reset_password(token):
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
 
-    email = _verify_reset_token(token)
-    if not email:
-        flash("This password reset link is invalid or has expired.", "danger")
+    user = _verify_reset_token(token)
+    if not user:
+        flash("This password reset link is invalid, has expired, or was already used.", "danger")
         return redirect(url_for("auth.forgot_password"))
 
-    user = User.query.filter_by(email=email).first()
-    if not user or not user.is_active:
+    if not user.is_active:
         flash("Account not found or deactivated.", "danger")
         return redirect(url_for("auth.login"))
 

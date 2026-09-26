@@ -883,6 +883,186 @@ class TestOverNormApprovalPath:
         assert "HR Manager Review" not in body
 
 
+class TestSubmitAuthoritativeDuplicateCheck:
+    """
+    Regression for a 2026-09-26 fix: _check_email_registered/
+    _check_govt_id_registered/_check_mobile_registered were only ever wired
+    into the on-blur AJAX endpoints (pure advisory UX) — nothing re-ran them
+    at the actual submit, so a crafted POST (or simply two drafts saved with
+    the same Aadhar/email/mobile before either was submitted) bypassed them
+    completely, the exact "Barkha Patil" collision class this checking
+    exists to catch. submit_request() now re-runs all three authoritatively
+    right before the request leaves DRAFT.
+    """
+
+    def test_submit_blocked_by_duplicate_aadhar(self, client, db, app):
+        initiator = _make_user("DupInitA", "dupinita@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        _make_user("DupBHA", "dupbha@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        _make_user("DupHRMA", "duphrma@t.com", UserRole.HR_MANAGER, db, companies=["RDC"])
+
+        other_req = _create_request(db, initiator, RequestStatus.PENDING_BH, candidate_name="Other Candidate")
+        other_req.form_data = dict(other_req.form_data, aadhar_no="123412341234")
+        other_req.candidate_govt_id = "123412341234"
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, candidate_name="New Candidate")
+        req.form_data = dict(req.form_data, aadhar_no="123412341234", uan_number="UAN123456789")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
+        assert resp.status_code == 200
+        assert "already used on another onboarding request" in resp.get_data(as_text=True)
+        assert _db.session.get(OnboardingRequest, req_id).status == RequestStatus.DRAFT
+
+    def test_submit_blocked_by_duplicate_email(self, client, db, app):
+        initiator = _make_user("DupInitE", "dupinite@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        _make_user("DupBHE", "dupbhe@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        _make_user("DupHRME", "duphrme@t.com", UserRole.HR_MANAGER, db, companies=["RDC"])
+
+        other_req = _create_request(db, initiator, RequestStatus.PENDING_BH, candidate_name="Other Candidate")
+        other_req.form_data = dict(other_req.form_data, email_id="dupe@test.com")
+        other_req.candidate_email = "dupe@test.com"
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, candidate_name="New Candidate")
+        req.form_data = dict(req.form_data, email_id="dupe@test.com", uan_number="UAN123456789")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
+        assert resp.status_code == 200
+        assert "already used on another onboarding request" in resp.get_data(as_text=True)
+        assert _db.session.get(OnboardingRequest, req_id).status == RequestStatus.DRAFT
+
+    def test_submit_blocked_by_duplicate_mobile(self, client, db, app):
+        initiator = _make_user("DupInitM", "dupinitm@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        _make_user("DupBHM", "dupbhm@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        _make_user("DupHRMM", "duphrmm@t.com", UserRole.HR_MANAGER, db, companies=["RDC"])
+
+        other_req = _create_request(db, initiator, RequestStatus.PENDING_BH, candidate_name="Other Candidate")
+        other_req.form_data = dict(other_req.form_data, mobile_number="9123456789")
+        other_req.candidate_mobile = "9123456789"
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, candidate_name="New Candidate")
+        req.form_data = dict(req.form_data, mobile_number="9123456789", uan_number="UAN123456789")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
+        assert resp.status_code == 200
+        assert "already used on another onboarding request" in resp.get_data(as_text=True)
+        assert _db.session.get(OnboardingRequest, req_id).status == RequestStatus.DRAFT
+
+    def test_submit_succeeds_without_any_duplicates(self, client, db, app):
+        initiator = _make_user("DupInitOK", "dupinitok@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        _make_user("DupBHOK", "dupbhok@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
+        _make_user("DupHRMOK", "duphrmok@t.com", UserRole.HR_MANAGER, db, companies=["RDC"])
+
+        req = _create_request(db, initiator, RequestStatus.DRAFT, candidate_name="Unique Candidate")
+        req.form_data = dict(req.form_data, email_id="unique@test.com", aadhar_no="999911112222",
+                              mobile_number="9988001122", uan_number="UAN123456789")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
+        assert resp.status_code == 200
+        assert _db.session.get(OnboardingRequest, req_id).status == RequestStatus.PENDING_BH
+
+
+class TestSubmitAsSpecialCaseCompanyGuard:
+    """
+    Regression for a 2026-09-26 fix: submit_as_special_case() had no
+    company_code check at all, so a request for any company (including
+    Ultrafine/ROBO, which have no staffing gate and thus no legitimate way
+    to reach this route) could be marked is_special_case=True — which then
+    wrongly forces the RDC-only 20-char over-norm remark rule on every
+    approver and makes _send_approval_notifications() claim "Approved by
+    Business Head" to Head HR when the HR Manager actually approved.
+    """
+
+    def test_non_rdc_request_is_not_marked_special_case(self, client, db, app):
+        initiator = _make_user("SpecInitR", "specinitr@t.com", UserRole.INITIATOR, db, companies=["ROBO"])
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="ROBO")
+        req.form_data = dict(req.form_data, uan_number="UAN123456789")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit-as-special-case", follow_redirects=True)
+        assert resp.status_code == 200
+        assert _db.session.get(OnboardingRequest, req_id).is_special_case is False
+
+    def test_rdc_request_is_still_marked_special_case(self, client, db, app):
+        initiator = _make_user("SpecInitD", "specinitd@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="RDC")
+        req.form_data = dict(req.form_data, uan_number="UAN123456789")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+
+        with app.app_context():
+            login(client, initiator.email)
+            resp = client.post(f"/requests/{token}/submit-as-special-case", follow_redirects=True)
+        assert resp.status_code == 200
+        assert _db.session.get(OnboardingRequest, req_id).is_special_case is True
+
+
+class TestApproveRejectConcurrencyGuard:
+    """
+    Regression for a 2026-09-26 fix: approve_request()/reject_request()
+    loaded the request with a plain SELECT and applied the transition with
+    an unconditional UPDATE, with no protection against two approvers
+    racing the same stale read — which, for a transition landing on ACTIVE,
+    could have double-pushed the same employee to Truein. Both routes now
+    condition the actual transition on an atomic
+    `UPDATE ... WHERE id=<req.id> AND status=<status just read>` and treat
+    rowcount 0 as "someone else already won the race."
+
+    Genuine multi-threaded concurrency isn't meaningfully reproducible
+    against the test suite's in-memory SQLite backend (there's no second
+    real transaction to race against), so this tests the exact conditional-
+    update mechanism directly rather than faking a full HTTP-level race:
+    the same query pattern approve_request()/reject_request() now use,
+    checked against both a matching and a stale (already-changed-elsewhere)
+    status.
+    """
+
+    def test_conditional_update_no_ops_when_status_already_changed(self, db, app):
+        initiator = _make_user("CondInit1", "condinit1@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        req = _create_request(db, initiator, RequestStatus.PENDING_HR_MANAGER)
+        db.session.commit()
+        with app.app_context():
+            # Simulates reading a stale PENDING_BH status that a concurrent
+            # approver's already-committed transition has moved past —
+            # the row's real current status is PENDING_HR_MANAGER.
+            rowcount = _db.session.query(OnboardingRequest).filter(
+                OnboardingRequest.id == req.id,
+                OnboardingRequest.status == RequestStatus.PENDING_BH,
+            ).update({"status": RequestStatus.PENDING_HEAD_HR}, synchronize_session=False)
+            assert rowcount == 0
+            _db.session.rollback()
+            fresh = _db.session.get(OnboardingRequest, req.id)
+            assert fresh.status == RequestStatus.PENDING_HR_MANAGER   # untouched
+
+    def test_conditional_update_applies_when_status_matches(self, db, app):
+        initiator = _make_user("CondInit2", "condinit2@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        req = _create_request(db, initiator, RequestStatus.PENDING_BH)
+        db.session.commit()
+        with app.app_context():
+            rowcount = _db.session.query(OnboardingRequest).filter(
+                OnboardingRequest.id == req.id,
+                OnboardingRequest.status == RequestStatus.PENDING_BH,
+            ).update({"status": RequestStatus.PENDING_HR_MANAGER}, synchronize_session=False)
+            assert rowcount == 1
+
+
 class TestRejectionAndResubmit:
     """Rejection at BH level → initiator resubmits → back to PENDING_BH."""
 

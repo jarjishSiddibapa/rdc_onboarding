@@ -139,3 +139,54 @@ class TestPasswordResetToken:
         assert (b"invalid" in resp.data.lower()
                 or b"expired" in resp.data.lower()
                 or b"error" in resp.data.lower())
+
+    def test_reset_token_is_single_use(self, client, db, app):
+        """
+        Fixed 2026-09-26 — a reset token used to sign only the email, with no
+        server-side record of consumed tokens, so the identical link could be
+        replayed any number of times inside its 30-minute window. The token
+        is now bound to password_hash at issue time, so the first successful
+        reset invalidates every other copy of the same link immediately.
+        """
+        from app.auth.routes import _make_reset_token
+        user = _create_active_user(db, email="resetme@test.com")
+        db.session.commit()
+        with app.app_context():
+            token = _make_reset_token(user)
+
+            # First use: succeeds.
+            resp = client.post(f"/auth/reset-password/{token}", data={
+                "password": "NewPass123!", "confirm_password": "NewPass123!",
+            }, follow_redirects=True)
+            assert resp.status_code == 200
+            assert b"updated successfully" in resp.data.lower()
+
+            # Second use of the SAME token: must be rejected, not silently
+            # accepted again.
+            resp2 = client.post(f"/auth/reset-password/{token}", data={
+                "password": "AnotherPass456!", "confirm_password": "AnotherPass456!",
+            }, follow_redirects=True)
+            assert resp2.status_code == 200
+            assert (b"invalid" in resp2.data.lower()
+                    or b"expired" in resp2.data.lower()
+                    or b"already used" in resp2.data.lower())
+
+            # Confirm the password from the SECOND attempt never took effect.
+            refreshed = User.query.filter_by(email="resetme@test.com").first()
+            assert bcrypt.check_password_hash(refreshed.password_hash, "NewPass123!")
+            assert not bcrypt.check_password_hash(refreshed.password_hash, "AnotherPass456!")
+
+    def test_verify_reset_token_rejects_legacy_bare_email_format(self, app):
+        """
+        Pre-2026-09-26 tokens signed a bare email string, not a dict — those
+        must be rejected outright (treated as invalid) rather than crash or
+        be silently accepted, in case one is still floating around in an
+        old email at the moment this ships.
+        """
+        from itsdangerous import URLSafeTimedSerializer
+        from app.auth.routes import _verify_reset_token
+        with app.app_context():
+            from flask import current_app
+            s = URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+            legacy_token = s.dumps("someone@test.com", salt=current_app.config["PASSWORD_RESET_SALT"])
+            assert _verify_reset_token(legacy_token) is None

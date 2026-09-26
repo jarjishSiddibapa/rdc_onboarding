@@ -69,7 +69,16 @@ def _cluster_volume_or_fallback(plant_codes: list) -> float:
 
 
 def _find_tier(scope: NormScope, sheet: NormSheet, value: float):
-    tiers = NormTier.query.filter_by(scope=scope, sheet=sheet, is_active=True).all()
+    """
+    Defense-in-depth (2026-09-26, CLAUDE.md gotcha #17) — deterministic
+    ordering so an accidental future tier overlap (nothing in the DB
+    prevents one; only one-off root scripts ever edit NormTier) resolves to
+    the tightest lower-bounded tier instead of an unspecified MySQL row
+    order. See the matching fix in headcount.py::_find_tier() for the
+    identical logic applied to that copy.
+    """
+    tiers = (NormTier.query.filter_by(scope=scope, sheet=sheet, is_active=True)
+             .order_by(NormTier.min_value.asc()).all())
     for t in tiers:
         lo_ok = t.min_value is None or value >= t.min_value
         hi_ok = t.max_value is None or value < t.max_value

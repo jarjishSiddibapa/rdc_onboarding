@@ -220,7 +220,23 @@ def build_payload(req) -> dict:
     payload = {}
 
     # 1. Denormalized columns
-    if req.candidate_name:  payload["name"]       = req.candidate_name
+    if req.candidate_name:
+        payload["name"] = req.candidate_name
+        # Also pushed into first_name verbatim (2026-09-29, stakeholder
+        # instruction, confirmed live via 2 isolated test pushes —
+        # ZZTESTNAMED01/ZZTESTNAMEE01): Truein rejects first_name sent
+        # ALONE ("Please provide either name or first name and last
+        # name"), but accepts name+first_name together with no last_name
+        # at all. Whatever we send here, Truein always independently
+        # re-derives its own first_name/last_name as word-1/word-2 of the
+        # final "name" it ends up storing — confirmed live (a 7-word
+        # first_name we sent came back stored as first_name="word1",
+        # last_name="word2" regardless) — so this can't make Truein's own
+        # First/Last Name columns show the full name; it only guarantees
+        # first_name is never left empty/unsent. The full name is never
+        # lost either way — it's always preserved intact in the "name"
+        # field itself.
+        payload["first_name"] = req.candidate_name
     if req.designation:     payload["designation"] = req.designation
     if req.company_code:    payload["company"]     = req.company_code
 

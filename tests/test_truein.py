@@ -262,6 +262,31 @@ class TestBuildPayloadFieldCompleteness:
 
             assert payload["category"] == "Teamlease"
 
+    def test_name_also_pushed_into_first_name(self, db, app):
+        """
+        2026-09-29 stakeholder instruction (confirmed live via isolated test
+        pushes before implementing): candidate_name is pushed into BOTH
+        "name" and "first_name" — Truein rejects first_name sent alone, but
+        accepts it alongside "name" with no last_name at all. Truein
+        internally re-derives its own first_name/last_name as word-1/word-2
+        of the stored name regardless of what's sent here — this can't
+        change that — but it guarantees first_name is never left unsent.
+        """
+        with app.app_context():
+            req = OnboardingRequest(
+                initiated_by=1, public_token=uuid.uuid4().hex,
+                candidate_name="Multi Word Full Name Here", designation="Officer",
+                plant_location="Some Plant", company_code="RDC",
+            )
+            db.session.add(req)
+            db.session.flush()
+
+            payload = build_payload(req)
+
+            assert payload["name"] == "Multi Word Full Name Here"
+            assert payload["first_name"] == "Multi Word Full Name Here"
+            assert "last_name" not in payload
+
     def test_category_is_teamlease_even_with_a_reconciled_cluster(self, db, app):
         """A real DVT-reconciled cluster match must NOT override the fixed
         "Teamlease" value — this is an RDC plant with a confirmed cluster."""

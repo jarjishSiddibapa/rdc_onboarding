@@ -252,14 +252,6 @@ def build_payload(req) -> dict:
     if plant:
         payload["sitePoint"] = plant
         payload["sub_site"]  = plant
-        # category defaults to the plant name too — Truein shows this as
-        # "Staff Category" and silently defaults it to "Other" when the
-        # field is omitted entirely (confirmed live 2026-09-23: every
-        # Ultrafine/ROBO push showed "Other" there, since those companies
-        # never have a PlantDvtMapping/cluster to derive a real category
-        # from — the block below overrides this with the reconciled
-        # cluster name whenever one exists, same as sitePoint/sub_site).
-        payload["category"] = plant
         try:
             from ..models import PlantDvtMapping as _PDM
             plant_map = _PDM.query.filter_by(plant_location_name=plant, is_deleted=False).first()
@@ -267,10 +259,27 @@ def build_payload(req) -> dict:
                 site_value = plant_map.truein_sub_site or plant
                 payload["sitePoint"] = site_value
                 payload["sub_site"]  = site_value
-                if plant_map.cluster:
-                    payload["category"] = plant_map.cluster.truein_category or plant_map.cluster.canonical_cluster_name
         except Exception:
             pass
+
+    # category ("Staff Category" in Truein's dashboard) is fixed to
+    # "Teamlease" for every push from this app (2026-09-29, stakeholder
+    # instruction) — every hire submitted through this onboarding flow is a
+    # Teamlease-sourced hire regardless of company/plant/cluster, and
+    # Truein's dashboard uses this field to distinguish that. Previously
+    # derived from the plant's cluster (PlantDvtMapping.cluster.
+    # truein_category) as a real region name; that derivation is gone now,
+    # not just overridden, since a fixed value makes the old fallback dead
+    # code. Confirmed low-impact on the RDC staffing-norms gate: all 6
+    # currently-active norm categories are NormScope.PLANT (resolved via
+    # sub_site, untouched by this change), not NormScope.CLUSTER — the only
+    # thing this affects is headcount.py's cluster_location_key resolution
+    # for a NEW hire's Truein record (via cluster_by_truein_category), which
+    # already only matters for the presently-unused cluster-scope path, and
+    # is unaffected for the plant-resolved case since an employee's cluster
+    # is otherwise reached via their plant's own PlantDvtMapping.cluster_id,
+    # not via Truein's category field.
+    payload["category"] = "Teamlease"
 
     # 2. Walk form_data through FIELD_MAP
     for form_key, truein_key in FIELD_MAP.items():

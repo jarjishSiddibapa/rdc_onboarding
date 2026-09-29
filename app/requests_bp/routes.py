@@ -260,17 +260,28 @@ def _staffing_company_scope(user):
     """
     Company-scope gate for every Staffing Status route (added 2026-09-23 —
     these pages predate the company-scope tick-mark feature and were never
-    updated to respect it: a Business Head or HR Manager ticked only for
-    ROBO could still browse full RDC/Ultrafine data here). Returns None for
-    unscoped roles (HEAD_HR/DR_BHOON/SUPER_ADMIN — see any of their
-    company's data), otherwise the set of companies this user is ticked
-    for (possibly empty). Every staffing-status route must check this
-    BEFORE returning any company's data, not just filter what a template
-    happens to render — a scoped-out user must get a 403/404 on direct URL
-    access too, not just a hidden tab.
+    updated to respect it: a Business Head ticked only for ROBO could still
+    browse full RDC/Ultrafine data here). Returns None for unscoped roles
+    (HR_MANAGER/HEAD_HR/DR_BHOON/SUPER_ADMIN — see any company's data),
+    otherwise the set of companies this user is ticked for (possibly
+    empty). Every staffing-status route must check this BEFORE returning
+    any company's data, not just filter what a template happens to render
+    — a scoped-out user must get a 403/404 on direct URL access too, not
+    just a hidden tab.
+
+    HR_MANAGER deliberately unscoped here since 2026-09-29 — stakeholder
+    instruction: HR Manager and Head HR should be able to see RDC staffing
+    across every company/region/plant regardless of which companies they're
+    ticked for, since company scope only restricts which companies an HR
+    Manager can ACT ON (approve/submit for), never which companies' staffing
+    status they can VIEW. Head HR was already unscoped for exactly this
+    reason; HR Manager now matches. Business Head stays company-scoped —
+    not mentioned in that instruction, and its existing region-narrowing
+    (_bh_region_ids) already ties BH visibility to the same scope their
+    approval queue uses.
     """
-    from ..utils import company_scope_ids
-    if user.role in (UserRole.BUSINESS_HEAD, UserRole.HR_MANAGER):
+    if user.role == UserRole.BUSINESS_HEAD:
+        from ..utils import company_scope_ids
         return company_scope_ids(user.id)
     return None
 

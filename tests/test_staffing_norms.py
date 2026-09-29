@@ -646,11 +646,16 @@ class TestStaffingStatusCompanyScopeGating:
     """
     Regression coverage for the 2026-09-23 fix: the Staffing Status pages
     (and their downloads) predate the company-scope tick-mark feature
-    (2026-09-21) and were never updated to respect it — a Business Head or
-    HR Manager ticked only for ROBO could still browse full RDC/Ultrafine
-    data here, tabs and direct URLs alike. HEAD_HR/DR_BHOON/SUPER_ADMIN stay
-    unscoped by design (confirmed with the stakeholder) — not covered here
-    since every other test in this file already exercises them.
+    (2026-09-21) and were never updated to respect it — a Business Head
+    ticked only for ROBO could still browse full RDC/Ultrafine data here,
+    tabs and direct URLs alike.
+
+    HR_MANAGER was deliberately made unscoped here too on 2026-09-29 (see
+    _staffing_company_scope()'s own docstring) — company scope only
+    restricts which companies an HR Manager can ACT ON, never which
+    companies' staffing status they can VIEW. HEAD_HR/DR_BHOON/SUPER_ADMIN
+    stay unscoped by design (confirmed with the stakeholder) — not covered
+    here since every other test in this file already exercises them.
     """
 
     def test_robo_only_bh_sees_only_robo_tab(self, client, db, app):
@@ -665,7 +670,9 @@ class TestStaffingStatusCompanyScopeGating:
         assert 'id="ctab-btn-rdc"' not in html
         assert 'id="ctab-btn-ultrafine"' not in html
 
-    def test_unscoped_hr_manager_sees_no_tabs(self, client, db, app):
+    def test_hr_manager_sees_every_tab_even_with_zero_companies_ticked(self, client, db, app):
+        """HR Manager is unscoped for VIEWING staffing status (2026-09-29) —
+        unlike acting on a request, which still requires a company tick."""
         hrm = _make_user("ScopeHrm1", "scopehrm1@t.com", UserRole.HR_MANAGER, db)  # no companies ticked
         db.session.commit()
         with app.app_context():
@@ -673,9 +680,9 @@ class TestStaffingStatusCompanyScopeGating:
             resp = client.get("/requests/staffing-status")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert 'id="ctab-btn-rdc"' not in html
-        assert 'id="ctab-btn-ultrafine"' not in html
-        assert 'id="ctab-btn-robo"' not in html
+        assert 'id="ctab-btn-rdc"' in html
+        assert 'id="ctab-btn-ultrafine"' in html
+        assert 'id="ctab-btn-robo"' in html
 
     def test_robo_only_bh_cannot_reach_ultrafine_plant_detail_by_url(self, client, db, app):
         bh = _make_user("ScopeBh2", "scopebh2@t.com", UserRole.BUSINESS_HEAD, db, companies=["ROBO"])
@@ -686,10 +693,9 @@ class TestStaffingStatusCompanyScopeGating:
             resp = client.get("/requests/staffing-status/company/Ultrafine/plant/UF%20Gate%20Plant")
         assert resp.status_code == 403
 
-    def test_robo_only_hr_manager_cannot_reach_rdc_plant_detail_by_url(self, client, db, app):
-        """Before this fix, HR_MANAGER had ZERO scoping on this route at all
-        (only BUSINESS_HEAD's region check existed) — this is the clearest
-        regression case."""
+    def test_robo_only_hr_manager_can_reach_rdc_plant_detail_by_url(self, client, db, app):
+        """HR Manager viewing is unscoped (2026-09-29) — a ROBO-only tick
+        no longer blocks reaching RDC plant detail."""
         hrm = _make_user("ScopeHrm2", "scopehrm2@t.com", UserRole.HR_MANAGER, db, companies=["ROBO"])
         cluster = ClusterNameMapping(canonical_cluster_name="Gate Cluster")
         db.session.add(cluster)
@@ -702,9 +708,9 @@ class TestStaffingStatusCompanyScopeGating:
         with app.app_context():
             login(client, hrm.email)
             resp = client.get("/requests/staffing-status/plant/Gate%20RDC%20Plant")
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
-    def test_robo_only_hr_manager_cannot_reach_rdc_wide_employee_directory_data(self, client, db, app):
+    def test_robo_only_hr_manager_can_reach_rdc_wide_employee_directory_data(self, client, db, app):
         hrm = _make_user("ScopeHrm3", "scopehrm3@t.com", UserRole.HR_MANAGER, db, companies=["ROBO"])
         db.session.commit()
         db.session.add(EmployeeLocationSnapshot(
@@ -717,7 +723,7 @@ class TestStaffingStatusCompanyScopeGating:
             login(client, hrm.email)
             resp = client.get("/requests/staffing-status/employees")
         assert resp.status_code == 200
-        assert "Gate RDC Employee" not in resp.get_data(as_text=True)
+        assert "Gate RDC Employee" in resp.get_data(as_text=True)
 
     def test_robo_only_bh_cannot_download_ultrafine_report(self, client, db, app):
         bh = _make_user("ScopeBh3", "scopebh3@t.com", UserRole.BUSINESS_HEAD, db, companies=["ROBO"])
@@ -727,9 +733,9 @@ class TestStaffingStatusCompanyScopeGating:
             resp = client.get("/requests/staffing-status/download/Ultrafine")
         assert resp.status_code == 403
 
-    def test_rdc_ticked_hr_manager_still_sees_rdc_tab(self, client, db, app):
-        """Confirms the fix is genuinely scoped, not accidentally fail-closed
-        for a legitimately-ticked company."""
+    def test_rdc_ticked_hr_manager_sees_every_tab_too(self, client, db, app):
+        """Confirms HR Manager's unscoped viewing doesn't regress into being
+        accidentally scoped for a user who does have a company ticked."""
         hrm = _make_user("ScopeHrm4", "scopehrm4@t.com", UserRole.HR_MANAGER, db, companies=["RDC"])
         db.session.commit()
         with app.app_context():
@@ -737,5 +743,5 @@ class TestStaffingStatusCompanyScopeGating:
             resp = client.get("/requests/staffing-status")
         html = resp.get_data(as_text=True)
         assert 'id="ctab-btn-rdc"' in html
-        assert 'id="ctab-btn-ultrafine"' not in html
-        assert 'id="ctab-btn-robo"' not in html
+        assert 'id="ctab-btn-ultrafine"' in html
+        assert 'id="ctab-btn-robo"' in html

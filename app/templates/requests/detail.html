@@ -30,6 +30,9 @@
         {% if req.is_special_case %}
         <span class="mono" style="font-size:11px;font-weight:700;background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;border-radius:20px;padding:2px 10px;">⚠ Over-Norm Special Case</span>
         {% endif %}
+        {% if req.hr_manager_initiated %}
+        <span class="mono" style="font-size:11px;font-weight:700;background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE;border-radius:20px;padding:2px 10px;" title="HR Manager Review is skipped — the initiator is already an HR Manager.">HR Manager Initiated</span>
+        {% endif %}
       </div>
       <p class="page-sub" style="margin-top:4px;">Initiated by {{ req.initiator.name }} on {{ req.created_at | ist('%d %b %Y') }}</p>
     </div>
@@ -127,7 +130,7 @@
       </div>
       {% endif %}
 
-      {% if req.status.value == 'DRAFT' and current_user.role.value == 'INITIATOR' and req.initiated_by == current_user.id %}
+      {% if req.status.value == 'DRAFT' and current_user.role.value in ('INITIATOR', 'HR_MANAGER') and req.initiated_by == current_user.id %}
       <div style="display:flex;gap:12px;">
         <a href="{{ url_for('requests_bp.new_request', step=1, token=req.public_token) }}" class="btn btn-secondary" style="flex:1;justify-content:center;">
           Continue Editing

@@ -51,6 +51,7 @@ _REQUIRED_COLUMNS = [
     ("onboarding_requests", "candidate_govt_id",         "VARCHAR(20) NULL"),
     ("onboarding_requests", "candidate_email_verified",  "VARCHAR(200) NULL"),
     ("onboarding_requests", "candidate_mobile",          "VARCHAR(15) NULL"),
+    ("onboarding_requests", "hr_manager_initiated",      "TINYINT(1) NOT NULL DEFAULT 0"),
 ]
 
 

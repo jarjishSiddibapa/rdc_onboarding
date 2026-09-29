@@ -124,6 +124,10 @@ def _finalize_submission(req):
     success (already flashed); on failure, flashes an error and returns False."""
     req.status = RequestStatus.PENDING_BH
     req.updated_at = datetime.utcnow()
+    # Snapshot at first-submission time (2026-09-29) — see
+    # OnboardingRequest.hr_manager_initiated's own docstring for why this
+    # isn't re-derived live from the initiator's current role instead.
+    req.hr_manager_initiated = (req.initiator.role == UserRole.HR_MANAGER)
     log_audit("REQUEST", "REQUEST_SUBMITTED",
               resource_type="OnboardingRequest", resource_id=req.id,
               resource_label=f"Request #{req.id} — {req.candidate_name}",
@@ -179,7 +183,11 @@ def _validate_approver_availability(req):
     if not bh_ids_for_initiator(initiator, company):
         return (f"No Business Head is currently configured for {company}. "
                 f"Contact your administrator before submitting this request.")
-    visits_hr_manager = (company != "RDC") or not req.is_special_case
+    # An HR-Manager-initiated request never visits PENDING_HR_MANAGER at all
+    # (see get_new_status()) — checked here via the initiator's live role
+    # since _finalize_submission() hasn't snapshotted hr_manager_initiated
+    # onto req yet at the point this validator runs.
+    visits_hr_manager = ((company != "RDC") or not req.is_special_case) and initiator.role != UserRole.HR_MANAGER
     if visits_hr_manager and not hr_manager_ids_for_company(company):
         return (f"No HR Manager is currently configured for {company}. "
                 f"Contact your administrator before submitting this request.")
@@ -466,7 +474,7 @@ def _send_smtp_to_queue(result_q, cfg, recipients, subject, body):
 
 @requests_bp.route("/send-email-otp", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 @limiter.limit("10 per hour")
 def send_email_otp():
     """Send a 6-digit OTP to the candidate email to prove it exists.
@@ -510,7 +518,7 @@ def send_email_otp():
 
 @requests_bp.route("/verify-email-otp", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 @limiter.limit("30 per hour")
 def verify_email_otp():
     """
@@ -548,7 +556,7 @@ def verify_email_otp():
 
 @requests_bp.route("/check-govt-id", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def check_govt_id():
     """
     Live duplicate check for the Aadhar Number field, fired on blur (see
@@ -565,7 +573,7 @@ def check_govt_id():
 
 @requests_bp.route("/check-mobile-number", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def check_mobile_number():
     """
     Live duplicate check for the Mobile Number field, fired on blur (see
@@ -654,7 +662,7 @@ def plant_locations_api():
 
 @requests_bp.route("/api/check-hiring-capacity")
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def check_hiring_capacity():
     """
     Live pre-check while the initiator is still filling the form — as soon as
@@ -682,7 +690,7 @@ def check_hiring_capacity():
 
 @requests_bp.route("/<string:token>/acknowledge-special-case", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def acknowledge_special_case(token):
     """
     Fired by the form popup's "OK, Proceed Anyway" button as soon as the
@@ -717,7 +725,7 @@ def truein_managers():
 
 @requests_bp.route("/new", methods=["GET", "POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def new_request():
     step = request.args.get("step", 1, type=int) or 1
     token = request.args.get("token")
@@ -862,7 +870,7 @@ def new_request():
 
 @requests_bp.route("/<string:token>/edit", methods=["GET", "POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def edit_request(token):
     req = _get_req_by_token(token)
     if req.initiated_by != current_user.id:
@@ -877,7 +885,7 @@ def edit_request(token):
 
 @requests_bp.route("/<string:token>/submit", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def submit_request(token):
     req = _get_req_by_token(token)
     if req.initiated_by != current_user.id:
@@ -989,7 +997,7 @@ def submit_request(token):
 
 @requests_bp.route("/<string:token>/resubmit", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def resubmit_request(token):
     req = _get_req_by_token(token)
     if req.initiated_by != current_user.id:
@@ -1082,7 +1090,7 @@ def resubmit_request(token):
 
 @requests_bp.route("/<string:token>/hiring-not-possible")
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def hiring_not_possible(token):
     import json
     req = _get_req_by_token(token)
@@ -1098,7 +1106,7 @@ def hiring_not_possible(token):
 
 @requests_bp.route("/<string:token>/submit-as-special-case", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def submit_as_special_case(token):
     """
     Fallback path from hiring_not_possible.html for the rare case where the
@@ -1699,10 +1707,10 @@ def view_request(token):
 
     can_approve = can_act_on(req, current_user)
     can_submit = (req.status == RequestStatus.DRAFT and
-                  current_user.role == UserRole.INITIATOR and
+                  current_user.role in (UserRole.INITIATOR, UserRole.HR_MANAGER) and
                   req.initiated_by == current_user.id)
     can_resubmit = (req.status in REJECTED_STATUSES and
-                    current_user.role == UserRole.INITIATOR and
+                    current_user.role in (UserRole.INITIATOR, UserRole.HR_MANAGER) and
                     req.initiated_by == current_user.id)
 
     all_fields = FormField.query.filter_by(is_active=True, is_deleted=False).order_by(
@@ -1768,6 +1776,30 @@ def view_request(token):
         "PENDING_DR_BHOON": 4,    "REJECTED_DR_BHOON": 4,
         "ACTIVE": 99,
     }
+    # HR-Manager-initiated requests (2026-09-29 — see
+    # OnboardingRequest.hr_manager_initiated) skip PENDING_HR_MANAGER
+    # entirely regardless of company/is_special_case. Two shapes result,
+    # mirroring get_new_status()'s own branching: RDC + not special-case
+    # never visits Dr. Bhoon either (BH -> Head HR -> Active, 3 stages) —
+    # its own progress numbering below. RDC special-case or any non-RDC
+    # company still visits Dr. Bhoon (BH -> Head HR -> Dr. Bhoon -> Active)
+    # — identical shape/numbering to the existing OVER_NORM progress dicts,
+    # reused rather than duplicated; only the stage labels differ (no
+    # "over-norm" wording, since for a non-RDC hire that label would be
+    # actively wrong — there's no staffing gate involved at all).
+    _STAGE_PROGRESS_HRM_SKIP = {
+        "PENDING_BH":       1,
+        "PENDING_HEAD_HR":  2,
+        "ACTIVE":           99,
+    }
+    _PROGRESS_HRM_SKIP = {
+        "DRAFT": 0,
+        "PENDING_BH": 1,      "REJECTED_BH": 1,
+        "PENDING_HEAD_HR": 2, "REJECTED_HEAD_HR": 2,
+        "ACTIVE": 99,
+    }
+    cur_progress_hrm_skip = _PROGRESS_HRM_SKIP.get(sv, 0)
+
     _NEXT_ROLE_LABEL = {
         "PENDING_BH":        "Business Head",
         "PENDING_DR_BHOON":  "Dr. Bhoon",
@@ -1793,23 +1825,32 @@ def view_request(token):
     def _build_round_stages(round_acts, is_last_round):
         """Build the stages list for one round of the workflow.
 
-        Three paths can be newly created: STANDARD (BH -> HR Manager -> Head
+        Four paths can be newly created: STANDARD (BH -> HR Manager -> Head
         HR, RDC only), OVER_NORM (BH -> Head HR -> Dr. Bhoon, skipping HR
-        Manager — the RDC staffing-gate "proceed anyway" chain), and
+        Manager — the RDC staffing-gate "proceed anyway" chain),
         OTHER_COMPANY (BH -> HR Manager -> Head HR -> Dr. Bhoon, Ultrafine/
-        ROBO's own fixed chain, added 2026-09-21 — checked first since
-        company_code is a stable request attribute, unlike the other two
-        paths which must be inferred from action history). BH_BYPASS (BH
-        manually flags straight to Dr. Bhoon, skipping HR entirely) was a
-        separate mechanism that has been removed (its POST route/UI no
-        longer exist) — this branch is kept only to render the workflow map
+        ROBO's own fixed chain, added 2026-09-21), and the HR-Manager-
+        initiated pair (2026-09-29, see req.hr_manager_initiated) — checked
+        first, ahead of even OTHER_COMPANY, since it's an equally stable
+        request attribute that overrides company-driven routing the same
+        way: HR_MGR_SKIP (BH -> Head HR -> Active, RDC + not special-case —
+        no Dr. Bhoon either) or HR_MGR_SKIP_DR_BHOON (BH -> Head HR ->
+        Dr. Bhoon -> Active, RDC special-case or any non-RDC company — same
+        shape as OVER_NORM, reusing its progress numbers, but with neutral
+        labels since "over-norm" wording would be wrong for a non-RDC hire
+        with no staffing gate involved at all). BH_BYPASS (BH manually
+        flags straight to Dr. Bhoon, skipping HR entirely) was a separate
+        mechanism that has been removed (its POST route/UI no longer
+        exist) — this branch is kept only to render the workflow map
         correctly for requests that already went through it before removal.
         """
         has_flagged_special = any(a.action == ApprovalActionType.FLAGGED_SPECIAL for a in round_acts)
         has_hrm_action = any(a.actor.role == UserRole.HR_MANAGER for a in round_acts)
         has_head_hr_action = any(a.actor.role == UserRole.HEAD_HR for a in round_acts)
 
-        if req.company_code and req.company_code != "RDC":
+        if req.hr_manager_initiated:
+            path = "HR_MGR_SKIP_DR_BHOON" if (req.company_code != "RDC" or req.is_special_case) else "HR_MGR_SKIP"
+        elif req.company_code and req.company_code != "RDC":
             path = "OTHER_COMPANY"
         elif has_flagged_special or (is_last_round and sv in ("PENDING_DR_BHOON", "REJECTED_DR_BHOON")
                                     and not has_head_hr_action and not req.is_special_case):
@@ -1845,6 +1886,19 @@ def view_request(token):
                 ("PENDING_DR_BHOON",   "Dr. Bhoon Review"),
                 ("ACTIVE",             "Approved"),
             ]
+        elif path == "HR_MGR_SKIP_DR_BHOON":
+            _stage_defs = [
+                ("PENDING_BH",        "Business Head Review"),
+                ("PENDING_HEAD_HR",   "Head HR Review"),
+                ("PENDING_DR_BHOON",  "Dr. Bhoon Review"),
+                ("ACTIVE",            "Approved"),
+            ]
+        elif path == "HR_MGR_SKIP":
+            _stage_defs = [
+                ("PENDING_BH",        "Business Head Review"),
+                ("PENDING_HEAD_HR",   "Head HR Review"),
+                ("ACTIVE",            "Approved"),
+            ]
         else:
             _stage_defs = [
                 ("PENDING_BH",         "Business Head Review"),
@@ -1852,12 +1906,15 @@ def view_request(token):
                 ("PENDING_HEAD_HR",    "Head HR Review"),
                 ("ACTIVE",             "Approved"),
             ]
-        if path == "OVER_NORM":
+        if path in ("OVER_NORM", "HR_MGR_SKIP_DR_BHOON"):
             _stage_progress = _STAGE_PROGRESS_OVER_NORM
             _round_cur_progress = cur_progress_over_norm
         elif path == "OTHER_COMPANY":
             _stage_progress = _STAGE_PROGRESS_OTHER_COMPANY
             _round_cur_progress = cur_progress_other_company
+        elif path == "HR_MGR_SKIP":
+            _stage_progress = _STAGE_PROGRESS_HRM_SKIP
+            _round_cur_progress = cur_progress_hrm_skip
         else:
             _stage_progress = _STAGE_PROGRESS
             _round_cur_progress = cur_progress
@@ -2212,7 +2269,7 @@ def reject_request(token):
 
 @requests_bp.route("/<string:token>/delete", methods=["POST"])
 @login_required
-@role_required(UserRole.INITIATOR)
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def delete_request(token):
     req = _get_req_by_token(token)
     if req.initiated_by != current_user.id:
@@ -2253,8 +2310,12 @@ def _send_approval_notifications(db, req, new_status):
         # reads correctly for non-RDC: is_special_case is always False for
         # Ultrafine/ROBO (no staffing gate to set it), so this already says
         # "HR Manager", which is accurate — they always visit that step.
+        # hr_manager_initiated (2026-09-29) also skips HR Manager, for every
+        # company — must say "Business Head" the same way is_special_case
+        # already does, or it would wrongly credit an HR Manager step that
+        # never happened.
         recipients = User.query.filter_by(role=UserRole.HEAD_HR, is_active=True).all()
-        approved_by = "Business Head" if req.is_special_case else "HR Manager"
+        approved_by = "Business Head" if (req.is_special_case or req.hr_manager_initiated) else "HR Manager"
         notify_users(db, req, recipients,
                      subject=f"Approved by {approved_by}: {req.candidate_name}",
                      body=f"{'Over-norm special approval' if req.is_special_case else 'Final approval'} "

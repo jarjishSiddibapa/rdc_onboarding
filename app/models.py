@@ -351,6 +351,15 @@ class OnboardingRequest(db.Model):
     # changes (forces re-acknowledgment) or when a later gate re-check finds
     # capacity has opened up. See app/utils.py::get_new_status().
     is_special_case = db.Column(db.Boolean, default=False, nullable=False)
+    # Set True at submission time (see requests_bp._finalize_submission())
+    # when the initiator's role is HR_MANAGER — an HR Manager hiring their
+    # own candidate has no separate HR Manager left to review it, so the
+    # PENDING_HR_MANAGER stage is skipped entirely for this request
+    # (app/utils.py::get_new_status()), same as the RDC over-norm chain
+    # already skips it for a different reason. Snapshotted rather than
+    # re-derived from the live User.role at each transition so a later role
+    # change never retroactively alters an in-flight request's routing.
+    hr_manager_initiated = db.Column(db.Boolean, default=False, nullable=False)
     # Truein push tracking
     truein_pushed_at      = db.Column(db.DateTime, nullable=True)  # set on successful push
     truein_push_error     = db.Column(db.Text,     nullable=True)  # last error message

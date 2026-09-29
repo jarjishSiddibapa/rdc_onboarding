@@ -127,7 +127,12 @@ def _apply_filters(params, viewer=None):
             # filter can never drift from actual approval-routing behavior.
             from ..utils import bh_ids_for_initiator
             from ..models import COMPANY_CHOICES
-            all_initiators = User.query.filter_by(role=UserRole.INITIATOR).all()
+            # HR Managers can also initiate requests (2026-09-29) — must be
+            # included here too, or a BH-filtered export would silently
+            # drop every HR-Manager-initiated request routed to that BH.
+            all_initiators = User.query.filter(
+                User.role.in_([UserRole.INITIATOR, UserRole.HR_MANAGER])
+            ).all()
             clauses = []
             for company in COMPANY_CHOICES:
                 ids = [u.id for u in all_initiators if bh_int in bh_ids_for_initiator(u, company)]
@@ -395,8 +400,10 @@ def active_employees():
         my_companies = company_scope_ids(current_user.id)
         companies = [c for c in companies if c in my_companies]
 
-    initiators = User.query.filter_by(
-        role=UserRole.INITIATOR, is_active=True
+    # HR Managers can also initiate requests (2026-09-29) — include them so
+    # a request they submitted can be found by initiator in this filter too.
+    initiators = User.query.filter(
+        User.role.in_([UserRole.INITIATOR, UserRole.HR_MANAGER]), User.is_active == True  # noqa: E712
     ).order_by(User.name).all()
 
     bhs = User.query.filter_by(

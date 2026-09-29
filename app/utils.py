@@ -100,9 +100,17 @@ def get_new_status(req, actor_role, action):
     to trigger a special case at all): BH -> HR Manager -> Head HR ->
     Dr. Bhoon -> Active. These branch points diverge from the standard
     TRANSITIONS dict; everything else falls through to it.
+
+    HR-Manager-initiated requests (req.hr_manager_initiated, 2026-09-29)
+    skip PENDING_HR_MANAGER too, regardless of company or is_special_case —
+    checked first, ahead of both branches above, since it overrides either
+    of them the same way: an HR Manager hiring their own candidate has no
+    separate HR Manager left to review it.
     """
     cs = req.status
     if cs == RequestStatus.PENDING_BH and actor_role == UserRole.BUSINESS_HEAD and action == ApprovalActionType.APPROVED:
+        if req.hr_manager_initiated:
+            return RequestStatus.PENDING_HEAD_HR      # HR Manager stage skipped — see docstring
         if req.company_code != "RDC":
             return RequestStatus.PENDING_HR_MANAGER   # fixed chain — no special-case branch for non-RDC
         return RequestStatus.PENDING_HEAD_HR if req.is_special_case else RequestStatus.PENDING_HR_MANAGER

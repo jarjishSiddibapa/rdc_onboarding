@@ -13,6 +13,12 @@
     </div>
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       {% include "_sync_now_widget.html" %}
+      {% if current_user.role.value == 'HR_MANAGER' %}
+      <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+        New Request
+      </a>
+      {% endif %}
       {% if current_user.role.value in ('HEAD_HR', 'HR_MANAGER') %}
       <a href="{{ url_for('exports.active_employees') }}" class="btn btn-success">
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
@@ -21,6 +27,48 @@
       {% endif %}
     </div>
   </div>
+
+  {% if own_drafts %}
+  <!-- My Draft Requests (HR Manager acting as an initiator, 2026-09-29) —
+       drafts are excluded from the approval queue/table below by design
+       (private to whoever is still filling them in), so an HR Manager's own
+       in-progress draft would otherwise be reachable only by the exact
+       direct URL. -->
+  <div style="margin-bottom:28px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <h2 style="font-size:15px;font-weight:700;color:var(--c-text-1);margin:0;">My Draft Requests</h2>
+      <span class="badge badge-draft">{{ own_drafts|length }}</span>
+    </div>
+    <div class="card" style="overflow:hidden;">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Candidate</th>
+            <th>Designation</th>
+            <th>Company</th>
+            <th>Last Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in own_drafts %}
+          <tr>
+            <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or 'Untitled draft' }}</span></td>
+            <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
+            <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
+            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.updated_at | ist }}</td>
+            <td style="text-align:right;">
+              <a href="{{ url_for('requests_bp.new_request', step=1, token=req.public_token) }}" class="btn btn-secondary btn-sm">
+                Continue →
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Stat cards -->
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">

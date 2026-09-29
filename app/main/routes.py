@@ -36,6 +36,22 @@ def dashboard():
 
     status_filter = request.args.get("status", "").strip()
 
+    # HR Manager can also initiate requests (2026-09-29 — see
+    # OnboardingRequest.hr_manager_initiated). Their own DRAFT requests are
+    # otherwise invisible everywhere: the approver queue/table below
+    # explicitly excludes DRAFT status (drafts are private to whoever is
+    # still filling them in), and once submitted an HR Manager's own
+    # request already surfaces normally in "All Requests" below since it's
+    # company-scoped the same as any other row. Only the draft gap needs
+    # filling in here.
+    own_drafts = []
+    if role == UserRole.HR_MANAGER:
+        own_drafts = (OnboardingRequest.query
+                      .filter_by(initiated_by=current_user.id, is_deleted=False,
+                                 status=RequestStatus.DRAFT)
+                      .order_by(OnboardingRequest.updated_at.desc())
+                      .all())
+
     if role == UserRole.INITIATOR:
         base_q = OnboardingRequest.query.filter_by(
             initiated_by=current_user.id,
@@ -224,6 +240,7 @@ def dashboard():
         pagination=all_pagination,
         pg_base=_pg_base(),
         counts=counts,
+        own_drafts=own_drafts,
         role=role,
         UserRole=UserRole,
         statuses=list(RequestStatus),

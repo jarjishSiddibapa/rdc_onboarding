@@ -18,11 +18,14 @@ class _Req:
     """Minimal stand-in for OnboardingRequest — get_new_status() reads
     .status/.is_special_case/.company_code (company_code added 2026-09-21
     for the Ultrafine/ROBO fixed-chain branch; defaults to "RDC" so every
-    pre-existing test keeps exercising the RDC paths unchanged)."""
-    def __init__(self, status, is_special_case=False, company_code="RDC"):
+    pre-existing test keeps exercising the RDC paths unchanged) and
+    .hr_manager_initiated (added 2026-09-29, defaults to False so every
+    pre-existing test is unaffected)."""
+    def __init__(self, status, is_special_case=False, company_code="RDC", hr_manager_initiated=False):
         self.status = status
         self.is_special_case = is_special_case
         self.company_code = company_code
+        self.hr_manager_initiated = hr_manager_initiated
 
 
 # ── get_new_status — valid paths ───────────────────────────────────────────────
@@ -151,6 +154,54 @@ class TestOtherCompanyTransitions:
         result = get_new_status(_Req(RequestStatus.PENDING_HR_MANAGER, company_code="Ultrafine"),
                                  UserRole.HR_MANAGER, ApprovalActionType.APPROVED)
         assert result == RequestStatus.PENDING_HEAD_HR
+
+
+# ── get_new_status — HR-Manager-initiated requests (2026-09-29) ───────────────
+# PENDING_HR_MANAGER is skipped entirely, checked ahead of both the RDC
+# special-case branch and the non-RDC fixed chain — an HR Manager hiring
+# their own candidate has no separate HR Manager left to review it.
+
+class TestHrManagerInitiatedTransitions:
+    def test_bh_approve_rdc_standard_skips_hr_manager(self):
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_BH, hr_manager_initiated=True),
+            UserRole.BUSINESS_HEAD, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_HEAD_HR
+
+    def test_head_hr_approve_rdc_standard_activates_directly(self):
+        """No Dr. Bhoon either — RDC + not special-case never visits him."""
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_HEAD_HR, hr_manager_initiated=True),
+            UserRole.HEAD_HR, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.ACTIVE
+
+    def test_head_hr_approve_rdc_special_case_still_visits_dr_bhoon(self):
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_HEAD_HR, hr_manager_initiated=True, is_special_case=True),
+            UserRole.HEAD_HR, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_DR_BHOON
+
+    @pytest.mark.parametrize("company", ["Ultrafine", "ROBO"])
+    def test_bh_approve_non_rdc_skips_hr_manager_too(self, company):
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_BH, hr_manager_initiated=True, company_code=company),
+            UserRole.BUSINESS_HEAD, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_HEAD_HR
+
+    @pytest.mark.parametrize("company", ["Ultrafine", "ROBO"])
+    def test_head_hr_approve_non_rdc_still_visits_dr_bhoon(self, company):
+        """Non-RDC's fixed chain always visits Dr. Bhoon regardless of the
+        HR Manager skip — only the HR Manager stage itself is removed."""
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_HEAD_HR, hr_manager_initiated=True, company_code=company),
+            UserRole.HEAD_HR, ApprovalActionType.APPROVED)
+        assert result == RequestStatus.PENDING_DR_BHOON
+
+    def test_bh_reject_unaffected(self):
+        result = get_new_status(
+            _Req(RequestStatus.PENDING_BH, hr_manager_initiated=True),
+            UserRole.BUSINESS_HEAD, ApprovalActionType.REJECTED)
+        assert result == RequestStatus.REJECTED_BH
 
 
 # ── get_new_status — invalid combos ───────────────────────────────────────────

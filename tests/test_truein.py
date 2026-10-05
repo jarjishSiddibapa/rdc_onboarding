@@ -239,15 +239,13 @@ class TestBuildPayloadFieldCompleteness:
 
             assert payload["address"] == "123 Test Street, Test Nagar"
 
-    def test_category_is_always_teamlease_with_no_plant_mapping(self, db, app):
+    def test_category_falls_back_to_plant_name_when_no_cluster_reconciliation(self, db, app):
         """
-        2026-09-29 stakeholder instruction: category ("Staff Category" in
-        Truein's dashboard) is now a fixed "Teamlease" for every push from
-        this app, regardless of plant/cluster reconciliation — every hire
-        submitted through this onboarding flow is a Teamlease-sourced hire.
-        Previously derived from the plant's cluster (see git history for the
-        old 2026-09-23 fallback-to-plant-name behavior, now removed
-        entirely, not just overridden).
+        category ("Staff Category" in Truein's dashboard) is the REGION the
+        hire is made in, never a fixed value (a 2026-09-29 hardcode to
+        "Teamlease" was a misreading and was reverted 2026-10-05). With no
+        PlantDvtMapping/cluster (Ultrafine/ROBO never have one), it falls
+        back to the plant name — otherwise Truein defaults it to "Other".
         """
         with app.app_context():
             req = OnboardingRequest(
@@ -260,7 +258,7 @@ class TestBuildPayloadFieldCompleteness:
 
             payload = build_payload(req)
 
-            assert payload["category"] == "Teamlease"
+            assert payload["category"] == "ROBO - Mumbai"
 
     def test_name_also_pushed_into_first_name(self, db, app):
         """
@@ -287,9 +285,9 @@ class TestBuildPayloadFieldCompleteness:
             assert payload["first_name"] == "Multi Word Full Name Here"
             assert "last_name" not in payload
 
-    def test_category_is_teamlease_even_with_a_reconciled_cluster(self, db, app):
-        """A real DVT-reconciled cluster match must NOT override the fixed
-        "Teamlease" value — this is an RDC plant with a confirmed cluster."""
+    def test_category_is_the_reconciled_region_when_available(self, db, app):
+        """An RDC plant with a confirmed cluster sends that region as the
+        category — the plant-name fallback must never override it."""
         with app.app_context():
             cluster = ClusterNameMapping(canonical_cluster_name="BG Region", truein_category="Bangalore")
             db.session.add(cluster)
@@ -308,9 +306,9 @@ class TestBuildPayloadFieldCompleteness:
 
             payload = build_payload(req)
 
-            assert payload["category"] == "Teamlease"
+            assert payload["category"] == "Bangalore"
 
-    def test_sub_site_derived_from_plant_mapping_category_still_teamlease(self, db, app):
+    def test_sub_site_and_category_derived_from_plant_mapping(self, db, app):
         with app.app_context():
             cluster = ClusterNameMapping(canonical_cluster_name="BG Region", truein_category="Bangalore")
             db.session.add(cluster)
@@ -335,7 +333,7 @@ class TestBuildPayloadFieldCompleteness:
             payload = build_payload(req)
 
             assert payload["sub_site"] == "BG-Veerasandra"
-            assert payload["category"] == "Teamlease"
+            assert payload["category"] == "Bangalore"
 
     def test_site_point_uses_reconciled_truein_value_not_raw_plant_name(self, db, app):
         """
@@ -384,8 +382,8 @@ class TestBuildPayloadFieldCompleteness:
             payload = build_payload(req)
 
             assert payload["sub_site"] == "BG-Test Plant 3"
-            # 2026-09-29: category is a fixed "Teamlease" regardless of plant.
-            assert payload["category"] == "Teamlease"
+            # category falls back to the plant name when unreconciled (region is the intent).
+            assert payload["category"] == "BG-Test Plant 3"
 
     def test_sub_site_not_empty_when_plant_has_no_dvt_mapping_row_at_all(self, db, app):
         """
@@ -414,8 +412,8 @@ class TestBuildPayloadFieldCompleteness:
 
             assert payload["sitePoint"] == "UF-Test Plant"
             assert payload["sub_site"] == "UF-Test Plant"
-            # 2026-09-29: category is a fixed "Teamlease" regardless of plant.
-            assert payload["category"] == "Teamlease"
+            # category falls back to the plant name when unreconciled (region is the intent).
+            assert payload["category"] == "UF-Test Plant"
 
     def test_department_derived_from_designation_norm_category(self, db, app):
         with app.app_context():

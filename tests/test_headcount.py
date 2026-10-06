@@ -164,6 +164,50 @@ class TestPlantNameCompanyOverride:
             assert row.company is None
 
 
+class TestTrueinSubSiteDuplicateRows:
+    """
+    Regression for 2026-10-06: several PlantDvtMapping rows can carry the same
+    truein_sub_site (e.g. phantom "KER-Trivandrum 3", UNMATCHED, whose
+    sub_site was copied from the real "KER-Trivandrum 1"/TV1). The lookup used
+    a plain dict comprehension, so whichever row came last won and every Truein
+    "KER-Trivandrum 1" employee was filed under the phantom plant (53
+    employees across 5 plants live). The plant with a DVT code (or whose own
+    name equals the sub_site) must win regardless of row order.
+    """
+
+    def _run(self, tr_raw):
+        with patch("app.services.headcount.zinghr.fetch_active_employees", return_value=[]), \
+             patch("app.services.headcount.truein._fetch_all_employees_raw", return_value=tr_raw), \
+             patch("app.services.headcount.dvt.fetch_all_plants_with_avg_volume", return_value=[]):
+            return headcount._compute_and_store_snapshot()
+
+    def _seed(self, db, real_first):
+        from app.models import PlantDvtMapping, MatchConfidence
+        real = PlantDvtMapping(plant_location_name="KER-Trivandrum 1", truein_sub_site="KER-Trivandrum 1",
+                               dvt_plant_code="TV1", match_confidence=MatchConfidence.AUTO_EXACT)
+        phantom = PlantDvtMapping(plant_location_name="KER-Trivandrum 3", truein_sub_site="KER-Trivandrum 1",
+                                  match_confidence=MatchConfidence.UNMATCHED)
+        for p in ((real, phantom) if real_first else (phantom, real)):
+            db.session.add(p)
+            db.session.flush()   # fix insertion order so ids differ the way the live rows do
+        db.session.commit()
+
+    def _assert_resolves_to_real_plant(self, db, app, real_first):
+        with app.app_context():
+            self._seed(db, real_first)
+            self._run([_tr_employee("4078778", "BABAI MAITY", sub_site="KER-Trivandrum 1", category="Kerala")])
+            db.session.commit()
+            row = EmployeeLocationSnapshot.query.filter_by(employee_code="4078778").first()
+            assert row is not None
+            assert row.plant_location_key == "KER-Trivandrum 1"
+
+    def test_real_plant_wins_when_phantom_row_comes_last(self, db, app):
+        self._assert_resolves_to_real_plant(db, app, real_first=True)
+
+    def test_real_plant_wins_when_phantom_row_comes_first(self, db, app):
+        self._assert_resolves_to_real_plant(db, app, real_first=False)
+
+
 class TestSharedTimestampAndCompanyIsolation:
     """
     Two real bugs found and fixed while building _compute_and_store_other_company_snapshot():

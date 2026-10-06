@@ -384,10 +384,29 @@ def _compute_and_store_snapshot() -> dict:
 
     plant_mappings = PlantDvtMapping.query.filter_by(is_deleted=False).all()
     plant_name_by_norm = {_normalize_name(p.plant_location_name): p.plant_location_name for p in plant_mappings}
-    plant_name_by_truein_sub_site = {
-        _normalize_name(p.truein_sub_site): p.plant_location_name
-        for p in plant_mappings if p.truein_sub_site
-    }
+    # Several PlantDvtMapping rows can carry the same truein_sub_site (e.g.
+    # "KER-Trivandrum 3" is an unmapped row whose sub_site was copied from the
+    # real "KER-Trivandrum 1"/TV1). A plain dict comprehension lets whichever
+    # row comes last overwrite the rest, which silently moved every Truein
+    # "KER-Trivandrum 1" employee onto the phantom plant (confirmed 2026-10-06:
+    # 53 employees across 5 plants). Pick deterministically instead: a plant
+    # with a DVT code first, then one whose own name IS the sub_site string,
+    # then the lowest id.
+    def _sub_site_rank(p):
+        return (
+            0 if p.dvt_plant_code else 1,
+            0 if _normalize_name(p.plant_location_name) == _normalize_name(p.truein_sub_site) else 1,
+            p.id or 0,
+        )
+    plant_name_by_truein_sub_site = {}
+    _best_by_sub_site = {}
+    for p in plant_mappings:
+        if not p.truein_sub_site:
+            continue
+        key = _normalize_name(p.truein_sub_site)
+        if key not in _best_by_sub_site or _sub_site_rank(p) < _sub_site_rank(_best_by_sub_site[key]):
+            _best_by_sub_site[key] = p
+            plant_name_by_truein_sub_site[key] = p.plant_location_name
     # Alternate ZingHR Location / Truein sub_site strings that were merged
     # into one canonical plant (see PlantNameAlias) — without these, a
     # ZingHR/Truein record carrying the old, now-merged-away name would go

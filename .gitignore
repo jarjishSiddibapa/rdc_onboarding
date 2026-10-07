@@ -51,3 +51,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Demo / local artefacts
+demo.db
+*.db

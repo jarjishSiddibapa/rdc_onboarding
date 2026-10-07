@@ -5,6 +5,13 @@ Seed script — drops and recreates all tables, then seeds:
   - 49 designations (with default 30-day notice period)
   - All 34+ form fields with options
 """
+import os
+import sys
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from app import create_app
 from app.extensions import db, bcrypt
 from app.models import (
@@ -230,21 +237,31 @@ FORM_FIELDS = [
 
 # ── Seed function ──────────────────────────────────────────────────────────────
 
+if "--yes" not in sys.argv:
+    sys.exit(
+        "This script DROPS ALL TABLES in the configured database and recreates them.\n"
+        "Re-run with --yes if you are sure:  python seed.py --yes"
+    )
+
+_admin_password = os.environ.get("ADMIN_SEED_PASSWORD")
+if not _admin_password or len(_admin_password) < 10:
+    sys.exit("Set ADMIN_SEED_PASSWORD (at least 10 characters) in your environment or .env first.")
+
 with app.app_context():
     print("Dropping all tables...")
     db.drop_all()
     print("Creating all tables...")
     db.create_all()
 
-    # Admin user
+    # Admin user (password comes from ADMIN_SEED_PASSWORD; change it after first login)
     admin = User(
         name="admin",
-        email="admin@rdc.in",
-        password_hash=bcrypt.generate_password_hash("Rdc@meow123456").decode("utf-8"),
+        email=os.environ.get("ADMIN_SEED_EMAIL", "admin@example.com"),
+        password_hash=bcrypt.generate_password_hash(_admin_password).decode("utf-8"),
         role=UserRole.SUPER_ADMIN,
     )
     db.session.add(admin)
-    print("Created SUPER_ADMIN: admin@rdc.in / Rdc@meow123456")
+    print(f"Created SUPER_ADMIN: {admin.email}")
 
     # Plant locations
     for i, name in enumerate(PLANTS, start=1):
@@ -287,5 +304,5 @@ with app.app_context():
 
     db.session.commit()
     print("\nSeed complete!")
-    print("   Login: admin@rdc.in  /  Rdc@meow123456")
+    print(f"   Login: {admin.email}  /  the ADMIN_SEED_PASSWORD you set")
     print("   Change this password immediately after first login.")

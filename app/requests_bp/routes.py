@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import time
@@ -5,8 +6,9 @@ import uuid
 import random
 import queue
 import threading
+import zipfile
 from datetime import datetime, date as _date
-from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify
+from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify, send_file
 from flask_login import login_required, current_user
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
@@ -1691,11 +1693,10 @@ def staffing_sync_status():
 
 # ── View ───────────────────────────────────────────────────────────────────────
 
-@requests_bp.route("/<string:token>")
-@login_required
-def view_request(token):
-    req = _get_req_by_token(token)
-
+def _assert_can_view_request(req):
+    """403 unless current_user may see this request's detail page. Shared by
+    view_request() and the document-download routes below so a file can never
+    be fetched by someone who couldn't open the request itself."""
     # Drafts are private — only the initiator who created them may view
     if req.status == RequestStatus.DRAFT and req.initiated_by != current_user.id:
         abort(403)
@@ -1715,6 +1716,77 @@ def view_request(token):
         from ..utils import company_scope_ids
         if req.company_code not in company_scope_ids(current_user.id):
             abort(403)
+
+
+def _document_path(doc):
+    """Absolute path of a stored upload, or None if it's missing/unsafe.
+    `filename` is our own uuid-based stored name, but it lives in a JSON
+    column, so never trust it to stay inside the upload folder."""
+    stored = os.path.basename(str(doc.get("filename") or ""))
+    if not stored:
+        return None
+    folder = os.path.realpath(current_app.config["UPLOAD_FOLDER"])
+    path = os.path.realpath(os.path.join(folder, stored))
+    if os.path.dirname(path) != folder or not os.path.isfile(path):
+        return None
+    return path
+
+
+@requests_bp.route("/<string:token>/documents/<int:idx>/download")
+@login_required
+def download_document(token, idx):
+    """Download one uploaded document as an attachment (same access rules as
+    viewing the request)."""
+    req = _get_req_by_token(token)
+    _assert_can_view_request(req)
+    docs = req.documents
+    if idx < 0 or idx >= len(docs):
+        abort(404)
+    path = _document_path(docs[idx])
+    if not path:
+        abort(404)
+    name = os.path.basename(str(docs[idx].get("name") or "").replace("\\", "/")) or os.path.basename(path)
+    return send_file(path, as_attachment=True, download_name=name)
+
+
+@requests_bp.route("/<string:token>/documents/download-all")
+@login_required
+def download_all_documents(token):
+    """Every uploaded document for this request, bundled into one zip."""
+    req = _get_req_by_token(token)
+    _assert_can_view_request(req)
+    buf = io.BytesIO()
+    used = set()
+    added = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for doc in req.documents:
+            path = _document_path(doc)
+            if not path:
+                continue
+            name = os.path.basename(str(doc.get("name") or "").replace("\\", "/")) or os.path.basename(path)
+            # Two uploads can share an original filename (e.g. "scan.pdf") —
+            # keep both rather than letting the second overwrite the first.
+            base, ext = os.path.splitext(name)
+            candidate, n = name, 1
+            while candidate.lower() in used:
+                n += 1
+                candidate = f"{base} ({n}){ext}"
+            used.add(candidate.lower())
+            zf.write(path, arcname=candidate)
+            added += 1
+    if not added:
+        abort(404)
+    buf.seek(0)
+    who = re.sub(r"[^A-Za-z0-9_-]+", "_", req.candidate_name or "").strip("_") or "request"
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"Documents_{who}_{req.id}.zip")
+
+
+@requests_bp.route("/<string:token>")
+@login_required
+def view_request(token):
+    req = _get_req_by_token(token)
+    _assert_can_view_request(req)
 
     can_approve = can_act_on(req, current_user)
     can_submit = (req.status == RequestStatus.DRAFT and

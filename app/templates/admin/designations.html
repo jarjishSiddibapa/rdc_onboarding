@@ -86,12 +86,25 @@
   <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;">
     <div>
       <h1 class="page-title">Designations</h1>
-      <p class="page-sub"><strong>{{ active_desigs|length }}</strong> active · <strong>{{ inactive_desigs|length }}</strong> disabled · notice period &amp; Truein app attendance per designation</p>
+      <p class="page-sub"><strong>{{ active_desigs|length }}</strong> active · <strong>{{ inactive_desigs|length }}</strong> disabled · {{ selected_company }} · notice period &amp; Truein app attendance per designation</p>
     </div>
-    <a href="{{ url_for('admin.new_designation') }}" class="btn btn-primary">
+    <a href="{{ url_for('admin.new_designation', company=selected_company) }}" class="btn btn-primary">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
       Add Designation
     </a>
+  </div>
+
+  {# Company selector: each company has its own designation list (2026-10-07),
+     same link-pill row as Admin -> Plant Locations. #}
+  <div style="display:flex;gap:8px;margin-bottom:16px;">
+    {% for c in companies %}
+    <a href="{{ url_for('admin.designations_list', company=c) }}"
+       style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;
+              {% if c == selected_company %}background:var(--c-primary);color:#fff;
+              {% else %}background:var(--c-bg-2);color:var(--c-text-3);border:1px solid var(--c-border);{% endif %}">
+      {{ c }}
+    </a>
+    {% endfor %}
   </div>
 
   <div class="card" style="overflow:hidden;">

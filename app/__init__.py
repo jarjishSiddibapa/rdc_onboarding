@@ -12,6 +12,7 @@ from .extensions import db, login_manager, bcrypt, mail, csrf, limiter
 _REQUIRED_COLUMNS = [
     ("plant_locations",     "is_deleted",              "TINYINT(1) NOT NULL DEFAULT 0"),
     ("designations",        "is_deleted",              "TINYINT(1) NOT NULL DEFAULT 0"),
+    ("designations",        "company",                 "VARCHAR(20) NOT NULL DEFAULT 'RDC'"),
     ("form_fields",         "is_deleted",              "TINYINT(1) NOT NULL DEFAULT 0"),
     ("onboarding_requests", "is_deleted",              "TINYINT(1) NOT NULL DEFAULT 0"),
     ("users",               "profile_pic",             "VARCHAR(500) NULL"),

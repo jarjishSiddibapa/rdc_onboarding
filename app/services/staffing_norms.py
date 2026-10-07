@@ -174,7 +174,7 @@ def check_rdc_staffing_gate(form_data: dict) -> dict:
         designation_name = (fd.get("designation") or "").strip()
         plant_name = (fd.get("plant_location") or "").strip()
 
-        designation = Designation.query.filter_by(name=designation_name, is_deleted=False).first()
+        designation = Designation.query.filter_by(name=designation_name, company="RDC", is_deleted=False).first()
         if not designation or not designation.norm_category_id:
             return _result(True, "not_covered", {
                 "message": "Designation is not covered by RDC staffing norms.",

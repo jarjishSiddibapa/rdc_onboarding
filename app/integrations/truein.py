@@ -372,7 +372,8 @@ def build_payload(req) -> dict:
     if desig_name:
         try:
             from ..models import Designation as _Desig
-            desig_obj = _Desig.query.filter_by(name=desig_name, is_deleted=False).first()
+            desig_obj = _Desig.query.filter_by(
+                name=desig_name, company=(req.company_code or "RDC"), is_deleted=False).first()
         except Exception:
             pass
 

@@ -139,6 +139,10 @@ class Designation(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
+    # Which company's onboarding form offers this designation (2026-10-07). Each
+    # company has its own list — the same name can exist once per company, so
+    # anything that looks a designation up BY NAME must also filter on company.
+    company = db.Column(db.String(20), default="RDC", nullable=False)
     notice_period_days = db.Column(db.Integer, default=30, nullable=False)
     # If True, employees with this designation get userAppAttendance=1 in Truein
     truein_app_attendance = db.Column(db.Boolean, default=False, nullable=False)

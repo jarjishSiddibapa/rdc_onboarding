@@ -14,6 +14,15 @@
     <form method="POST" style="display:flex;flex-direction:column;gap:20px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       <div>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Company <span style="color:var(--c-danger);">*</span></label>
+        <select class="inp" name="company" id="desig-company">
+          {% for c in companies %}
+          <option value="{{ c }}" {% if c == default_company %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+        <p style="font-size:12px;color:var(--c-text-4);margin-top:6px;">The designation is only offered on this company's onboarding form.</p>
+      </div>
+      <div>
         <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Designation Name <span style="color:var(--c-danger);">*</span></label>
         <input class="inp" type="text" name="name" required value="{{ designation.name if designation else '' }}" placeholder="e.g. Batching Plant Operator"/>
       </div>
@@ -25,7 +34,7 @@
       </div>
 
       {# ── RDC Staffing Norm ── #}
-      <div style="background:var(--c-bg);border:1.5px solid var(--c-border);border-radius:10px;padding:16px 18px;">
+      <div id="norm-box" style="background:var(--c-bg);border:1.5px solid var(--c-border);border-radius:10px;padding:16px 18px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
           <span style="font-size:12px;font-weight:700;color:var(--c-text-2);text-transform:uppercase;letter-spacing:0.06em;">RDC Staffing Norm</span>
         </div>
@@ -106,6 +115,11 @@ function updateToggle(checkbox) {
   }
 }
 document.addEventListener('DOMContentLoaded', function() {
+  // Staffing norms are RDC-only: hide the norm box for other companies.
+  var compSel = document.getElementById('desig-company');
+  var normBox = document.getElementById('norm-box');
+  function syncNorm() { if (compSel && normBox) normBox.style.display = compSel.value === 'RDC' ? '' : 'none'; }
+  if (compSel) { compSel.addEventListener('change', syncNorm); syncNorm(); }
   var track = document.getElementById('toggle-track');
   var cb    = document.getElementById('truein_app_attendance');
   if (track && cb) {

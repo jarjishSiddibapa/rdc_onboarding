@@ -386,9 +386,14 @@ def active_employees():
         is_deleted=False, is_active=True
     ).order_by(PlantLocation.name).all()
 
-    designations = Designation.query.filter_by(
-        is_deleted=False, is_active=True
-    ).order_by(Designation.name).all()
+    # Designations are per-company now — the same name can appear once per
+    # company, so de-dupe by name for this company-agnostic filter dropdown.
+    _seen_desig = set()
+    designations = []
+    for _d in Designation.query.filter_by(is_deleted=False, is_active=True).order_by(Designation.name).all():
+        if _d.name not in _seen_desig:
+            _seen_desig.add(_d.name)
+            designations.append(_d)
 
     companies = [r[0] for r in db.session.execute(db.text(
         "SELECT DISTINCT company_code FROM onboarding_requests "

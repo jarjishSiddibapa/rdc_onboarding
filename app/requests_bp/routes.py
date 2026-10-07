@@ -292,7 +292,8 @@ def _special_case_counts_by_category(plant_name: str) -> dict:
     """Count of ACTIVE, is_special_case requests at this plant, by norm_category_id."""
     rows = (
         db.session.query(Designation.norm_category_id, db.func.count(OnboardingRequest.id))
-        .join(Designation, Designation.name == OnboardingRequest.designation)
+        .join(Designation, db.and_(Designation.name == OnboardingRequest.designation,
+                                   Designation.company == "RDC"))
         .filter(OnboardingRequest.plant_location == plant_name,
                 OnboardingRequest.status == RequestStatus.ACTIVE,
                 OnboardingRequest.is_special_case == True,  # noqa: E712
@@ -776,6 +777,8 @@ def new_request():
         plants = _dvt_matched_plant_options(initiator_region_cluster_ids(current_user.id))
     else:
         plants = _company_plant_options(_req_company)
+    # Every company's active designations; the template tags each <option> with
+    # data-company and the Company Code dropdown (same step) filters them live.
     designations = Designation.query.filter_by(is_active=True, is_deleted=False).order_by(Designation.sort_order, Designation.name).all()
 
     if request.method == "POST":
@@ -921,6 +924,19 @@ def submit_request(token):
     from ..utils import company_scope_ids
     if req.form_data.get("company_code", "") not in company_scope_ids(current_user.id):
         flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
+        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
+    # Designations are per-company (2026-10-07): the dropdown only offers the
+    # chosen company's list, but a stale draft (company changed after the
+    # designation was picked) or a crafted POST could carry another company's.
+    _desig_company = req.form_data.get("company_code", "")
+    _desig_name = (req.form_data.get("designation", "") or "").strip()
+    # Only blocks a name that belongs to a DIFFERENT company's list; a name no
+    # company lists at all (legacy free text) is left alone, as before.
+    if _desig_name and not Designation.query.filter_by(
+            name=_desig_name, company=_desig_company, is_active=True, is_deleted=False).first()             and Designation.query.filter_by(name=_desig_name, is_deleted=False).first():
+        flash(f"Designation '{_desig_name}' is not available for {_desig_company}. "
+              "Please pick a designation from the list.", "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     # Defense-in-depth: the RDC plant dropdown already filters to this

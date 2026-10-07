@@ -295,7 +295,7 @@
 
               {% if field.options_source == OptionsSource.DESIGNATION %}
                 {% for d in designations %}
-                <option value="{{ d.name }}" data-id="{{ d.id }}" data-notice="{{ d.notice_period_days }}"
+                <option value="{{ d.name }}" data-id="{{ d.id }}" data-company="{{ d.company }}" data-notice="{{ d.notice_period_days }}"
                   data-app-attendance="{{ '1' if d.truein_app_attendance else '0' }}"
                   {% if val == d.name %}selected{% endif %}>{{ d.name }}</option>
                 {% endfor %}
@@ -1006,12 +1006,46 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  /* ── Designations are per-company: only offer the chosen company's list ──
+     Company Code and Designation are both on step 1, so this has to react
+     live. Every company's options are rendered (tagged data-company) and this
+     rebuilds the <select> from that master list whenever Company Code changes;
+     a previously picked designation is kept only if the new company has it. */
+  function wireDesignationsByCompany(desSel) {
+    var compSel = document.querySelector('select[name="company_code"]');
+    var master = Array.prototype.slice.call(desSel.options).filter(function(o) { return o.value !== ''; })
+      .map(function(o) { return o.cloneNode(true); });
+    var placeholder = desSel.options[0] ? desSel.options[0].cloneNode(true) : null;
+    function rebuild(company) {
+      var keep = desSel.value;
+      desSel.innerHTML = '';
+      if (placeholder) {
+        var ph = placeholder.cloneNode(true);
+        ph.textContent = company ? ph.textContent : '— Select Company Code first —';
+        desSel.appendChild(ph);
+      }
+      master.forEach(function(o) {
+        if (company && o.getAttribute('data-company') === company) {
+          var c = o.cloneNode(true);
+          c.selected = (c.value === keep);
+          desSel.appendChild(c);
+        }
+      });
+      fetchNoticePeriod(desSel);
+    }
+    if (compSel) {
+      compSel.addEventListener('change', function() { rebuild(this.value); });
+      rebuild(compSel.value);
+    }
+  }
+
   /* ── Wire up all events on DOMContentLoaded ── */
   document.addEventListener('DOMContentLoaded', function() {
     /* Designation onchange */
     var desSel = document.getElementById('designation_select');
     if (desSel) {
       desSel.addEventListener('change', function() { fetchNoticePeriod(this); });
+      wireDesignationsByCompany(desSel);
       fetchNoticePeriod(desSel);
     }
 

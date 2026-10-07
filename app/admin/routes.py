@@ -914,25 +914,38 @@ def delete_plant(plant_id):
 @login_required
 @role_required(UserRole.SUPER_ADMIN)
 def designations_list():
-    base = Designation.query.filter_by(is_deleted=False).order_by(
+    # Each company has its own designation list (2026-10-07), same link-pill
+    # selector as plants_list(); default RDC.
+    company = request.args.get("company", "RDC")
+    if company not in COMPANY_CHOICES:
+        company = "RDC"
+    base = Designation.query.filter_by(is_deleted=False, company=company).order_by(
         Designation.sort_order, Designation.name
     )
     active_desigs   = base.filter_by(is_active=True ).all()
     inactive_desigs = base.filter_by(is_active=False).all()
     return render_template("admin/designations.html",
                            active_desigs=active_desigs,
-                           inactive_desigs=inactive_desigs)
+                           inactive_desigs=inactive_desigs,
+                           companies=COMPANY_CHOICES, selected_company=company)
 
 
 @admin_bp.route("/designations/new", methods=["GET", "POST"])
 @login_required
 @role_required(UserRole.SUPER_ADMIN)
 def new_designation():
+    default_company = request.args.get("company", "RDC")
+    if default_company not in COMPANY_CHOICES:
+        default_company = "RDC"
     if request.method == "POST":
         name = request.form.get("name", "").strip()
+        company = request.form.get("company", "RDC")
+        if company not in COMPANY_CHOICES:
+            company = "RDC"
         days = request.form.get("notice_period_days", "30").strip()
         truein_app_att = bool(request.form.get("truein_app_attendance"))
-        norm_category_id = request.form.get("norm_category_id", type=int) or None
+        # Staffing norms are RDC-only; never attach a norm bucket to another company's row.
+        norm_category_id = (request.form.get("norm_category_id", type=int) or None) if company == "RDC" else None
         if not name:
             flash("Designation name is required.", "danger")
         else:
@@ -941,7 +954,7 @@ def new_designation():
             except (ValueError, TypeError):
                 notice_days = 30
             max_order = db.session.query(db.func.max(Designation.sort_order)).scalar() or 0
-            desig = Designation(name=name, notice_period_days=notice_days,
+            desig = Designation(name=name, company=company, notice_period_days=notice_days,
                                 truein_app_attendance=truein_app_att,
                                 norm_category_id=norm_category_id,
                                 sort_order=max_order + 1)
@@ -950,7 +963,7 @@ def new_designation():
             log_audit("ADMIN_DESIG", "DESIGNATION_CREATED",
                       resource_type="Designation", resource_id=desig.id,
                       resource_label=f"Designation: {name}",
-                      detail={"name": name, "notice_period_days": notice_days,
+                      detail={"name": name, "company": company, "notice_period_days": notice_days,
                               "truein_app_attendance": truein_app_att,
                               "norm_category_id": norm_category_id})
             try:
@@ -958,12 +971,13 @@ def new_designation():
             except SQLAlchemyError:
                 db.session.rollback()
                 flash("Database error. Please try again.", "danger")
-                return redirect(url_for("admin.designations_list"))
+                return redirect(url_for("admin.designations_list", company=company))
             flash(f"Designation '{name}' added.", "success")
-            return redirect(url_for("admin.designations_list"))
+            return redirect(url_for("admin.designations_list", company=company))
     norm_categories = NormRoleCategory.query.filter_by(is_active=True, is_deleted=False).order_by(
         NormRoleCategory.scope, NormRoleCategory.sort_order).all()
-    return render_template("admin/designation_form.html", designation=None, norm_categories=norm_categories)
+    return render_template("admin/designation_form.html", designation=None, norm_categories=norm_categories,
+                           companies=COMPANY_CHOICES, default_company=default_company)
 
 
 @admin_bp.route("/designations/<int:desig_id>/edit", methods=["GET", "POST"])
@@ -982,8 +996,13 @@ def edit_designation(desig_id):
         except (ValueError, TypeError):
             desig.notice_period_days = 30
         desig.truein_app_attendance = bool(request.form.get("truein_app_attendance"))
-        desig.norm_category_id = request.form.get("norm_category_id", type=int) or None
+        _old_company = desig.company
+        _new_company = request.form.get("company", desig.company)
+        desig.company = _new_company if _new_company in COMPANY_CHOICES else desig.company
+        desig.norm_category_id = (request.form.get("norm_category_id", type=int) or None) if desig.company == "RDC" else None
         _changes = {}
+        if _old_company != desig.company:
+            _changes["company"] = {"from": _old_company, "to": desig.company}
         if _old_name != desig.name:
             _changes["name"] = {"from": _old_name, "to": desig.name}
         if _old_days != desig.notice_period_days:
@@ -1003,10 +1022,11 @@ def edit_designation(desig_id):
             flash("Database error. Please try again.", "danger")
             return redirect(url_for("admin.designations_list"))
         flash("Designation updated.", "success")
-        return redirect(url_for("admin.designations_list"))
+        return redirect(url_for("admin.designations_list", company=desig.company))
     norm_categories = NormRoleCategory.query.filter_by(is_active=True, is_deleted=False).order_by(
         NormRoleCategory.scope, NormRoleCategory.sort_order).all()
-    return render_template("admin/designation_form.html", designation=desig, norm_categories=norm_categories)
+    return render_template("admin/designation_form.html", designation=desig, norm_categories=norm_categories,
+                           companies=COMPANY_CHOICES, default_company=desig.company)
 
 
 @admin_bp.route("/designations/<int:desig_id>/toggle", methods=["POST"])
@@ -1027,7 +1047,7 @@ def toggle_designation(desig_id):
         flash("Database error. Please try again.", "danger")
         return redirect(url_for("admin.designations_list"))
     flash(f"Designation {'activated' if desig.is_active else 'deactivated'}.", "info")
-    return redirect(url_for("admin.designations_list"))
+    return redirect(url_for("admin.designations_list", company=desig.company))
 
 
 @admin_bp.route("/designations/<int:desig_id>/delete", methods=["POST"])
@@ -1049,7 +1069,7 @@ def delete_designation(desig_id):
         flash("Database error. Please try again.", "danger")
         return redirect(url_for("admin.designations_list"))
     flash("Designation removed.", "info")
-    return redirect(url_for("admin.designations_list"))
+    return redirect(url_for("admin.designations_list", company=desig.company))
 
 
 # AJAX: get notice period for a designation

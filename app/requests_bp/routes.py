@@ -1732,11 +1732,7 @@ def _document_path(doc):
     return path
 
 
-@requests_bp.route("/<string:token>/documents/<int:idx>/download")
-@login_required
-def download_document(token, idx):
-    """Download one uploaded document as an attachment (same access rules as
-    viewing the request)."""
+def _send_document(token, idx, as_attachment):
     req = _get_req_by_token(token)
     _assert_can_view_request(req)
     docs = req.documents
@@ -1746,7 +1742,23 @@ def download_document(token, idx):
     if not path:
         abort(404)
     name = os.path.basename(str(docs[idx].get("name") or "").replace("\\", "/")) or os.path.basename(path)
-    return send_file(path, as_attachment=True, download_name=name)
+    return send_file(path, as_attachment=as_attachment, download_name=name)
+
+
+@requests_bp.route("/<string:token>/documents/<int:idx>/download")
+@login_required
+def download_document(token, idx):
+    """Download one uploaded document as an attachment (same access rules as
+    viewing the request)."""
+    return _send_document(token, idx, as_attachment=True)
+
+
+@requests_bp.route("/<string:token>/documents/<int:idx>/view")
+@login_required
+def view_document(token, idx):
+    """Open one uploaded document in the browser. Replaces the old direct
+    /static/uploads/ link, which had no access check at all."""
+    return _send_document(token, idx, as_attachment=False)
 
 
 @requests_bp.route("/<string:token>/documents/download-all")

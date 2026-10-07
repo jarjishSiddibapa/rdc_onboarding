@@ -299,6 +299,46 @@ def create_app():
         session["_last_active"] = now
         session.permanent = True
 
+    # ── Uploaded onboarding documents are NOT public (2026-10-07) ────────────
+    # Flask's built-in static route serves everything under app/static/, which
+    # includes uploads/ — candidate Aadhar/PAN/certificates were reachable
+    # without any login by anyone holding the (random) file URL. Documents are
+    # now only served through requests_bp.view_document/download_document,
+    # which apply the same access rules as the request page. Profile pictures
+    # (always named "profile_<uuid>.<ext>", see profile/routes.py) stay on the
+    # static route since they're shown in the nav and user lists.
+    @app.before_request
+    def block_private_uploads():
+        if request.endpoint != "static":
+            return
+        import posixpath
+        name = posixpath.normpath((request.view_args or {}).get("filename", "").replace("\\", "/")).lower()
+        if name.startswith("uploads/") and not posixpath.basename(name).startswith("profile_"):
+            from flask import abort
+            abort(404)
+
+    # ── CSRF failures: explain instead of showing a bare 400 ─────────────────
+    # "The CSRF session token is missing" almost always means the 10-minute
+    # session cookie lapsed while a page sat open (see PERMANENT_SESSION_LIFETIME).
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def csrf_failed(e):
+        from urllib.parse import urlparse
+        from flask import flash, jsonify
+        app.logger.warning("CSRF failure on %s %s: %s", request.method, request.path, e.description)
+        msg = "Your session expired or the page was open too long. Please try again."
+        # fetch()/XHR callers (OTP, duplicate checks, sync-now) can't use a redirect.
+        if request.is_json or request.headers.get("Sec-Fetch-Mode", "navigate") != "navigate":
+            return jsonify({"ok": False, "error": msg}), 400
+        flash(msg, "warning")
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login"))
+        ref = request.referrer
+        if ref and urlparse(ref).netloc == request.host:
+            return redirect(ref)
+        return redirect(url_for("main.dashboard"))
+
     # ── Security response headers ────────────────────────────────────────────
     @app.after_request
     def add_security_headers(response):

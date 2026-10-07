@@ -101,10 +101,10 @@
               </svg>
             </div>
             <div style="flex:1;min-width:0;">
-              <a href="{{ doc.url }}" target="_blank" style="color:var(--c-primary);font-size:13.5px;font-weight:500;text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ doc.name }}</a>
+              <a href="{{ url_for('requests_bp.view_document', token=req.public_token, idx=loop.index0) }}" target="_blank" style="color:var(--c-primary);font-size:13.5px;font-weight:500;text-decoration:none;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ doc.name }}</a>
               <span style="font-size:11.5px;color:var(--c-text-4);">{{ doc.get('label', doc.get('type', '')) }}</span>
             </div>
-            <a href="{{ doc.url }}" target="_blank" class="btn btn-secondary btn-sm">
+            <a href="{{ url_for('requests_bp.view_document', token=req.public_token, idx=loop.index0) }}" target="_blank" class="btn btn-secondary btn-sm">
               <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
               Open
             </a>

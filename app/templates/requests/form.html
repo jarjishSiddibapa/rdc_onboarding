@@ -355,10 +355,12 @@
           <!-- ── FILE ── -->
           {% elif field.field_type == FieldType.FILE %}
             {% set existing = req.documents | selectattr('type', 'equalto', field.field_key) | list %}
+            {% set ns_doc = namespace(idx=0) %}
+            {% for d in req.documents %}{% if d.type == field.field_key %}{% set ns_doc.idx = loop.index0 %}{% endif %}{% endfor %}
             {% if existing %}
             <div style="display:flex;align-items:center;gap:9px;padding:10px 14px;background:#ECFDF3;border:1px solid #A7F3D0;border-radius:8px;margin-bottom:8px;font-size:13px;color:#046C4E;">
               <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
-              <a href="{{ existing[0].url }}" target="_blank" style="color:#046C4E;font-weight:500;text-decoration:underline;">{{ existing[0].name }}</a>
+              <a href="{{ url_for('requests_bp.view_document', token=req.public_token, idx=ns_doc.idx) }}" target="_blank" style="color:#046C4E;font-weight:500;text-decoration:underline;">{{ existing[0].name }}</a>
               <span style="color:#6EE7B7;font-size:12px;">— already uploaded. Upload again to replace.</span>
             </div>
             {% endif %}

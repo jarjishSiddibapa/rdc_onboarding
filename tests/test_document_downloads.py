@@ -4,6 +4,7 @@ per-document "Download" and a "Download all (.zip)" bundle, both gated by the
 exact same access rules as viewing the request itself.
 """
 import io
+import os
 import uuid
 import zipfile
 from app.models import UserRole, RequestStatus, OnboardingRequest
@@ -185,3 +186,131 @@ class TestDownloadAccessMatchesViewAccess:
             logout(client)
             login(client, owner.email)
             assert self._both(client, token) == (200, 200)
+
+
+class TestOpenGoesThroughPermissionCheck:
+    def test_open_links_use_checked_route_not_static(self, client, db, app, tmp_path):
+        with app.app_context():
+            init = _make_user("OpInit1", "opinit1@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            req, docs = _req_with_docs(db, app, tmp_path, init)
+            token = req.public_token
+            login(client, init.email)
+            html = client.get(f"/requests/{token}").get_data(as_text=True)
+            assert f"/requests/{token}/documents/0/view" in html
+            assert "/static/uploads/" not in html
+
+    def test_view_is_inline_not_attachment(self, client, db, app, tmp_path):
+        with app.app_context():
+            init = _make_user("OpInit2", "opinit2@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            req, _ = _req_with_docs(db, app, tmp_path, init)
+            token = req.public_token
+            login(client, init.email)
+            r = client.get(f"/requests/{token}/documents/1/view")
+            assert r.status_code == 200 and r.data == b"content-1"
+            assert "attachment" not in r.headers.get("Content-Disposition", "")
+
+    def test_view_forbidden_for_other_initiator(self, client, db, app, tmp_path):
+        with app.app_context():
+            owner = _make_user("OpOwner", "opowner@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            other = _make_user("OpOther", "opother@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            req, _ = _req_with_docs(db, app, tmp_path, owner)
+            token = req.public_token
+            login(client, other.email)
+            assert client.get(f"/requests/{token}/documents/0/view").status_code == 403
+
+
+class TestStaticUploadsAreNotPublic:
+    def _with_upload(self, app, fname, body=b"secret"):
+        folder = os.path.join(app.static_folder, "uploads")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, fname)
+        with open(path, "wb") as fh:
+            fh.write(body)
+        return path
+
+    def test_document_file_not_served_without_login(self, client, app):
+        name = f"{uuid.uuid4().hex}.pdf"
+        path = self._with_upload(app, name)
+        try:
+            assert client.get(f"/static/uploads/{name}").status_code == 404
+            assert client.get(f"/static/Uploads/{name}").status_code == 404
+            assert client.get(f"/static/uploads/./{name}").status_code == 404
+        finally:
+            os.remove(path)
+
+    def test_document_file_not_served_even_when_logged_in(self, client, db, app):
+        name = f"{uuid.uuid4().hex}.pdf"
+        path = self._with_upload(app, name)
+        try:
+            with app.app_context():
+                u = _make_user("StInit", "stinit@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+                login(client, u.email)
+                assert client.get(f"/static/uploads/{name}").status_code == 404
+        finally:
+            os.remove(path)
+
+    def test_profile_pictures_and_other_static_files_still_served(self, client, app):
+        name = f"profile_{uuid.uuid4().hex}.png"
+        path = self._with_upload(app, name, b"\x89PNG")
+        try:
+            assert client.get(f"/static/uploads/{name}").status_code == 200
+            assert client.get("/static/css/base.css").status_code == 200
+        finally:
+            os.remove(path)
+
+
+class TestCsrfFailureIsFriendly:
+    def test_anonymous_navigation_redirects_to_login_with_message(self, client, app):
+        app.config["WTF_CSRF_ENABLED"] = True
+        try:
+            r = client.post("/auth/login", data={"email": "x@y.z", "password": "p"})
+            assert r.status_code == 302
+            assert "/auth/login" in r.headers["Location"]
+            page = client.get(r.headers["Location"]).get_data(as_text=True)
+            assert "session expired" in page.lower()
+        finally:
+            app.config["WTF_CSRF_ENABLED"] = False
+
+    def test_ajax_call_gets_json_not_a_redirect(self, client, app):
+        app.config["WTF_CSRF_ENABLED"] = True
+        try:
+            r = client.post("/requests/check-govt-id", data={"aadhar_no": "123"},
+                            headers={"Sec-Fetch-Mode": "cors"})
+            assert r.status_code == 400
+            assert r.get_json()["ok"] is False
+        finally:
+            app.config["WTF_CSRF_ENABLED"] = False
+
+    def test_logged_in_user_is_sent_back_to_the_page_they_were_on(self, client, db, app, tmp_path):
+        with app.app_context():
+            init = _make_user("CsInit", "csinit@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            req, _ = _req_with_docs(db, app, tmp_path, init, status=RequestStatus.DRAFT)
+            token = req.public_token
+            login(client, init.email)
+            app.config["WTF_CSRF_ENABLED"] = True
+            try:
+                with client.session_transaction() as s:
+                    s.pop("csrf_token", None)
+                back = f"http://localhost/requests/{token}"
+                r = client.post(f"/requests/{token}/submit", headers={"Referer": back})
+                assert r.status_code == 302
+                assert r.headers["Location"] == back
+            finally:
+                app.config["WTF_CSRF_ENABLED"] = False
+
+
+class TestDraftFormLinksToCheckedRoute:
+    def test_already_uploaded_file_link_uses_view_route(self, client, db, app, tmp_path):
+        from app.models import FormField, FieldType
+        with app.app_context():
+            init = _make_user("FmInit", "fminit@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+            db.session.add(FormField(field_key="doc1", field_label="Doc 1", field_type=FieldType.FILE,
+                                     step=1, is_required=False, is_active=True))
+            db.session.commit()
+            req, _ = _req_with_docs(db, app, tmp_path, init, status=RequestStatus.DRAFT, names=("zzz.pdf", "yyy.pdf"))
+            token = req.public_token
+            login(client, init.email)
+            html = client.get(f"/requests/new?step=1&token={token}").get_data(as_text=True)
+            # doc1 is the 2nd stored document? No: stored types are doc0/doc1 -> field "doc1" maps to index 1.
+            assert f"/requests/{token}/documents/1/view" in html
+            assert "/static/uploads/" not in html

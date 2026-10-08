@@ -47,7 +47,7 @@
   }
 
   function checkStatus(justTriggered) {
-    fetch(STATUS_URL)
+    fetch(STATUS_URL, {busy: false})
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (!d.ok) return;

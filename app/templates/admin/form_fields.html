@@ -203,7 +203,6 @@ function saveOrder() {
 
   var btn = document.getElementById('save-order-btn');
   btn.disabled = true;
-  btn.textContent = 'Saving…';
 
   fetch('{{ url_for("admin.reorder_form_fields") }}', {
     method: 'POST',

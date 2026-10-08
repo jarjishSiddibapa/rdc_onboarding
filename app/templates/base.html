@@ -6,6 +6,7 @@
   <title>{% block title %}RDC Teamlease Employee Onboarding Portal{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/inter-font.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/busy.css') }}">
 </head>
 <body>
 
@@ -240,6 +241,7 @@
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='js/busy.js') }}"></script>
 <script src="{{ url_for('static', filename='js/base.js') }}"></script>
 <script>
 /* ════════════════════════════════════════════════════
@@ -286,7 +288,7 @@
 ════════════════════════════════════════════════════ */
 {% if current_user.is_authenticated %}
 function refreshBadge() {
-  fetch("{{ url_for('main.unread_count') }}")
+  fetch("{{ url_for('main.unread_count') }}", {busy: false})
     .then(function(r){return r.json()}).then(function(d) {
       var b = document.getElementById('notif-badge');
       if (!b) return;

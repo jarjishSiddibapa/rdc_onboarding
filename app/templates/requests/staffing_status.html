@@ -194,11 +194,10 @@ function switchCTab(tab) {
     if (link.style.pointerEvents === 'none') return;
     link.style.pointerEvents = 'none';
     link.style.opacity = '0.65';
-    label.textContent = 'Generating…';
+    if (window.Busy) Busy.showFor(15000);
     setTimeout(function() {
       link.style.pointerEvents = '';
       link.style.opacity = '';
-      label.textContent = 'Download Report';
     }, 15000);
   });
 })();

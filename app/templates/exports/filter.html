@@ -554,11 +554,10 @@ document.addEventListener('DOMContentLoaded', function () {
       if (downloadLink.style.pointerEvents === 'none') return;
       downloadLink.style.pointerEvents = 'none';
       downloadLink.style.opacity = '0.65';
-      downloadLabel.textContent = 'Generating…';
+      if (window.Busy) Busy.showFor(15000);
       setTimeout(function() {
         downloadLink.style.pointerEvents = '';
         downloadLink.style.opacity = '';
-        downloadLabel.textContent = 'Download Excel';
       }, 15000);
     });
   }

@@ -1,0 +1,41 @@
+/* App-wide busy pill — see js/busy.js. Theme-aware via the base.css tokens, with
+   fallbacks so the standalone auth/error pages (which don't load base.css) work too. */
+#busy-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translate(-50%, 16px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: var(--c-surface, #ffffff);
+  color: var(--c-text-1, #1f2937);
+  border: 1px solid var(--c-border, #e5e7eb);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  font: 500 13.5px/1.35 var(--font-sans, 'Inter', system-ui, sans-serif);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+#busy-pill.busy-on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+#busy-pill .busy-spinner {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--c-border, #e5e7eb);
+  border-top-color: var(--c-primary, #e8743b);
+  animation: busy-spin 0.7s linear infinite;
+}
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #busy-pill { transition: none; }
+  #busy-pill .busy-spinner { animation-duration: 1.6s; }
+}

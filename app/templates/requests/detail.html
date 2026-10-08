@@ -542,9 +542,6 @@
     var approveBtn = document.getElementById('approve-btn');
     if (approveBtn) {
       approveBtn.addEventListener('click', function () {
-        var label = document.getElementById('approve-btn-label');
-        var originalLabel = label ? label.textContent : null;
-        if (label) label.textContent = 'Checking...';
         approveBtn.disabled = true;
         fetch('/requests/' + approveBtn.dataset.token + '/truein-preflight', {
           headers: { 'X-Requested-With': 'XMLHttpRequest' },
@@ -569,7 +566,6 @@
             openModal('approve-modal');
           })
           .finally(function () {
-            if (label && originalLabel) label.textContent = originalLabel;
             approveBtn.disabled = false;
           });
       });

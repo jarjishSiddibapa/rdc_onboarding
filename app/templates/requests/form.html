@@ -686,7 +686,7 @@ function sendEmailOTP() {
     return;
   }
   var btn = document.getElementById('otp-send-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  if (btn) { btn.disabled = true; }
   // Client-side safety net matching the server's own bounded wait (see
   // _OTP_EMAIL_TIMEOUT in routes.py) — even if a response never reaches
   // the browser (a flaky network hop, not just a slow SMTP server), the
@@ -1316,7 +1316,7 @@ window.RDCCapacityGate = { blocked: false, message: '', el: null };
     if (q.length < 2) { dropdown.style.display = 'none'; return; }
 
     if (_cache) { _render(_cache, q); return; }
-    status.textContent = 'Searching Truein…';
+    status.textContent = '';
 
     fetch('/requests/api/truein/managers')
       .then(function(r) { return r.json(); })

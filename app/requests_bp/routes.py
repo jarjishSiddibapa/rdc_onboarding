@@ -513,10 +513,10 @@ def send_email_otp():
     threading.Thread(
         target=_send_smtp_to_queue,
         args=(result_q, cfg, [email],
-              "Email Verification OTP — RDC Teamlease Onboarding",
+              "Email Verification OTP — RDC Associates Onboarding",
               f"Your OTP for email verification is: {otp}\n\n"
               f"Valid for 10 minutes. Do not share it with anyone.\n\n"
-              f"— RDC Teamlease HR Onboarding Portal"),
+              f"— RDC Associates Onboarding"),
         daemon=True, name="otp-email-send",
     ).start()
     try:

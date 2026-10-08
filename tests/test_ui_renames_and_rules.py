@@ -75,6 +75,35 @@ class TestRoleAndStatusNames:
         assert "Reporting Manager (RM)" in html and "Functional Head" in html and "Special Approver" in html
 
 
+class TestAppName:
+    NAME = "RDC Associates Onboarding"
+
+    def test_no_old_app_name_in_templates_or_emails(self):
+        offenders = []
+        for base in ("templates", "auth", "admin", "requests_bp", "services", "integrations"):
+            for dp, _, files in os.walk(os.path.join(ROOT, "app", base)):
+                for f in files:
+                    if not f.endswith((".html", ".py")):
+                        continue
+                    text = open(os.path.join(dp, f), encoding="utf-8").read()
+                    for old in ("Teamlease Employee", "Employee Onboarding Portal", "Teamlease HR", "TeamLease Admin",
+                                "RDC Teamlease", "RDC HR Onboarding Portal"):
+                        if old in text:
+                            offenders.append((f, old))
+        assert not offenders, offenders
+
+    def test_login_and_dashboard_use_new_name(self, client, db, app):
+        init = _make_user("NmInit", "nminit@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        db.session.commit()
+        with app.app_context():
+            login_page = client.get("/auth/login").get_data(as_text=True)
+            assert self.NAME in login_page and "Teamlease" not in login_page
+            login(client, init.email)
+            dash = client.get("/dashboard").get_data(as_text=True)
+            assert f"<title>My Requests — {self.NAME}</title>" in dash
+            assert self.NAME in dash and "Teamlease" not in dash
+
+
 class TestRemarksHaveNoLengthLimit:
     def _bh_and_req(self, db, tag):
         init = _make_user(f"Rm{tag}I", f"rm{tag}i@t.com", UserRole.INITIATOR, db, companies=["ROBO"])

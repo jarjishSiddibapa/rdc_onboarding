@@ -551,7 +551,7 @@ def email_settings():
         }
         try:
             _send_smtp(test_cfg, [user],
-                       "Connection Test — RDC Teamlease Portal",
+                       "Connection Test — RDC Associates Onboarding",
                        "Connection verified. Your email settings are working correctly.")
         except Exception as exc:
             flash(f"Connection test failed — {exc}", "danger")

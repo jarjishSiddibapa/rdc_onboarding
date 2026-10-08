@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Edit User' if user else 'New User' }} — TeamLease Admin{% endblock %}
+{% block title %}{{ 'Edit User' if user else 'New User' }} — RDC Associates Onboarding Admin{% endblock %}
 
 {% block content %}
 <div style="max-width:520px;">
@@ -30,7 +30,7 @@
         <div style="position:relative;">
           <input class="inp" type="email" name="email" id="email-input" required
             value="{{ user.email if user else '' }}"
-            placeholder="user@teamlease.in"
+            placeholder="user@example.com"
             autocomplete="off"
 "/>
           <span id="email-status" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:600;"></span>

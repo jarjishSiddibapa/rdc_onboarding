@@ -30,6 +30,31 @@ class RequestStatus(str, enum.Enum):
     REJECTED_HEAD_HR = "REJECTED_HEAD_HR"
 
 
+# Display names (the enum VALUES above are stored in the DB and used in logic — never rename those).
+# 2026-10-08 stakeholder rename: Initiator -> Reporting Manager (RM), Business Head -> Functional Head,
+# Dr. Bhoon -> Special Approver (status "Pending Special Approval").
+ROLE_LABELS = {
+    "INITIATOR": "Reporting Manager (RM)",
+    "BUSINESS_HEAD": "Functional Head",
+    "HR_MANAGER": "HR Manager",
+    "HEAD_HR": "Head HR",
+    "DR_BHOON": "Special Approver",
+    "SUPER_ADMIN": "Admin",
+}
+STATUS_LABELS = {
+    "DRAFT": "Draft",
+    "PENDING_BH": "Pending Functional Head",
+    "PENDING_DR_BHOON": "Pending Special Approval",
+    "PENDING_HR_MANAGER": "Pending HR Manager",
+    "PENDING_HEAD_HR": "Pending Head HR",
+    "ACTIVE": "Approved",
+    "REJECTED_BH": "Rejected by Functional Head",
+    "REJECTED_DR_BHOON": "Rejected by Special Approver",
+    "REJECTED_HRM": "Rejected by HR Manager",
+    "REJECTED_HEAD_HR": "Rejected by Head HR",
+}
+
+
 class ApprovalActionType(str, enum.Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
@@ -266,15 +291,7 @@ class User(UserMixin, db.Model):
 
     @property
     def role_label(self):
-        labels = {
-            UserRole.INITIATOR: "Initiator",
-            UserRole.BUSINESS_HEAD: "Business Head",
-            UserRole.HR_MANAGER: "HR Manager",
-            UserRole.HEAD_HR: "Head HR",
-            UserRole.DR_BHOON: "Dr. Bhoon",
-            UserRole.SUPER_ADMIN: "Admin",
-        }
-        return labels.get(self.role, self.role.value)
+        return ROLE_LABELS.get(self.role.value, self.role.value)
 
 
 @login_manager.user_loader
@@ -412,19 +429,7 @@ class OnboardingRequest(db.Model):
 
     @property
     def status_label(self):
-        labels = {
-            RequestStatus.DRAFT: "Draft",
-            RequestStatus.PENDING_BH: "Pending Business Head",
-            RequestStatus.PENDING_DR_BHOON: "Pending Dr. Bhoon",
-            RequestStatus.PENDING_HR_MANAGER: "Pending HR Manager",
-            RequestStatus.PENDING_HEAD_HR: "Pending Head HR",
-            RequestStatus.ACTIVE: "Approved",
-            RequestStatus.REJECTED_BH: "Rejected by Business Head",
-            RequestStatus.REJECTED_DR_BHOON: "Rejected by Dr. Bhoon",
-            RequestStatus.REJECTED_HRM: "Rejected by HR Manager",
-            RequestStatus.REJECTED_HEAD_HR: "Rejected by Head HR",
-        }
-        return labels.get(self.status, self.status.value)
+        return STATUS_LABELS.get(self.status.value, self.status.value)
 
     @property
     def status_color(self):
@@ -666,7 +671,7 @@ class ClusterNameMapping(db.Model):
 
 
 class BusinessHeadRegion(db.Model):
-    """Which region(s) (clusters) a Business Head is scoped to for the RDC staffing dashboard."""
+    """Which region(s) (clusters) a Functional Head is scoped to for the RDC staffing dashboard."""
     __tablename__ = "business_head_regions"
     __table_args__ = (db.UniqueConstraint("business_head_id", "cluster_id"),)
 

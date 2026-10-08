@@ -1,4 +1,4 @@
-{% from '_macros.html' import render_pagination %}
+{% from '_macros.html' import render_pagination, col_filter %}
 {% extends "base.html" %}
 {% block title %}My Requests — RDC Teamlease Employee Onboarding Portal{% endblock %}
 
@@ -13,7 +13,7 @@
     </div>
     <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
-      New Request
+      New Hiring Request
     </a>
   </div>
 
@@ -45,43 +45,19 @@
     {% endfor %}
   </div>
 
-  <!-- Filter bar -->
-  {% set stage_labels = {
-    'DRAFT':               'Draft',
-    'PENDING_BH':          'Pending Business Head',
-    'PENDING_DR_BHOON':    'Pending Dr. Bhoon',
-    'PENDING_HR_MANAGER':  'Pending HR Manager',
-    'PENDING_HEAD_HR':     'Pending Head HR',
-    'ACTIVE':              'Approved',
-    'REJECTED_BH':         'Rejected by Business Head',
-    'REJECTED_DR_BHOON':   'Rejected by Dr. Bhoon',
-    'REJECTED_HRM':        'Rejected by HR Manager',
-    'REJECTED_HEAD_HR':    'Rejected by Head HR',
-  } %}
-  <div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <span style="font-size:12.5px;font-weight:600;color:var(--c-text-3);white-space:nowrap;">Filter by stage:</span>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1;">
-
-      <a href="{{ url_for('main.dashboard') }}"
-         class="btn btn-sm {% if not selected_status %}btn-primary{% else %}btn-secondary{% endif %}">
-        All
-      </a>
-
-      {% for s in statuses %}
-      <a href="{{ url_for('main.dashboard', status=s.value) }}"
-         class="filter-pill {% if selected_status == s.value %}filter-pill--active{% endif %}">
-        {{ stage_labels.get(s.value, s.value) }}
-      </a>
-      {% endfor %}
-
-    </div>
-    {% if selected_status %}
-    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-ghost" style="white-space:nowrap;">
+  {# Filters live in the column headers now (2026-10-08) — only a slim "clear" strip shows above the table. #}
+  {% set status_opts = [] %}{% for s in statuses %}{% set _ = status_opts.append((s.value, s | status_name)) %}{% endfor %}
+  {% set company_opts = [] %}{% for c in col_options.company %}{% set _ = company_opts.append((c, c)) %}{% endfor %}
+  {% set desig_opts = [] %}{% for d in col_options.designation %}{% set _ = desig_opts.append((d, d)) %}{% endfor %}
+  {% if selected_status or selected_company or selected_designation %}
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;color:var(--c-text-3);">
+    <span>Showing filtered results</span>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-ghost">
       <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-      Clear
+      Clear all filters
     </a>
-    {% endif %}
   </div>
+  {% endif %}
 
   <!-- Requests table -->
   <div class="card" style="overflow:hidden;">
@@ -91,9 +67,9 @@
         <tr>
           <th>ID</th>
           <th>Candidate</th>
-          <th>Company</th>
-          <th>Designation</th>
-          <th>Status</th>
+          <th>{{ col_filter('company', 'Company', company_opts, selected_company) }}</th>
+          <th>{{ col_filter('designation', 'Designation', desig_opts, selected_designation) }}</th>
+          <th>{{ col_filter('status', 'Status', status_opts, selected_status) }}</th>
           <th>Last Updated</th>
           <th></th>
         </tr>
@@ -124,16 +100,16 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
       </div>
-      {% if selected_status %}
-      <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No requests in this stage</p>
-      <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 22px;">Try a different filter or clear to see all requests.</p>
+      {% if selected_status or selected_company or selected_designation %}
+      <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No requests match these filters</p>
+      <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 22px;">Try different filters or clear them to see all requests.</p>
       <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Clear filter</a>
       {% else %}
       <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No requests yet</p>
       <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 22px;">Create your first onboarding request to get started.</p>
       <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
-        New Request
+        New Hiring Request
       </a>
       {% endif %}
     </div>

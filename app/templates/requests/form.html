@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{% if req.candidate_name %}Edit Request{% else %}New Request{% endif %} — RDC Teamlease Employee Onboarding Portal{% endblock %}
+{% block title %}{% if req.candidate_name %}Edit Request{% else %}New Hiring Request{% endif %} — RDC Teamlease Employee Onboarding Portal{% endblock %}
 
 {% block breadcrumbs %}
 <nav class="breadcrumbs" aria-label="Breadcrumb">
@@ -8,7 +8,7 @@
     Dashboard
   </a>
   <span class="bc-sep" aria-hidden="true">/</span>
-  <span class="bc-item bc-current">{% if req.candidate_name %}Edit Request{% else %}New Request{% endif %} — Step {{ step }}/3</span>
+  <span class="bc-item bc-current">{% if req.candidate_name %}Edit Request{% else %}New Hiring Request{% endif %} — Step {{ step }}/3</span>
 </nav>
 {% endblock %}
 
@@ -21,7 +21,7 @@
       <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
     </a>
     <div style="flex:1;">
-      <h1 class="page-title">New Onboarding Request</h1>
+      <h1 class="page-title">New Hiring Request</h1>
     </div>
     <span class="mono" style="font-size:12px;color:var(--c-text-4);background:var(--c-bg);border:1px solid var(--c-border);border-radius:6px;padding:4px 10px;">#{{ req.id }}</span>
   </div>
@@ -233,15 +233,23 @@
             {%- else -%}
               {%- set display_val = '' -%}
             {%- endif -%}
-            <input class="inp date-mask-visible"
-                   type="text"
-                   inputmode="numeric"
-                   placeholder="DD/MM/YYYY"
-                   maxlength="10"
-                   autocomplete="off"
-                   value="{{ display_val }}"
-                   data-field-key="{{ field.field_key }}"
-                   {% if field.is_required %}required{% endif %}/>
+            <div class="date-cal-wrap">
+              <input class="inp date-mask-visible"
+                     type="text"
+                     inputmode="numeric"
+                     placeholder="DD/MM/YYYY"
+                     maxlength="10"
+                     autocomplete="off"
+                     value="{{ display_val }}"
+                     data-field-key="{{ field.field_key }}"
+                     style="padding-right:42px;"
+                     {% if field.is_required %}required{% endif %}/>
+              {# Calendar picker (2026-10-08): the typed box above stays, this opens a real calendar. #}
+              <button type="button" class="date-cal-btn" data-for="{{ field.field_key }}" aria-label="Open calendar for {{ field.field_label }}" title="Pick from calendar">
+                <svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </button>
+              <input type="date" class="date-cal-native" id="native_{{ field.field_key }}" tabindex="-1" aria-hidden="true"/>
+            </div>
             <input type="hidden"
                    name="{{ field.field_key }}"
                    id="hidden_{{ field.field_key }}"
@@ -442,7 +450,7 @@
       <!-- Navigation -->
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:32px;padding-top:24px;border-top:1px solid var(--c-border);">
         {% if step > 1 %}
-        <button type="submit" name="action" value="back" class="btn btn-secondary">
+        <button type="submit" name="action" value="back" class="btn btn-secondary" formnovalidate>
           ← Back
         </button>
         {% else %}
@@ -478,13 +486,13 @@
           <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         </div>
         <div>
-          <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Hiring Not Possible Here</h3>
+          <h3 style="font-size:16px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Hiring Flag</h3>
           <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="capacity-modal-msg"></p>
         </div>
       </div>
       <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
         In case you need extra manpower, please obtain <strong>SPECIAL approval</strong> from the Head Office
-        through your Business Head, providing detailed justification.
+        through your Functional Head, providing detailed justification.
       </p>
       <div style="display:flex;gap:10px;">
         <button type="button" class="btn btn-secondary" style="flex:1;justify-content:center;" id="capacity-modal-cancel">Cancel</button>
@@ -560,8 +568,16 @@
 
 {% block scripts %}
 <script>
-/* ── DD/MM/YYYY masked date inputs ── */
+/* ── DD/MM/YYYY masked date inputs (+ calendar picker button) ── */
 (function() {
+  var st = document.createElement('style');
+  st.textContent =
+    '.date-cal-wrap{position:relative;}' +
+    '.date-cal-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;' +
+      'border:none;background:transparent;color:var(--c-text-3);cursor:pointer;border-radius:8px;}' +
+    '.date-cal-btn:hover{background:var(--c-bg-2);color:var(--c-primary);}' +
+    '.date-cal-native{position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;}';
+  document.head.appendChild(st);
   function isRealDate(dd, mm, yyyy) {
     if (yyyy < 1900 || yyyy > 2100) return false;
     var d = new Date(yyyy, mm - 1, dd);
@@ -659,6 +675,30 @@
 
       // Sync on load (for pre-filled edit forms) without triggering validation
       if (input.value.replace(/\D/g,'').length === 8) syncHidden(input, key);
+
+      // Calendar picker: native <input type=date> driven by the button next to this box.
+      var wrap = input.closest('.date-cal-wrap');
+      var btn = wrap && wrap.querySelector('.date-cal-btn');
+      var native = wrap && wrap.querySelector('.date-cal-native');
+      if (btn && native) {
+        var pad2 = function(n){ return String(n).padStart(2,'0'); };
+        var t = new Date();
+        var todayIso = t.getFullYear() + '-' + pad2(t.getMonth() + 1) + '-' + pad2(t.getDate());
+        if (key === 'contract_from') native.min = todayIso;      // no backdated joining dates
+        if (key === 'date_of_birth') native.max = todayIso;      // no future birth dates
+        btn.addEventListener('click', function() {
+          var hidden = document.getElementById('hidden_' + key);
+          native.value = hidden && hidden.value ? hidden.value : '';
+          if (native.showPicker) { try { native.showPicker(); return; } catch (e) { /* fall through */ } }
+          native.focus(); native.click();
+        });
+        native.addEventListener('change', function() {
+          if (!native.value) return;
+          var p = native.value.split('-');                       // YYYY-MM-DD -> DD/MM/YYYY
+          input.value = p[2] + '/' + p[1] + '/' + p[0];
+          syncHidden(input, key);
+        });
+      }
     });
   }
 

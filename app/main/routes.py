@@ -11,6 +11,21 @@ def _per_page(default: int) -> int:
 def _pg_base() -> str:
     args = {k: v for k, v in request.args.items() if k not in ("page", "per_page") and v}
     return request.path + ("?" + urlencode(args) + "&" if args else "?")
+def _distinct_options(q, column):
+    """Distinct non-empty values of one column within an already-scoped query — feeds the
+    per-column header dropdowns (so a dropdown only offers what the viewer can actually see)."""
+    return [v for (v,) in q.with_entities(column)
+            .filter(column.isnot(None), column != "").distinct().order_by(column).all()]
+
+
+def _apply_col_filters(q, company, designation):
+    if company:
+        q = q.filter(OnboardingRequest.company_code == company)
+    if designation:
+        q = q.filter(OnboardingRequest.designation == designation)
+    return q
+
+
 from flask_login import login_required, current_user
 from sqlalchemy import func
 from ..extensions import db
@@ -35,6 +50,8 @@ def dashboard():
         return redirect(url_for("admin.requests_list"))
 
     status_filter = request.args.get("status", "").strip()
+    company_filter = request.args.get("company", "").strip()
+    designation_filter = request.args.get("designation", "").strip()
 
     # HR Manager can also initiate requests (2026-09-29 — see
     # OnboardingRequest.hr_manager_initiated). Their own DRAFT requests are
@@ -81,6 +98,11 @@ def dashboard():
                 filtered_q = base_q.filter_by(status=RequestStatus(status_filter))
             except ValueError:
                 pass
+        col_options = {
+            "company": _distinct_options(base_q, OnboardingRequest.company_code),
+            "designation": _distinct_options(base_q, OnboardingRequest.designation),
+        }
+        filtered_q = _apply_col_filters(filtered_q, company_filter, designation_filter)
         pagination = filtered_q.order_by(
             OnboardingRequest.updated_at.desc()
         ).paginate(page=page, per_page=_per_page(25), error_out=False)
@@ -93,6 +115,9 @@ def dashboard():
             counts=counts,
             statuses=list(RequestStatus),
             selected_status=status_filter,
+            selected_company=company_filter,
+            selected_designation=designation_filter,
+            col_options=col_options,
         )
 
     # ── Approver roles ─────────────────────────────────────────────────────────
@@ -203,12 +228,19 @@ def dashboard():
         # from the SAME scope as the table beneath them.
         _scoped_q = all_q
 
-        # All requests with optional status filter + paginate
+        # Per-column header dropdown options, from the SAME scoped set the table is built from
+        col_options = {
+            "company": _distinct_options(_scoped_q, OnboardingRequest.company_code),
+            "designation": _distinct_options(_scoped_q, OnboardingRequest.designation),
+        }
+
+        # All requests with optional status/company/designation filters + paginate
         if status_filter:
             try:
                 all_q = all_q.filter_by(status=RequestStatus(status_filter))
             except ValueError:
                 pass
+        all_q = _apply_col_filters(all_q, company_filter, designation_filter)
         page = request.args.get("page", 1, type=int)
         all_pagination = all_q.order_by(
             OnboardingRequest.updated_at.desc()
@@ -217,6 +249,7 @@ def dashboard():
     else:
         all_pagination = None
         _scoped_q = None
+        col_options = {"company": [], "designation": []}
 
     # Fixed 2026-09-26 — these two cards used to query OnboardingRequest
     # unfiltered, regardless of role. base_q/all_q above are correctly
@@ -245,6 +278,9 @@ def dashboard():
         UserRole=UserRole,
         statuses=list(RequestStatus),
         selected_status=status_filter,
+        selected_company=company_filter,
+        selected_designation=designation_filter,
+        col_options=col_options,
     )
 
 

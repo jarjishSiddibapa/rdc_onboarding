@@ -955,7 +955,10 @@ def resume_pending_retries(app) -> int:
 # interactive request (e.g. the site/manager picker AJAX endpoints) never
 # has to pay for a full multi-minute paginated fetch itself.
 
-_CACHE_TTL = 3 * 3600  # seconds
+_CACHE_TTL = 3 * 3600  # seconds — how long a pull is reused instead of re-fetching
+# How old the cache may be and still count as "warm" for read-only callers (duplicate
+# Aadhar/mobile/email checks). The full sync is nightly now, so this must outlast a day.
+_WARM_MAX_AGE = 30 * 3600
 
 # Truein caps each getEmployeeDtls call at 1000 rows. The response's
 # more_rows/last_uid fields drive cursor pagination — send the previous
@@ -1012,7 +1015,7 @@ def get_cached_employees_if_warm() -> list[dict] | None:
     of fetch_managers() when a stale/cold answer is acceptable. Returns None
     if nothing is cached yet.
     """
-    if _employees_cache is not None and (time.time() - _employees_cache_at) < _CACHE_TTL:
+    if _employees_cache is not None and (time.time() - _employees_cache_at) < _WARM_MAX_AGE:
         return _employees_cache
     return None
 

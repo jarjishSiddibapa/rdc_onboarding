@@ -19,13 +19,13 @@ _ALLOWED_ROLES = (UserRole.SUPER_ADMIN, UserRole.HEAD_HR, UserRole.HR_MANAGER, U
 
 _STATUS_LABELS = {
     "DRAFT":             "Draft",
-    "PENDING_BH":        "Pending Business Head",
-    "PENDING_DR_BHOON":  "Pending Dr. Bhoon",
+    "PENDING_BH":        "Pending Functional Head",
+    "PENDING_DR_BHOON":  "Pending Special Approval",
     "PENDING_HR_MANAGER":"Pending HR Manager",
     "PENDING_HEAD_HR":   "Pending Head HR",
     "ACTIVE":            "Approved",
-    "REJECTED_BH":       "Rejected by Business Head",
-    "REJECTED_DR_BHOON": "Rejected by Dr. Bhoon",
+    "REJECTED_BH":       "Rejected by Functional Head",
+    "REJECTED_DR_BHOON": "Rejected by Special Approver",
     "REJECTED_HRM":      "Rejected by HR Manager",
     "REJECTED_HEAD_HR":  "Rejected by Head HR",
 }
@@ -226,11 +226,11 @@ def _filter_chips(params):
 
     if p["initiator_id_s"]:
         u = db.session.get(User, int(p["initiator_id_s"])) if p["initiator_id_s"].isdigit() else None
-        chips.append({"label": "Initiator", "value": u.name if u else p["initiator_id_s"]})
+        chips.append({"label": "Reporting Manager", "value": u.name if u else p["initiator_id_s"]})
 
     if p["bh_id_s"]:
         u = db.session.get(User, int(p["bh_id_s"])) if p["bh_id_s"].isdigit() else None
-        chips.append({"label": "Business Head", "value": u.name if u else p["bh_id_s"]})
+        chips.append({"label": "Functional Head", "value": u.name if u else p["bh_id_s"]})
 
     if p["retry_min_s"] or p["retry_max_s"]:
         val = f"{p['retry_min_s'] or '0'} – {p['retry_max_s'] or '∞'}"
@@ -311,7 +311,7 @@ def _build_excel(records, report_title="Employee Onboarding Report"):
         ("Request ID",        "_id",          12),
         ("Status",            "_status",      22),
         ("Initiated By",      "_initiator",   22),
-        ("Initiator Emp Code","_init_code",   18),
+        ("RM Emp Code","_init_code",   18),
         ("BH Approval",       "_bh_approval", 28),
         ("HR Mgr Approval",   "_hrm_approval",28),
         ("Head HR Approval",  "_hhr_approval",28),
@@ -447,7 +447,7 @@ def preview_excel():
         ("Request ID",        "_id"),
         ("Status",            "_status"),
         ("Initiated By",      "_initiator"),
-        ("Initiator Emp Code","_init_code"),
+        ("RM Emp Code","_init_code"),
         ("BH Approval",       "_bh_approval"),
         ("HR Mgr Approval",   "_hrm_approval"),
         ("Head HR Approval",  "_hhr_approval"),

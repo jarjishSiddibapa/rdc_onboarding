@@ -4,7 +4,7 @@
 <div style="max-width:1100px;">
   <div style="margin-bottom:20px;">
     <h1 class="page-title">Staffing Status</h1>
-    <p class="page-sub">Current headcount, managed separately per company. Refreshed every 2 hours — never a live lookup.</p>
+    <p class="page-sub">Current headcount, managed separately per company. Fully re-synced every night, and each approved hire is added the moment it is approved — never a live lookup.</p>
   </div>
 
   {# Company tabs (added 2026-09-15, multi-company support) — same
@@ -13,7 +13,7 @@
      drill-down and production-volume gating below, unchanged; Ultrafine/
      ROBO are flat plant lists with simple headcount only — see
      staffing_status_company_plant.html for their plant-level detail. #}
-  {# Company-scope gating (added 2026-09-23): a Business Head/HR Manager
+  {# Company-scope gating (added 2026-09-23): a Functional Head/HR Manager
      only sees a tab for a company they're actually ticked for —
      visible_companies (from staffing_status()) is None-safe here since the
      route always passes a concrete list; HEAD_HR/DR_BHOON/SUPER_ADMIN see

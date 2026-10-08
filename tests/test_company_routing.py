@@ -248,7 +248,7 @@ class TestRdcUnaffected:
         with app.app_context():
             assert _db.session.get(OnboardingRequest, req.id).status == RequestStatus.PENDING_DR_BHOON
 
-    def test_special_case_still_requires_20_char_remark(self, client, db, app):
+    def test_special_case_remark_has_no_length_minimum(self, client, db, app):
         initiator = _make_user("RdcRemInit", "rdcreminit@t.com", UserRole.INITIATOR, db, companies=["RDC"])
         bh = _make_user("RdcRemBh", "rdcrembh@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req = _create_request(db, initiator, RequestStatus.PENDING_BH, company_code="RDC", is_special_case=True)
@@ -259,8 +259,9 @@ class TestRdcUnaffected:
                                 data={"remark": "too short"}, follow_redirects=True)
         assert resp.status_code == 200
         with app.app_context():
-            # Rejected by the 20-char justification rule — still PENDING_BH.
-            assert _db.session.get(OnboardingRequest, req.id).status == RequestStatus.PENDING_BH
+            # 2026-10-08: remarks are mandatory but have no length minimum — "too short" is fine,
+            # so the over-norm chain moves on (BH -> Head HR, skipping HR Manager).
+            assert _db.session.get(OnboardingRequest, req.id).status == RequestStatus.PENDING_HEAD_HR
 
 
 class TestNoEligibleApproverGuard:
@@ -272,7 +273,7 @@ class TestNoEligibleApproverGuard:
             login(client, initiator.email)
             resp = client.post(f"/requests/{req.public_token}/submit", follow_redirects=True)
         assert resp.status_code == 200
-        assert b"no business head" in resp.data.lower()
+        assert b"no functional head" in resp.data.lower()
         with app.app_context():
             assert _db.session.get(OnboardingRequest, req.id).status == RequestStatus.DRAFT
 

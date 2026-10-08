@@ -232,6 +232,9 @@ FORM_FIELDS = [
 
     ("passport_photo", "Passport Size Photo", FieldType.FILE, 3, True, OptionsSource.INLINE, False, False,
      None, "Recent passport size photograph (JPG/PNG)", []),
+
+    ("cv_resume", "CV / Resume (Optional)", FieldType.FILE, 3, False, OptionsSource.INLINE, False, False,
+     None, "Optional - PDF or Word document", []),
 ]
 
 

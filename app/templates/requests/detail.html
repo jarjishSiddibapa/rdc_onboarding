@@ -289,7 +289,7 @@
             <div style="flex:1;height:1px;background:var(--c-bg-2);"></div>
             <div style="display:flex;align-items:center;gap:5px;padding:4px 10px;background:#FFF7ED;border:1px solid #FDE68A;border-radius:999px;">
               <svg width="10" height="10" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-              <span style="font-size:10px;font-weight:700;color:#D97706;">Resubmitted by Initiator</span>
+              <span style="font-size:10px;font-weight:700;color:#D97706;">Resubmitted by Reporting Manager</span>
             </div>
             <div style="flex:1;height:1px;background:var(--c-bg-2);"></div>
           </div>
@@ -333,7 +333,7 @@
             <svg width="14" height="14" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>
             <div>
               <div style="font-size:10.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.06em;">Rejected</div>
-              <div style="font-size:12px;font-weight:600;color:#DC2626;">Initiator can edit &amp; resubmit</div>
+              <div style="font-size:12px;font-weight:600;color:#DC2626;">Reporting Manager can edit &amp; resubmit</div>
             </div>
           </div>
           {% elif req.status.value == 'DRAFT' %}
@@ -369,15 +369,15 @@
     <p style="font-size:12.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin:0 0 14px;">
       This is an over-norm hiring request (outside staffing norms). Your justification is required and recorded.
     </p>
-    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Reason for approving hiring outside norms (min 20 characters, required).</p>
+    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Reason for approving hiring outside norms (required).</p>
     <form method="POST" action="{{ url_for('requests_bp.approve_request', token=req.public_token) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-      <textarea name="remark" rows="3" minlength="20" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="Explain why this hire is justified despite being outside staffing norms..."></textarea>
+      <textarea name="remark" rows="3" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="Explain why this hire is justified despite being outside staffing norms..."></textarea>
     {% else %}
-    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Add a comment confirming your approval (min 5 characters).</p>
+    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Add a comment confirming your approval (required).</p>
     <form method="POST" action="{{ url_for('requests_bp.approve_request', token=req.public_token) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-      <textarea name="remark" rows="3" minlength="5" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="e.g. Verified — all documents in order. Approved."></textarea>
+      <textarea name="remark" rows="3" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="e.g. Verified — all documents in order. Approved."></textarea>
     {% endif %}
       <div style="display:flex;gap:10px;">
         <button type="button" data-close-modal="approve-modal" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</button>
@@ -396,10 +396,10 @@
       </div>
       <h3 style="font-size:17px;font-weight:700;color:var(--c-text-1);margin:0;">Reject Request</h3>
     </div>
-    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Provide a mandatory rejection reason (min 10 characters).</p>
+    <p style="font-size:13.5px;color:var(--c-text-3);margin:0 0 18px;">Provide a rejection reason (required).</p>
     <form method="POST" action="{{ url_for('requests_bp.reject_request', token=req.public_token) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-      <textarea name="remark" rows="4" minlength="10" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="Explain the reason for rejection..."></textarea>
+      <textarea name="remark" rows="4" required class="inp" style="resize:none;margin-bottom:16px;" placeholder="Explain the reason for rejection..."></textarea>
       <div style="display:flex;gap:10px;">
         <button type="button" data-close-modal="reject-modal" class="btn btn-secondary" style="flex:1;justify-content:center;">Cancel</button>
         <button type="submit" class="btn btn-danger" style="flex:1;justify-content:center;">Confirm Rejection</button>

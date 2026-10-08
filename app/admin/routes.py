@@ -36,13 +36,13 @@ def _admin_or_hr():
 
 
 def _active_clusters():
-    """Regions (clusters) offered as checkboxes when assigning a Business Head."""
+    """Regions (clusters) offered as checkboxes when assigning a Functional Head."""
     return ClusterNameMapping.query.filter_by(is_deleted=False).order_by(ClusterNameMapping.canonical_cluster_name).all()
 
 
 def _set_bh_regions(user, region_id_strs):
     """
-    Replace a Business Head's region assignments with the submitted checkbox
+    Replace a Functional Head's region assignments with the submitted checkbox
     set. Returns {"from": [...names], "to": [...names]} for audit logging,
     or None if nothing changed. Caller commits.
     """
@@ -73,7 +73,7 @@ def _set_bh_regions(user, region_id_strs):
 
 def _set_initiator_regions(user, region_id_strs):
     """
-    Replace an Initiator's region assignments with the submitted checkbox
+    Replace a Reporting Manager's region assignments with the submitted checkbox
     set — the mirror of _set_bh_regions() for InitiatorRegion. Returns
     {"from": [...names], "to": [...names]} for audit logging, or None if
     nothing changed. Caller commits.

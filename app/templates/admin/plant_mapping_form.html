@@ -33,7 +33,7 @@
         <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Truein Site Point (sub_site)</label>
         {% if truein_sub_sites is none %}
         <input class="inp" type="text" name="truein_sub_site" value="{{ row.truein_sub_site or '' }}" placeholder="Truein cache is cold — enter the exact sub_site value manually"/>
-        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:6px;">The Truein employee cache isn't warm yet (refreshes every 2 hours), so this can't be a dropdown right now. Without this set, employees from Truein for this plant will only be counted at the cluster level, never the plant level.</p>
+        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:6px;">The Truein employee cache isn't warm yet (refreshes nightly), so this can't be a dropdown right now. Without this set, employees from Truein for this plant will only be counted at the cluster level, never the plant level.</p>
         {% else %}
         <select class="inp" name="truein_sub_site">
           <option value="">— None —</option>

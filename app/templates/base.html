@@ -91,7 +91,7 @@
       </a>
       <a href="{{ url_for('requests_bp.new_request') }}" class="nav-link {% if request.endpoint == 'requests_bp.new_request' %}active{% endif %}">
         <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        New Request
+        New Hiring Request
       </a>
 
     {% else %}
@@ -103,7 +103,7 @@
       {% if role == 'HR_MANAGER' %}
       <a href="{{ url_for('requests_bp.new_request') }}" class="nav-link {% if request.endpoint == 'requests_bp.new_request' %}active{% endif %}">
         <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        New Request
+        New Hiring Request
       </a>
       {% endif %}
       {% if role in ('HEAD_HR', 'HR_MANAGER') %}

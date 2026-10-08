@@ -180,7 +180,7 @@ def bh_ids_for_initiator(initiator, company_code):
     fail-open convention below) — an empty set means nobody is eligible,
     not "unscoped, every active BH".
 
-    For company_code == "RDC": among Business Heads ticked for RDC, the
+    For company_code == "RDC": among Functional Heads ticked for RDC, the
     original 2026-09-04 region-overlap logic still applies unchanged —
     every active RDC-ticked BH who shares at least one region with the
     initiator, via InitiatorRegion <-> BusinessHeadRegion overlap. Falls
@@ -192,7 +192,7 @@ def bh_ids_for_initiator(initiator, company_code):
 
     For company_code in ("Ultrafine", "ROBO"): there is no region concept
     at all (confirmed with the stakeholder — a Robo/Ultrafine initiator can
-    hire at any of that company's plants, and any Business Head ticked for
+    hire at any of that company's plants, and any Functional Head ticked for
     that company can approve any request for it) — every active
     company-ticked BH is eligible, full stop, no further narrowing.
     """

@@ -1,11 +1,11 @@
 <!--
   RDC staffing-data "Sync Now" widget — non-blocking manual trigger for the
-  ZingHR/Truein/DVT headcount snapshot (also refreshes automatically every
-  30 minutes in the background). If a sync is already running anywhere
+  ZingHR/Truein/DVT headcount snapshot (also re-syncs automatically every
+  night in the background). If a sync is already running anywhere
   (the automatic thread or another user's manual trigger), clicking this
   never starts a second one — it just shows the live in-progress status.
   Include this partial on any page rendered for a role in
-  requests_bp._SYNC_ROLES (HR Manager, Head HR, Dr. Bhoon, Business Head,
+  requests_bp._SYNC_ROLES (HR Manager, Head HR, Special Approver, Functional Head,
   Super Admin).
 -->
 <div id="sync-now-widget" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">

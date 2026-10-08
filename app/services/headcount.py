@@ -267,9 +267,17 @@ def compute_and_store_snapshot() -> dict:
         # _compute_and_store_other_company_snapshot()'s `now` docstring for
         # why this must match, not just be "close enough") — same lock,
         # same refresh cycle, but never touches the RDC computation itself.
+        run_started = datetime.utcnow()
         result = _compute_and_store_snapshot()
         shared_now = datetime.fromisoformat(result["computed_at"])
         other = _compute_and_store_other_company_snapshot(now=shared_now)
+        # Hires approved WHILE this run was pulling ZingHR/Truein may be missing from what it
+        # fetched — put them back (see reapply_hires_since). Never fails the sync itself.
+        try:
+            with db.session.begin_nested():   # savepoint: a failure here must not discard the sync's own rows
+                result["hires_reapplied"] = reapply_hires_since(run_started, shared_now, staff_run=shared_now)
+        except Exception as exc:  # pragma: no cover - defensive
+            result["hires_reapplied_error"] = str(exc)
         db.session.commit()
         result["other_company"] = other
         return result
@@ -830,6 +838,135 @@ def _compute_and_store_other_company_snapshot(now=None) -> dict:
     return {"employee_rows_written": sum(written_by_company.values()), "by_company": written_by_company}
 
 
+# ── Instant headcount for approved hires (2026-10-08) ─────────────────────────
+# The full ZingHR/Truein reconciliation now runs once a night (see
+# snapshot_refresh.py). Between runs, a hire whose approval just completed
+# (status -> ACTIVE) is added straight into the CURRENT snapshot run so the
+# staffing gate / dashboards count them immediately. Nothing here is
+# "permanent": every read helper picks the newest run via MAX(computed_at), so
+# the next nightly run — which re-reads the real systems, where this hire now
+# exists (pushed to Truein at approval) — replaces these interim rows wholesale.
+_NEW_HIRE_CODE_PREFIX = "NEWHIRE-"
+
+
+def _hire_code(req) -> str:
+    return f"{_NEW_HIRE_CODE_PREFIX}{req.id}"
+
+
+def record_approved_hire(req, emp_run=None, staff_run=None) -> dict:
+    """
+    Add one just-approved hire to the latest snapshot run. Caller commits.
+    Never raises into the approval flow's own logic — callers wrap it anyway,
+    but every "can't do it" case here returns {"recorded": False, "reason": ...}
+    instead of throwing. Idempotent per run (the NEWHIRE-<id> code).
+
+    - RDC: an EmployeeLocationSnapshot row (plant + cluster resolved through
+      PlantDvtMapping, role bucket from the designation's norm category) AND
+      +1 on the matching StaffingSnapshot row, so the live gate's
+      current_headcount moves right away.
+    - Ultrafine/ROBO: an EmployeeLocationSnapshot row tagged with the company
+      — that row IS their headcount (no norms/gating for those companies).
+    `emp_run`/`staff_run` default to each table's newest run; the post-sync
+    re-apply passes the run it just wrote.
+    """
+    from ..models import Designation
+
+    emp_run = emp_run or db.session.query(db.func.max(EmployeeLocationSnapshot.computed_at)).scalar()
+    if not emp_run:
+        return {"recorded": False, "reason": "no snapshot run yet"}
+    plant = (req.plant_location or "").strip()
+    if not plant:
+        return {"recorded": False, "reason": "no plant on request"}
+    code = _hire_code(req)
+    if EmployeeLocationSnapshot.query.filter_by(employee_code=code, computed_at=emp_run).first():
+        return {"recorded": False, "reason": "already recorded for this run"}
+
+    company = req.company_code or "RDC"
+    fd = req.form_data
+    doj = (fd.get("contract_from") or "").strip() or None   # ISO date, same as Truein's own format
+    desig = Designation.query.filter_by(name=req.designation, company=company, is_deleted=False).first()
+
+    if company != "RDC":
+        db.session.add(EmployeeLocationSnapshot(
+            computed_at=emp_run, source=ExternalDesignationSource.TRUEIN,
+            employee_code=code, employee_name=req.candidate_name, designation=req.designation,
+            department=None, date_of_joining=doj, norm_role_category_id=None,
+            plant_location_key=plant, cluster_location_key=None, company=company,
+        ))
+        return {"recorded": True, "company": company}
+
+    mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant, is_deleted=False).first()
+    cluster_name = mapping.cluster.canonical_cluster_name if (mapping and mapping.cluster_id) else None
+    category = db.session.get(NormRoleCategory, desig.norm_category_id) if (desig and desig.norm_category_id) else None
+    db.session.add(EmployeeLocationSnapshot(
+        computed_at=emp_run, source=ExternalDesignationSource.TRUEIN,
+        employee_code=code, employee_name=req.candidate_name, designation=req.designation,
+        department=truein._CATEGORY_TO_DEPARTMENT.get(category.name) if category else None,
+        date_of_joining=doj, norm_role_category_id=category.id if category else None,
+        plant_location_key=plant, cluster_location_key=cluster_name, company=None,
+    ))
+
+    bumped = False
+    if category:
+        staff_run = staff_run or db.session.query(db.func.max(StaffingSnapshot.computed_at)).scalar()
+        key = plant if category.scope == NormScope.PLANT else cluster_name
+        if staff_run and key:
+            row = StaffingSnapshot.query.filter_by(
+                scope=category.scope, location_key=key, norm_role_category_id=category.id,
+                computed_at=staff_run).first()
+            if row is None:
+                # Sparse table: a bucket with nobody has no row. Create it with the one new head;
+                # the norm columns stay NULL ("unknown") — the live gate computes its own allowed value.
+                row = StaffingSnapshot(
+                    scope=category.scope, location_key=key, norm_role_category_id=category.id,
+                    current_headcount=0, zinghr_count=0, truein_count=0, deduped_count=0,
+                    unclassified_count=0, computed_at=staff_run)
+                db.session.add(row)
+            row.current_headcount = (row.current_headcount or 0) + 1
+            row.truein_count = (row.truein_count or 0) + 1
+            if row.allowed_headcount is not None:
+                row.can_hire = row.current_headcount < row.allowed_headcount
+            bumped = True
+    return {"recorded": True, "company": "RDC", "staffing_row_updated": bumped}
+
+
+def reapply_hires_since(since, emp_run, staff_run=None) -> int:
+    """
+    After a full sync: put back any hire whose approval finished while the sync
+    was running (>= `since`). Their Truein push can land after the sync already
+    pulled Truein, so the fresh run may not contain them yet — without this
+    they'd be missing until the NEXT night. Skips anyone the fresh run already
+    lists (same name at the same plant). Caller commits. Returns rows added.
+    """
+    from ..models import OnboardingRequest, RequestStatus, ApprovalAction, ApprovalActionType
+
+    last_ok = (db.session.query(ApprovalAction.request_id, db.func.max(ApprovalAction.acted_at).label("at"))
+               .filter(ApprovalAction.action == ApprovalActionType.APPROVED)
+               .group_by(ApprovalAction.request_id).subquery())
+    reqs = (OnboardingRequest.query
+            .join(last_ok, last_ok.c.request_id == OnboardingRequest.id)
+            .filter(OnboardingRequest.status == RequestStatus.ACTIVE,
+                    OnboardingRequest.is_deleted == False,  # noqa: E712
+                    last_ok.c.at >= since)
+            .all())
+    added = 0
+    for req in reqs:
+        plant = (req.plant_location or "").strip()
+        name_key = _normalize_name(req.candidate_name or "")
+        if not plant or not name_key:
+            continue
+        already = any(
+            _normalize_name(n or "") == name_key
+            for (n,) in db.session.query(EmployeeLocationSnapshot.employee_name)
+            .filter(EmployeeLocationSnapshot.computed_at == emp_run,
+                    EmployeeLocationSnapshot.plant_location_key == plant))
+        if already:
+            continue
+        if record_approved_hire(req, emp_run=emp_run, staff_run=staff_run).get("recorded"):
+            added += 1
+    return added
+
+
 def get_latest_snapshot(location_key: str, scope, norm_role_category_id: int):
     """
     Returns the StaffingSnapshot row for this key from the most recent
@@ -949,7 +1086,7 @@ def get_all_employees(source=None, designation=None, department=None, resolved=N
     not just the ones with a known location). Filters combine with AND;
     `resolved` is 'yes' / 'no' / None (any). `cluster_names`, if given,
     restricts to employees whose cluster_location_key is in that set — used
-    to region-scope a Business Head's view. Returns (rows, total_count) —
+    to region-scope a Functional Head's view. Returns (rows, total_count) —
     rows capped at _EMPLOYEE_DIRECTORY_LIMIT so an unfiltered query of a
     few thousand employees doesn't render an enormous table. Scoped to RDC
     only (`company.is_(None)`, added 2026-09-15) — this is the "All

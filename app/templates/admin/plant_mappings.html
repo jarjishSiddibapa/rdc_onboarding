@@ -24,7 +24,7 @@
       </form>
       <form method="POST" action="{{ url_for('admin.refresh_staffing_snapshot') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-        <button type="submit" class="btn btn-secondary" title="Recomputes headcount now instead of waiting for the 2-hourly job. Fast if Truein's cache is warm, slow (several minutes) if not.">Refresh Snapshot Now</button>
+        <button type="submit" class="btn btn-secondary" title="Recomputes headcount now instead of waiting for the nightly job. Fast if Truein's cache is warm, slow (several minutes) if not.">Refresh Snapshot Now</button>
       </form>
     </div>
   </div>

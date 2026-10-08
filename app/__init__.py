@@ -278,6 +278,10 @@ def create_app():
 
     app.jinja_env.filters["ist"] = _format_ist
     app.jinja_env.filters["plant_name"] = _plant_display_name
+    from .models import ROLE_LABELS, STATUS_LABELS
+    # Accept an enum member or its raw string value.
+    app.jinja_env.filters["role_name"] = lambda r: ROLE_LABELS.get(getattr(r, "value", r), str(getattr(r, "value", r)))
+    app.jinja_env.filters["status_name"] = lambda st: STATUS_LABELS.get(getattr(st, "value", st), str(getattr(st, "value", st)))
 
     # ── Session inactivity timeout ────────────────────────────────────────────
     @app.before_request

@@ -850,7 +850,7 @@ class TestOverNormApprovalPath:
             updated = _db.session.get(OnboardingRequest, req.id)
             assert updated.status == RequestStatus.ACTIVE
 
-    def test_special_case_approval_requires_20_char_remark(self, client, db, app):
+    def test_special_case_approval_accepts_any_nonempty_remark(self, client, db, app):
         initiator = _make_user("InitON4", "initon4@t.com", UserRole.INITIATOR, db)
         bh        = _make_user("BHon4",   "bhon4@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH, is_special_case=True)
@@ -862,8 +862,8 @@ class TestOverNormApprovalPath:
         assert resp.status_code == 200
         with app.app_context():
             updated = _db.session.get(OnboardingRequest, req.id)
-            # 9-char remark is below the 20-char special-case minimum — status unchanged
-            assert updated.status == RequestStatus.PENDING_BH
+            # No length minimum any more (2026-10-08) — a short remark approves; BH -> Head HR
+            assert updated.status == RequestStatus.PENDING_HEAD_HR
 
     def test_draft_special_case_shows_over_norm_map_before_submit(self, client, db, app):
         """A DRAFT that already has is_special_case=True (popup acknowledged,
@@ -1112,7 +1112,7 @@ class TestRejectionAndResubmit:
             updated = _db.session.get(OnboardingRequest, req.id)
             assert updated.status == RequestStatus.PENDING_BH
 
-    def test_short_remark_rejected(self, client, db, app):
+    def test_short_remark_accepted_but_empty_is_not(self, client, db, app):
         initiator = _make_user("Init9", "init9a@t.com", UserRole.INITIATOR, db)
         bh        = _make_user("BH4",   "bh4a@t.com",   UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req       = _create_request(db, initiator, RequestStatus.PENDING_BH)
@@ -1121,10 +1121,10 @@ class TestRejectionAndResubmit:
             login(client, bh.email)
             resp = client.post(f"/requests/{req.public_token}/approve",
                                data={"remark": "ok"}, follow_redirects=True)
-        # Remark too short (< 5 chars) — status should NOT change
+        # "ok" is a valid remark now (no minimum length) — status moves on
         with app.app_context():
             updated = _db.session.get(OnboardingRequest, req.id)
-            assert updated.status == RequestStatus.PENDING_BH
+            assert updated.status == RequestStatus.PENDING_HR_MANAGER
 
 
 class TestDeleteDraft:

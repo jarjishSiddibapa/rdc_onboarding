@@ -160,3 +160,19 @@
   <span id="{{ input_id }}-count" class="list-search-count"></span>
 </div>
 {% endmacro %}
+
+
+{# Per-column header filter (2026-10-08): the column label with a small dropdown right in the
+   table header, replacing the separate filter bar above the table. base.js wires every
+   select[data-col-filter]: on change it sets/clears that query param, drops ?page, reloads. #}
+{% macro col_filter(param, label, options, selected) %}
+<div class="th-filter">
+  <span>{{ label }}</span>
+  <select class="th-filter-select{% if selected %} is-active{% endif %}" data-col-filter="{{ param }}" aria-label="Filter by {{ label }}">
+    <option value="">All</option>
+    {% for value, text in options %}
+    <option value="{{ value }}" {% if value == selected %}selected{% endif %}>{{ text }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}

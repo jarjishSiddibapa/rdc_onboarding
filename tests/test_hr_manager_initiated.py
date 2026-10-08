@@ -127,7 +127,7 @@ class TestNoHrManagerNeeded:
             login(client, hrm.email)
             resp = client.post(f"/requests/{token}/submit", follow_redirects=True)
         assert resp.status_code == 200
-        assert "no business head" in resp.get_data(as_text=True).lower()
+        assert "no functional head" in resp.get_data(as_text=True).lower()
         with app.app_context():
             assert _db.session.get(OnboardingRequest, req_id).status == RequestStatus.DRAFT
 

@@ -271,10 +271,15 @@ function _dismissToast(t) {
    BUTTON LOADING  (prevent double-submit)
 ════════════════════════════════════════════════════ */
 document.addEventListener('submit', function(e) {
-  var btn = e.target.querySelector('[type="submit"]');
+  // The button the user actually clicked — NOT the first submit button in the form.
+  // (The old querySelector('[type=submit]') picked the first one, so on the hiring form
+  // "Back" (steps 2-3) and "Save Draft" (step 1) disabled THEMSELVES, and a disabled
+  // submitter's name/value is left out of the POST — the server never got action=back.)
+  var btn = e.submitter || e.target.querySelector('[type="submit"]');
   if (!btn || btn.dataset.noLoading) return;
   btn.classList.add('btn--loading');
-  btn.disabled = true;
+  // Disable only after the browser has built the form data from this submit.
+  setTimeout(function() { btn.disabled = true; }, 0);
   setTimeout(function() { btn.classList.remove('btn--loading'); btn.disabled = false; }, 12000);
 }, true);
 
@@ -385,4 +390,18 @@ document.addEventListener('click', function(e) {
 window.addEventListener('pageshow', function() {
   document.body.style.transition = '';
   document.body.style.opacity = '1';
+});
+
+
+/* ════════════════════════════════════════════════════
+   COLUMN-HEADER FILTERS  (select[data-col-filter])
+════════════════════════════════════════════════════ */
+document.addEventListener('change', function(e) {
+  var sel = e.target.closest && e.target.closest('select[data-col-filter]');
+  if (!sel) return;
+  var url = new URL(window.location.href);
+  if (sel.value) url.searchParams.set(sel.dataset.colFilter, sel.value);
+  else url.searchParams.delete(sel.dataset.colFilter);
+  url.searchParams.delete('page');
+  window.location.href = url.toString();
 });

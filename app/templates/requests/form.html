@@ -490,6 +490,8 @@
           <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="capacity-modal-msg"></p>
         </div>
       </div>
+      <!-- Short summary: production volume / bracket, manpower now, maximum allowed (filled by showCapacityModal) -->
+      <ul id="capacity-modal-summary" style="display:none;list-style:none;margin:0 0 14px;padding:12px 14px;font-size:13px;line-height:1.55;color:var(--c-text-2);background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;"></ul>
       <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
         In case you need extra manpower, please obtain <strong>SPECIAL approval</strong> from the Head Office
         through your Business / Functional Head, providing detailed justification.
@@ -1270,8 +1272,35 @@ window.RDCCapacityGate = { blocked: false, message: '', el: null };
   var modalOk     = document.getElementById('capacity-modal-ok');
   var modalCancel = document.getElementById('capacity-modal-cancel');
 
-  function showCapacityModal(msg) {
+  var modalSummary = document.getElementById('capacity-modal-summary');
+  function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+  function fmtNum(n) { return Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
+  // Short plain-language summary so the Reporting Manager sees right here why the role is flagged:
+  // what the plant's production is (and which bracket that falls in), the manpower already there, and the maximum.
+  function fillCapacitySummary(det, plantLabel) {
+    modalSummary.innerHTML = '';
+    var lines = [];
+    if (det && det.volume_used != null) {
+      var perVolume = det.scope === 'PLANT' || (det.requirement_type || '').indexOf('RATE_PER_VOLUME') !== -1;
+      if (perVolume) {
+        lines.push('<strong>Production at ' + esc(plantLabel) + ':</strong> ' + fmtNum(det.volume_used) +
+                   ' m³ a month (average of the last 3 months)' + (det.tier_label ? ' — falls under the <strong>' + esc(det.tier_label) + '</strong> bracket.' : '.'));
+      } else {
+        lines.push('<strong>' + esc(det.cluster_name || 'This cluster') + ':</strong> ' + fmtNum(det.volume_used) +
+                   ' plant(s)' + (det.tier_label ? ' — falls under the <strong>' + esc(det.tier_label) + '</strong> bracket.' : '.'));
+      }
+    }
+    if (det && det.current_headcount != null && det.allowed_headcount != null) {
+      var role = det.norm_role_category_name || 'this role';
+      lines.push('<strong>' + esc(role) + ' manpower:</strong> ' + fmtNum(det.current_headcount) + ' already working here, maximum allowed ' +
+                 fmtNum(det.allowed_headcount) + ' for this production.');
+    }
+    modalSummary.innerHTML = lines.map(function(l) { return '<li style="margin:0 0 4px;">' + l + '</li>'; }).join('');
+    modalSummary.style.display = lines.length ? 'block' : 'none';
+  }
+  function showCapacityModal(msg, det, plantLabel) {
     modalMsg.textContent = msg;
+    fillCapacitySummary(det, plantLabel);
     modal.style.display = 'flex';
   }
   function closeCapacityModal() { modal.style.display = 'none'; }
@@ -1320,7 +1349,7 @@ window.RDCCapacityGate = { blocked: false, message: '', el: null };
           var roleName = (d.details && d.details.norm_role_category_name) || designation;
           var msg = roleName + ' is already full at ' + plantLabel + ' — hiring cannot proceed here.';
           window.RDCCapacityGate = { blocked: true, message: msg, el: sel };
-          if (showPopup) showCapacityModal(msg);
+          if (showPopup) showCapacityModal(msg, d.details, plantLabel);
         }
       })
       .catch(function() { /* fail-open on a network hiccup — the Submit-time gate still catches this either way */ });

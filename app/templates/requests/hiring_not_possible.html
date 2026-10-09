@@ -31,6 +31,23 @@
         {{ (req.plant_location | plant_name) if req.plant_location else 'this location' }}
         ({{ (check.cluster_name if check else None) or '—' }}) — hiring cannot proceed here.
       </p>
+      {% if check and check.current_headcount is not none and check.allowed_headcount is not none %}
+      <ul style="list-style:none;margin:0 0 12px;padding:0;font-size:14px;line-height:1.6;color:var(--c-text-2);">
+        {% if check.volume_used is not none %}
+        <li>
+          {% if detail.get('scope') == 'PLANT' or 'RATE_PER_VOLUME' in (detail.get('requirement_type') or '') %}
+          <strong>Production at this plant:</strong> {{ "{:,.0f}".format(check.volume_used) }} m³ a month (average of the last 3 months)
+          {% if check.tier_label %} — falls under the <strong>{{ check.tier_label }}</strong> bracket.{% endif %}
+          {% else %}
+          <strong>{{ check.cluster_name or 'This cluster' }}:</strong> {{ "{:,.0f}".format(check.volume_used) }} plant(s)
+          {% if check.tier_label %} — falls under the <strong>{{ check.tier_label }}</strong> bracket.{% endif %}
+          {% endif %}
+        </li>
+        {% endif %}
+        <li><strong>{{ detail.get('norm_role_category_name') or 'This role' }} manpower:</strong>
+          {{ check.current_headcount }} already working here, maximum allowed {{ check.allowed_headcount }} for this production.</li>
+      </ul>
+      {% endif %}
       <p style="font-size:13.5px;color:var(--c-text-3);line-height:1.6;margin:0;">
         In case you need extra manpower, please obtain <strong>SPECIAL approval</strong> from the Head Office
         through your Business / Functional Head, providing detailed justification. If you choose to proceed, this request will

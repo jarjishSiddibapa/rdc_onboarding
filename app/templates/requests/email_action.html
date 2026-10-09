@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="robots" content="noindex,nofollow"/>
-  <title>{{ 'Approve' if action == 'approve' else 'Reject' }} hiring request — RDC Associates Onboarding</title>
+  <title>{{ 'Approve' if action == 'approve' else 'Reject' }} hiring request — RDC Associates Hiring</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/inter-font.css') }}">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -36,7 +36,7 @@
 </head>
 <body>
 <div class="card">
-  <div class="brand">RDC Associates Onboarding</div>
+  <div class="brand">RDC Associates Hiring</div>
   <h1>{{ 'Approve' if action == 'approve' else 'Reject' }} this hiring request?</h1>
   <p class="sub">Hello {{ user.name }} — you are acting as <strong>{{ user.role | role_name }}</strong>. Nothing is recorded until you confirm below.</p>
 

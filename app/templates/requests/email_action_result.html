@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <meta name="robots" content="noindex,nofollow"/>
-  <title>{{ heading }} — RDC Associates Onboarding</title>
+  <title>{{ heading }} — RDC Associates Hiring</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/inter-font.css') }}">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -29,8 +29,8 @@
   <h1>{{ heading }}</h1>
   <p>{{ message }}</p>
   {% for category, text in messages %}<div class="msg {{ category }}">{{ text }}</div>{% endfor %}
-  <a href="{{ url_for('auth.login') }}" class="btn">Open RDC Associates Onboarding</a>
-  <p class="foot">RDC Associates Onboarding &mdash; Authorized personnel only</p>
+  <a href="{{ url_for('auth.login') }}" class="btn">Open RDC Associates Hiring</a>
+  <p class="foot">RDC Associates Hiring &mdash; Authorized personnel only</p>
 </div>
 </body>
 </html>

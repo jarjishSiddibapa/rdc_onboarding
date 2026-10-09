@@ -76,7 +76,7 @@ class TestRoleAndStatusNames:
 
 
 class TestAppName:
-    NAME = "RDC Associates Onboarding"
+    NAME = "RDC Associates Hiring"
 
     def test_no_old_app_name_in_templates_or_emails(self):
         offenders = []

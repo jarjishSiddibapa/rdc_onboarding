@@ -149,14 +149,14 @@ def forgot_password():
             reset_url = url_for("auth.reset_password", token=token, _external=True)
             body = (
                 f"Hello {user.name},\n\n"
-                f"You requested a password reset for your RDC Associates Onboarding account.\n\n"
+                f"You requested a password reset for your RDC Associates Hiring account.\n\n"
                 f"Click the link below to reset your password (valid for 30 minutes):\n"
                 f"{reset_url}\n\n"
                 f"If you did not request this, you can safely ignore this email.\n\n"
-                f"— RDC Associates Onboarding"
+                f"— RDC Associates Hiring"
             )
             send_email(
-                subject="Password Reset — RDC Associates Onboarding",
+                subject="Password Reset — RDC Associates Hiring",
                 recipients=[user.email],
                 body=body,
             )

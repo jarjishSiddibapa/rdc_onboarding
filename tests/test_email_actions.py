@@ -136,7 +136,7 @@ class TestLinks:
         assert "Reject:  " + BASE + "/requests/email-action/" in text
         assert "Open request: " + BASE + "/requests/" + req.public_token in text
         assert ">Approve</a>" in html and ">Reject</a>" in html
-        assert "RDC Associates Onboarding" in html
+        assert "RDC Associates Hiring" in html
         assert "expire" in html and "expire" in text
 
     def test_candidate_data_is_html_escaped(self, app, db):

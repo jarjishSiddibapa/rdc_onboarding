@@ -514,10 +514,10 @@ def send_email_otp():
     threading.Thread(
         target=_send_smtp_to_queue,
         args=(result_q, cfg, [email],
-              "Email Verification OTP — RDC Associates Onboarding",
+              "Email Verification OTP — RDC Associates Hiring",
               f"Your OTP for email verification is: {otp}\n\n"
               f"Valid for 10 minutes. Do not share it with anyone.\n\n"
-              f"— RDC Associates Onboarding"),
+              f"— RDC Associates Hiring"),
         daemon=True, name="otp-email-send",
     ).start()
     try:
@@ -2189,10 +2189,10 @@ def _email_action_context(signed, action):
         data = read_email_action_token(signed)
     except SignatureExpired:
         return None, (410, "This link has expired",
-                      "Approval links work for 3 days. Sign in to RDC Associates Onboarding to act on this request.")
+                      "Approval links work for 3 days. Sign in to RDC Associates Hiring to act on this request.")
     except BadSignature:
         return None, (400, "This link is not valid",
-                      "It may have been copied incompletely. Sign in to RDC Associates Onboarding to act on the request.")
+                      "It may have been copied incompletely. Sign in to RDC Associates Hiring to act on the request.")
     user = db.session.get(User, data.get("u"))
     req = OnboardingRequest.query.filter_by(id=data.get("r"), is_deleted=False).first()
     if not user or not user.is_active:

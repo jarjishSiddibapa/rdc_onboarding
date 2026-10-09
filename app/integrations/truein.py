@@ -466,7 +466,7 @@ def _handle_dropped_fields(db, req, dropped: list, triggered_by: str) -> None:
             f"The employee record exists in Truein (empId may have been generated), "
             f"but these field(s) are missing. Please log in to the Truein dashboard "
             f"and enter them manually for this employee.\n\n"
-            f"— RDC Associates Onboarding"
+            f"— RDC Associates Hiring"
         )
         try:
             notify_users(db, req, recipients, subject, body, category="ADMIN")
@@ -542,7 +542,7 @@ def _notify_push_failed(db, req, error_message: str, triggered_by: str, will_ret
         f"Truein failed — this employee is NOT yet in Truein.\n\n"
         f"Error from Truein: {error_message}\n\n"
         f"{_retry_note}\n\n"
-        f"— RDC Associates Onboarding"
+        f"— RDC Associates Hiring"
     )
     try:
         notify_users(db, req, recipients, subject, body, category="ADMIN")

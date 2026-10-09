@@ -49,7 +49,7 @@ def test_sends_one_summary_with_each_update(app, db):
     subject, rcpts, body = send.call_args.args
     assert subject == "Daily summary — 2 update(s)" and rcpts == ["dg1@t.com"]
     assert "Approved by HR Manager: A" in body and "Final approval required: B" in body
-    assert "Needs you" in body and "ignored second line" not in body and "RDC Associates Onboarding" in body
+    assert "Needs you" in body and "ignored second line" not in body and "RDC Associates Hiring" in body
     assert _db.session.get(User, uid).last_digest_sent_at is not None
 
 

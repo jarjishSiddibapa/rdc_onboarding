@@ -57,7 +57,7 @@ def send_due_digests(app) -> dict:
             for n in notifs:
                 snippet = (n.body or "").strip().splitlines()[0] if n.body else ""
                 lines.append(f"• {n.subject}\n  {snippet}\n")
-            lines.append("\n— RDC Associates Onboarding")
+            lines.append("\n— RDC Associates Hiring")
             body = "\n".join(lines)
             send_email(f"Daily summary — {len(notifs)} update(s)", [user.email], body)
             sent += 1

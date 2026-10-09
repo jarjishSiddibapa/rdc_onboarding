@@ -340,7 +340,7 @@ The full ZingHR/Truein snapshot used to run every 30 minutes; it now runs **once
 - **Calendar pickers**: the form's DATE fields keep the typed DD/MM/YYYY box and gain a calendar button (`.date-cal-btn` → hidden native `<input type=date>`; `contract_from` min = today, `date_of_birth` max = today). Admin/export date filters already used native `type=date`. There are no time-of-day inputs in the app.
 - **Optional CV / Resume** upload: last FormField on step 3 (`cv_resume`, `is_required=False`). `add_cv_resume_field.py` (idempotent) added it to the live DB; `seed.py` has it for fresh DBs.
 - **Dashboards**: the separate "filter by stage" bars are gone; Company / Designation / Status are dropdowns in the table headers (`col_filter` macro in `_macros.html`, wired by `select[data-col-filter]` in `base.js`; server side `company`/`designation`/`status` query params in `main/routes.py::dashboard()`, options built from the viewer's own scoped rows).
-- **App name** is **"RDC Associates Onboarding"** everywhere (page titles, sidebar, login hero, error pages, all outgoing emails, admin titles); the old "RDC Teamlease Employee Onboarding Portal" is gone. Guarded by `tests/test_ui_renames_and_rules.py::TestAppName`.
+- **App name** is **"RDC Associates Hiring"** everywhere (page titles, sidebar, login hero, error pages, all outgoing emails, admin titles); the old "RDC Teamlease Employee Onboarding Portal" is gone. Guarded by `tests/test_ui_renames_and_rules.py::TestAppName`.
 
 ## Approve / Reject from the approval e-mail (2026-10-09)
 

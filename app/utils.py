@@ -465,13 +465,13 @@ def render_email_html(subject, body, req, links):
         '<div style="background:#F2F4F7;padding:24px 12px;font-family:Segoe UI,Arial,sans-serif;">'
         '<div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:28px;">'
         '<div style="font-size:12px;font-weight:700;color:#0B5CAD;letter-spacing:.06em;text-transform:uppercase;">'
-        'RDC Associates Onboarding</div>'
+        'RDC Associates Hiring</div>'
         f'<h2 style="font-size:18px;color:#101828;margin:8px 0 12px;">{escape(subject)}</h2>'
         f'<p style="font-size:14px;color:#344054;line-height:1.55;margin:0 0 16px;">{escape(body).replace(chr(10), "<br>")}</p>'
         f'<table style="border-collapse:collapse;margin:0 0 20px;">{detail}</table>'
         f'{actions}{open_line}'
         '<p style="font-size:11.5px;color:#98A2B3;margin:22px 0 0;border-top:1px solid #EAECF0;padding-top:12px;">'
-        'This is an automated message from RDC Associates Onboarding.</p>'
+        'This is an automated message from RDC Associates Hiring.</p>'
         '</div></div>')
 
 

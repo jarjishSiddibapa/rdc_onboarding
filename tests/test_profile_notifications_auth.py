@@ -220,7 +220,7 @@ class TestPasswordResetFlow:
         assert "If that email is registered" in _text(r)
         send.assert_called_once()
         kw = send.call_args.kwargs
-        assert kw["recipients"] == ["rs1@t.com"] and "Password Reset — RDC Associates Onboarding" == kw["subject"]
+        assert kw["recipients"] == ["rs1@t.com"] and "Password Reset — RDC Associates Hiring" == kw["subject"]
         link = re.search(r"http://\S*/auth/reset-password/\S+", kw["body"]).group(0)
         path = link.split("localhost", 1)[1]
         assert "30 minutes" in kw["body"]

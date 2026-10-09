@@ -1,4 +1,4 @@
-# RDC Associates Onboarding
+# RDC Associates Hiring
 
 A role-based web application that moves a new hire from **"we want to hire this person"** to **"registered in the attendance system"** through a configurable, multi-step approval workflow. An initiator fills a three-step form, the request travels through Business Head, HR and final approvers, and on final approval the employee is pushed automatically to the attendance platform (Truein). A headcount dashboard and a staffing-norms gate stop hiring above the allowed headcount unless the exception is explicitly justified.
 

@@ -270,11 +270,19 @@ def get_db_mail_config():
         }
 
 
-def _send_smtp(cfg, recipients, subject, body):
-    """Send email synchronously via smtplib using the given config dict."""
+def _send_smtp(cfg, recipients, subject, body, html=None):
+    """Send email synchronously via smtplib using the given config dict.
+    With `html`, sends a multipart/alternative (plain text first, HTML preferred
+    by clients that can show it) so the plain-text fallback is always readable."""
     import smtplib
     from email.mime.text import MIMEText
-    msg = MIMEText(body, "plain", "utf-8")
+    from email.mime.multipart import MIMEMultipart
+    if html:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        msg.attach(MIMEText(html, "html", "utf-8"))
+    else:
+        msg = MIMEText(body, "plain", "utf-8")
     msg["From"]    = cfg["sender"] or cfg["username"]
     msg["To"]      = ", ".join(recipients) if isinstance(recipients, list) else recipients
     msg["Subject"] = subject
@@ -287,15 +295,15 @@ def _send_smtp(cfg, recipients, subject, body):
         s.send_message(msg)
 
 
-def _send_smtp_async(app, cfg, recipients, subject, body):
+def _send_smtp_async(app, cfg, recipients, subject, body, html=None):
     with app.app_context():
         try:
-            _send_smtp(cfg, recipients, subject, body)
+            _send_smtp(cfg, recipients, subject, body, html)
         except Exception as e:
             app.logger.warning(f"Email send failed: {e}")
 
 
-def send_email(subject, recipients, body):
+def send_email(subject, recipients, body, html=None):
     if not recipients:
         return
     app = current_app._get_current_object()
@@ -303,7 +311,7 @@ def send_email(subject, recipients, body):
     if not cfg["username"]:
         app.logger.info(f"[Email skipped — no SMTP config] To: {recipients} | Subject: {subject}")
         return
-    t = threading.Thread(target=_send_smtp_async, args=(app, cfg, recipients, subject, body))
+    t = threading.Thread(target=_send_smtp_async, args=(app, cfg, recipients, subject, body, html))
     t.daemon = True
     t.start()
 
@@ -322,7 +330,7 @@ def create_in_app_notification(db, request_obj, recipient, subject, body):
     db.session.add(notif)
 
 
-def notify_users(db, request_obj, recipients, subject, body, category="HIRING"):
+def notify_users(db, request_obj, recipients, subject, body, category="HIRING", actions=False):
     """
     category="HIRING" (default) — the 7 hiring-flow events (submit, resubmit,
     reject, each approval stage, final activation). category="ADMIN" — the 2
@@ -330,12 +338,134 @@ def notify_users(db, request_obj, recipients, subject, body, category="HIRING"):
     CLAUDE.md's notification-preferences note. In-app notifications are never
     silenced by preference — only the outbound email is gated, and only for
     users who opted into "Hiring updates only" (User.email_mode).
+
+    actions=True (2026-10-08) — the email is an approval request: each recipient
+    who can act on the request right now gets personal Approve / Reject buttons
+    (signed, expiring links — see build_email_links()). The in-app notification
+    stays plain text. Every email that is about a request also gets an
+    "Open request" link when the public base URL is known.
     """
     for user in recipients:
         create_in_app_notification(db, request_obj, user, subject, body)
         if user.email_mode == "HIRING_ONLY" and category == "ADMIN":
             continue
-        send_email(subject, [user.email], body)
+        links = build_email_links(request_obj, user, with_actions=actions)
+        if links:
+            send_email(subject, [user.email], render_email_text(body, links),
+                       html=render_email_html(subject, body, request_obj, links))
+        else:
+            send_email(subject, [user.email], body)
+
+
+# ── Approve / Reject straight from the email (2026-10-08) ─────────────────────
+#
+# Each approval email carries two buttons. The link is signed for ONE person,
+# ONE request and the status it was pending at, and expires after
+# EMAIL_ACTION_MAX_AGE. No login is needed — the signature is the credential.
+# Opening the link only shows a confirmation page (requests_bp.email_action); the
+# POST behind its Confirm button re-checks everything live (current status, user
+# active, can_act_on) and then runs the normal approve/reject code as that person.
+
+EMAIL_ACTION_SALT = "email-approval-action"
+EMAIL_ACTION_MAX_AGE = 3 * 24 * 3600   # 3 days
+
+
+def _email_action_serializer():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt=EMAIL_ACTION_SALT)
+
+
+def make_email_action_token(user_id, request_id, status_value, round_no=0):
+    """round_no = the request's retry_count: a request that is rejected and resubmitted lands on the same
+    status again, which must NOT revive links from the earlier round's emails."""
+    return _email_action_serializer().dumps({"u": user_id, "r": request_id, "s": status_value, "n": round_no})
+
+
+def read_email_action_token(token):
+    """Return {"u", "r", "s", "n"} or raise itsdangerous.SignatureExpired / BadSignature."""
+    return _email_action_serializer().loads(token, max_age=EMAIL_ACTION_MAX_AGE)
+
+
+def app_base_url():
+    """Public address of this app for links inside emails — ONLY from the APP_BASE_URL setting.
+    Deliberately never derived from the incoming request: this app sits behind ProxyFix, which
+    trusts X-Forwarded-Host, and even a plain Host header is client-controlled, so anyone able to
+    submit a request could otherwise make the approvers' emails (which carry personal approval
+    links) point at a server they control. Returns "" when unset — emails then simply go out
+    without links/buttons."""
+    base = (current_app.config.get("APP_BASE_URL") or "").strip().rstrip("/")
+    return base if base.lower().startswith(("http://", "https://")) else ""
+
+
+def build_email_links(req, user, with_actions=False):
+    """{"open": url, "approve": url, "reject": url} for this recipient, or None when the
+    base URL is unknown. approve/reject only when with_actions and the user can act now."""
+    try:
+        from flask import url_for
+        from urllib.parse import urlsplit
+        base = app_base_url()
+        if not base or not getattr(req, "public_token", None):
+            return None
+
+        def _path(endpoint, **values):
+            # Only the path: url_for may return an absolute URL (SERVER_NAME set), and the
+            # host must always be the public base URL, never whatever the server thinks it is.
+            u = urlsplit(url_for(endpoint, _external=False, **values))
+            return u.path + (("?" + u.query) if u.query else "")
+
+        links = {"open": base + _path("requests_bp.view_request", token=req.public_token)}
+        if with_actions and can_act_on(req, user):
+            tok = make_email_action_token(user.id, req.id, req.status.value, req.retry_count or 0)
+            for act in ("approve", "reject"):
+                links[act] = base + _path("requests_bp.email_action", signed=tok, action=act)
+        return links
+    except Exception as exc:  # a link problem must never stop the email itself
+        current_app.logger.warning(f"[Email] could not build links: {exc}")
+        return None
+
+
+def render_email_text(body, links):
+    lines = [body, ""]
+    if "approve" in links:
+        lines += ["Approve: " + links["approve"], "Reject:  " + links["reject"], "",
+                  "No sign-in needed: each link opens a confirmation page, and nothing is recorded until "
+                  "you confirm there. The links are personal to you and expire in 3 days.", ""]
+    lines.append("Open request: " + links["open"])
+    return "\n".join(lines)
+
+
+def render_email_html(subject, body, req, links):
+    from html import escape
+    def _btn(label, url, bg):
+        return (f'<a href="{escape(url)}" style="display:inline-block;padding:12px 26px;margin:0 8px 8px 0;'
+                f'background:{bg};color:#ffffff;text-decoration:none;border-radius:8px;font-weight:700;'
+                f'font-size:14px;">{label}</a>')
+    rows = [("Candidate", req.candidate_name), ("Company", req.company_code),
+            ("Designation", req.designation), ("Plant", req.plant_location)]
+    detail = "".join(
+        f'<tr><td style="padding:4px 14px 4px 0;color:#667085;font-size:13px;">{k}</td>'
+        f'<td style="padding:4px 0;color:#101828;font-size:13px;font-weight:600;">{escape(str(v))}</td></tr>'
+        for k, v in rows if v)
+    if "approve" in links:
+        actions = (_btn("Approve", links["approve"], "#067647") + _btn("Reject", links["reject"], "#B42318") +
+                   '<p style="font-size:12px;color:#667085;margin:10px 0 0;">No sign-in needed. You confirm on the next page '
+                   'before anything is recorded. These buttons are personal to you and expire in 3 days.</p>')
+    else:
+        actions = _btn("Open request", links["open"], "#0B5CAD")
+    open_line = ('<p style="font-size:12.5px;margin:14px 0 0;"><a href="' + escape(links["open"]) +
+                 '" style="color:#0B5CAD;">Open the full request</a></p>') if "approve" in links else ""
+    return (
+        '<div style="background:#F2F4F7;padding:24px 12px;font-family:Segoe UI,Arial,sans-serif;">'
+        '<div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;padding:28px;">'
+        '<div style="font-size:12px;font-weight:700;color:#0B5CAD;letter-spacing:.06em;text-transform:uppercase;">'
+        'RDC Associates Onboarding</div>'
+        f'<h2 style="font-size:18px;color:#101828;margin:8px 0 12px;">{escape(subject)}</h2>'
+        f'<p style="font-size:14px;color:#344054;line-height:1.55;margin:0 0 16px;">{escape(body).replace(chr(10), "<br>")}</p>'
+        f'<table style="border-collapse:collapse;margin:0 0 20px;">{detail}</table>'
+        f'{actions}{open_line}'
+        '<p style="font-size:11.5px;color:#98A2B3;margin:22px 0 0;border-top:1px solid #EAECF0;padding-top:12px;">'
+        'This is an automated message from RDC Associates Onboarding.</p>'
+        '</div></div>')
 
 
 # ── File upload ────────────────────────────────────────────────────────────────

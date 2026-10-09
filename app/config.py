@@ -65,6 +65,10 @@ class Config:
     MAIL_PASSWORD = os.environ.get("EMAIL_PASS")
     MAIL_DEFAULT_SENDER = os.environ.get("EMAIL_FROM")
 
+    # Public address of this app, used for the Approve / Reject / Open links inside
+    # emails (e.g. https://onboarding.example.com). Must be reachable by recipients.
+    APP_BASE_URL = os.environ.get("APP_BASE_URL", "")
+
     # ── Uploads ─────────────────────────────────────────────────────────────────
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "uploads")
     ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "jpg", "jpeg", "png"}

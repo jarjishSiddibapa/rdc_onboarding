@@ -990,3 +990,8 @@
 }
 .th-filter-select:hover { border-color: var(--c-primary); }
 .th-filter-select.is-active { color: var(--c-primary); border-color: var(--c-primary); background-color: var(--c-primary-soft); font-weight: 700; }
+
+/* Dashboard summary cards: two per row on phones so their labels are not clipped */
+@media (max-width: 640px) {
+  .stat-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
+}

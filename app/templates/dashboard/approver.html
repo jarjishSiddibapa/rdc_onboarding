@@ -71,7 +71,7 @@
   {% endif %}
 
   <!-- Stat cards -->
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
     <div class="card stat-card" style="padding:20px 22px;border-top:3px solid var(--c-primary);cursor:default;">
       <div style="font-size:11.5px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Pending My Action</div>
       <div style="font-size:32px;font-weight:700;color:var(--c-primary);line-height:1;" data-count="{{ counts.pending }}">{{ counts.pending }}</div>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Email Settings — Admin{% endblock %}
+{% block title %}Email Settings — RDC Associates Onboarding Admin{% endblock %}
 
 {% block breadcrumbs %}
 <nav class="breadcrumbs" aria-label="Breadcrumb">
@@ -34,6 +34,18 @@
       {% endif %}
     </div>
   </div>
+
+  <!-- Approve/Reject-from-email links need the app's public address -->
+  {% if base_url %}
+  <div style="padding:12px 18px;background:var(--c-success-soft);border:1px solid var(--c-success-border);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--c-success);">
+    Approval emails carry Approve / Reject buttons that open <strong>{{ base_url }}</strong>.
+  </div>
+  {% else %}
+  <div style="padding:12px 18px;background:var(--c-warn-soft);border:1px solid var(--c-warn-border);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--c-warn);">
+    <strong>Approve / Reject buttons are switched off.</strong> Set <code>APP_BASE_URL</code> in the server's <code>.env</code> file to the address people use to open this app
+    (for example <code>https://onboarding.yourcompany.com</code>) and restart the server. Until then approval emails go out as plain text without links.
+  </div>
+  {% endif %}
 
   <!-- Info banner -->
   <div style="padding:14px 18px;background:var(--c-info-soft);border:1px solid var(--c-info-border);border-radius:10px;margin-bottom:24px;display:flex;gap:12px;align-items:flex-start;">

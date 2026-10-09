@@ -9,7 +9,7 @@
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
     <div>
       <h1 class="page-title">My Requests</h1>
-      <p class="page-sub">Welcome back, {{ current_user.name }} &mdash; {{ pagination.total }} request{{ 's' if pagination.total != 1 else '' }} total</p>
+      <p class="page-sub">Welcome back, {{ current_user.name }} &mdash; {% if selected_status or selected_company or selected_designation %}showing {{ pagination.total }} of {{ counts.total }} request{{ 's' if counts.total != 1 else '' }}{% else %}{{ pagination.total }} request{{ 's' if pagination.total != 1 else '' }} total{% endif %}</p>
     </div>
     <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
@@ -24,7 +24,7 @@
     ('Approved',       counts.active,   'var(--c-success)',   'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', 'ACTIVE'),
     ('Rejected',       counts.rejected, 'var(--c-danger)',    'M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z', 'REJECTED_BH'),
   ] %}
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
     {% for label, val, color, icon_path, filter_status in card_data %}
     {% if filter_status %}
       {% set card_url = url_for('main.dashboard', status=filter_status) %}

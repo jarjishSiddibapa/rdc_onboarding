@@ -267,6 +267,12 @@ def create_app():
             stacklevel=2,
         )
 
+    if not app.config.get("APP_BASE_URL") and not app.config.get("TESTING"):
+        app.logger.warning(
+            "[Email] APP_BASE_URL is not set - approval emails will go out WITHOUT the Approve/Reject "
+            "buttons and 'Open request' links. Set it in .env to the address people use to reach this app "
+            "(e.g. https://onboarding.yourcompany.com).")
+
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
     db.init_app(app)

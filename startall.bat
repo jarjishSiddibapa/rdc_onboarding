@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-REM RDC Teamlease Employee Onboarding Portal - one-click startup
+REM RDC Associates Onboarding - one-click startup
 REM Double-click this file (or run it from a terminal) to start the app.
 REM Leave this window open while people are testing - closing it stops
 REM the server. Press Ctrl+C to stop it cleanly.
@@ -9,7 +9,7 @@ REM the server. Press Ctrl+C to stop it cleanly.
 cd /d "%~dp0"
 
 echo ============================================================
-echo  RDC Teamlease Employee Onboarding Portal
+echo  RDC Associates Onboarding
 echo ============================================================
 echo.
 

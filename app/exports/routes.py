@@ -166,7 +166,7 @@ def _apply_filters(params, viewer=None):
             jt = datetime.strptime(p["joining_to_s"],   "%Y-%m-%d").date() if p["joining_to_s"]   else None
             filtered = []
             for r in records:
-                jd_str = r.form_data.get("joining_date", "")
+                jd_str = r.form_data.get("contract_from") or r.form_data.get("joining_date", "")   # the form field is contract_from
                 if not jd_str:
                     continue
                 try:
@@ -286,6 +286,7 @@ def _cell_val(req, key, plant_name_cache=None):
     elif key == "_bh_approval": return _actor_for_role(req, "BUSINESS_HEAD")
     elif key == "_hrm_approval":return _actor_for_role(req, "HR_MANAGER")
     elif key == "_hhr_approval":return _actor_for_role(req, "HEAD_HR")
+    elif key == "_sa_approval": return _actor_for_role(req, "DR_BHOON")
     elif key == "_created":
         return req.created_at.strftime("%d/%m/%Y") if req.created_at else ""
     elif key == "_updated":
@@ -312,9 +313,10 @@ def _build_excel(records, report_title="Employee Onboarding Report"):
         ("Status",            "_status",      22),
         ("Initiated By",      "_initiator",   22),
         ("RM Emp Code","_init_code",   18),
-        ("BH Approval",       "_bh_approval", 28),
-        ("HR Mgr Approval",   "_hrm_approval",28),
-        ("Head HR Approval",  "_hhr_approval",28),
+        ("Functional Head Approval", "_bh_approval", 28),
+        ("HR Manager Approval",      "_hrm_approval",28),
+        ("Head HR Approval",         "_hhr_approval",28),
+        ("Special Approver Approval","_sa_approval", 28),
         ("Submitted On",      "_created",     18),
         ("Last Updated",      "_updated",     18),
         ("Retry Count",       "_retry",       12),
@@ -448,9 +450,10 @@ def preview_excel():
         ("Status",            "_status"),
         ("Initiated By",      "_initiator"),
         ("RM Emp Code","_init_code"),
-        ("BH Approval",       "_bh_approval"),
-        ("HR Mgr Approval",   "_hrm_approval"),
-        ("Head HR Approval",  "_hhr_approval"),
+        ("Functional Head Approval", "_bh_approval"),
+        ("HR Manager Approval",      "_hrm_approval"),
+        ("Head HR Approval",         "_hhr_approval"),
+        ("Special Approver Approval","_sa_approval"),
         ("Submitted On",      "_created"),
         ("Last Updated",      "_updated"),
         ("Retry Count",       "_retry"),

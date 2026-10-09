@@ -97,6 +97,7 @@ To try it without MySQL, set `DATABASE_URL=sqlite:///demo.db`.
 | `SECRET_KEY` | Flask session secret |
 | `ADMIN_SEED_PASSWORD`, `ADMIN_SEED_EMAIL` | First admin account created by `seed.py` |
 | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM` | Optional. Without them, e-mail is skipped silently |
+| `APP_BASE_URL` | Public address of the app (e.g. `https://onboarding.yourcompany.com`). **Required for the Approve / Reject buttons and "Open request" links in approval e-mails** — without it they go out as plain text with no links |
 | `TRUEIN_ACCESS_KEY`, `TRUEIN_SECRET_KEY`, `TRUEIN_SUBSCRIPTION_KEY` | Required for any Truein call (push, dry-run, manager lookup) |
 | `ZINGHR_CLIENT_ID`, `ZINGHR_CLIENT_SECRET` | Required for the headcount snapshot refresh |
 | `DVT_BASE_URL`, `DVT_USERNAME`, `DVT_PASSWORD` | Required for the production-volume pull used by the staffing norms |

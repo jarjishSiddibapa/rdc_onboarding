@@ -862,10 +862,10 @@ class StaffingSnapshot(db.Model):
     # roles have no volume basis at all). Do NOT render this as "m^3" —
     # use production_volume for that.
     volume_used = db.Column(db.Float, nullable=True)
-    # The location's actual last-month DVT production volume in m^3, always
+    # The location's actual average monthly DVT production volume (trailing 3 months) in m^3, always
     # real regardless of this row's role/requirement type — identical across
     # every row for the same (scope, location_key). This is what the
-    # dashboard's "Last Month's Production" callouts should read.
+    # dashboard's "Avg Monthly Production" callouts should read.
     production_volume = db.Column(db.Float, nullable=True)
     can_hire = db.Column(db.Boolean, nullable=True)  # current_headcount < allowed_headcount; NULL if allowed unknown
     computed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

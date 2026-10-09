@@ -19,7 +19,7 @@ from ..models import (
     Designation, StaffingGateCheck, GateResult, PlantDvtMapping,
     PlantLocation, COMPANY_CHOICES,
 )
-from ..extensions import limiter
+from ..extensions import limiter, csrf
 from ..utils import (
     role_required, get_new_status, can_act_on,
     notify_users, allowed_file, validate_mime, REJECTED_STATUSES, log_audit,
@@ -142,12 +142,13 @@ def _finalize_submission(req):
         db.session.commit()
         bh_users = _get_bh_recipients(db.session.get(User, req.initiated_by), req.company_code)
         notify_users(db, req, bh_users,
-                     subject=f"New onboarding request: {req.candidate_name}",
-                     body=f"A new onboarding request for {req.candidate_name} ({req.designation}) "
+                     subject=f"New hiring request: {req.candidate_name}",
+                     body=f"A new hiring request for {req.candidate_name} ({req.designation}) "
                           f"has been submitted and requires your approval."
                           + (" This request is proceeding as a special case outside staffing norms — "
                              "a justification will be required at every approval step."
-                             if req.is_special_case else ""))
+                             if req.is_special_case else ""),
+                     actions=True)
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
@@ -1105,7 +1106,8 @@ def resubmit_request(token):
         bh_users = _get_bh_recipients(initiator, req.company_code)
         notify_users(db, req, bh_users,
                      subject=f"Resubmitted: {req.candidate_name}",
-                     body=f"Resubmission #{req.retry_count} for {req.candidate_name}.")
+                     body=f"Resubmission #{req.retry_count} for {req.candidate_name}.",
+                     actions=True)
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
@@ -2157,6 +2159,104 @@ def truein_preflight(token):
     return jsonify({"applicable": True, "issues": result["issues"]})
 
 
+# ── Approve / Reject from an email link (2026-10-08) ───────────────────────────
+#
+# The Approve / Reject buttons in approval emails need NO login: the link is signed for one
+# person + one request + the stage it was pending at (utils.make_email_action_token) and
+# expires, so the signature is the credential. Opening it only shows a confirmation page — a
+# mail scanner that pre-opens every link must never be able to approve/reject a hire (the last
+# approval pushes a real employee into Truein) — and the POST behind its Confirm button runs
+# the very same approve_request()/reject_request() code as the buttons on the request page,
+# acting as the person the link was issued to (no login session is created). Everything is
+# re-checked live on every hit: still the right stage, user still active and still allowed.
+
+@requests_bp.after_request
+def _email_action_never_cached(resp):
+    """The confirmation/result pages carry a personal link and candidate details — keep them out of
+    browser/proxy caches and never leak the URL as a Referer."""
+    if request.endpoint == "requests_bp.email_action":
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def _email_action_context(signed, action):
+    """-> ({"req","user","action"}, None) when the link is usable, else (None, (http_status, heading, message))."""
+    from itsdangerous import SignatureExpired, BadSignature
+    from ..utils import read_email_action_token
+    if action not in ("approve", "reject"):
+        abort(404)
+    try:
+        data = read_email_action_token(signed)
+    except SignatureExpired:
+        return None, (410, "This link has expired",
+                      "Approval links work for 3 days. Sign in to RDC Associates Onboarding to act on this request.")
+    except BadSignature:
+        return None, (400, "This link is not valid",
+                      "It may have been copied incompletely. Sign in to RDC Associates Onboarding to act on the request.")
+    user = db.session.get(User, data.get("u"))
+    req = OnboardingRequest.query.filter_by(id=data.get("r"), is_deleted=False).first()
+    if not user or not user.is_active:
+        return None, (403, "This account can not act on the request", "Please contact your administrator.")
+    if not req:
+        return None, (404, "Request not found", "This request no longer exists.")
+    if req.status.value != data.get("s"):
+        return None, (409, "Already handled",
+                      f"This request is now \"{req.status_label}\", so nothing more is needed from this email.")
+    if data.get("n", 0) != (req.retry_count or 0):
+        return None, (409, "This link is out of date",
+                      "The request was sent back and resubmitted since this email was sent. Please use the newest email about it.")
+    if not can_act_on(req, user):
+        return None, (403, "You can no longer act on this request",
+                      "Your access to it has changed. Please contact your administrator.")
+    return {"req": req, "user": user, "action": action}, None
+
+
+@requests_bp.route("/email-action/<string:signed>/<string:action>", methods=["GET", "POST"])
+@csrf.exempt   # the signed token in the URL is the credential; no cookie/session is involved
+def email_action(signed, action):
+    from flask import g, get_flashed_messages
+    ctx, err = _email_action_context(signed, action)
+    if err:
+        return render_template("requests/email_action_result.html", ok=False, heading=err[1], message=err[2],
+                               messages=[]), err[0]
+    req, user = ctx["req"], ctx["user"]
+
+    if request.method == "GET":
+        issues = []
+        if action == "approve":
+            try:
+                from ..integrations.truein import preflight_check, is_company_tracked_in_truein
+                if (get_new_status(req, user.role, ApprovalActionType.APPROVED) == RequestStatus.ACTIVE
+                        and is_company_tracked_in_truein(req.company_code)):
+                    issues = [i["label"] for i in preflight_check(req)["issues"]]
+            except Exception:
+                issues = []   # a pre-flight problem must never block a real approval
+        default_remark = "" if (action == "reject" or req.is_special_case) else "Approved via email."
+        return render_template("requests/email_action.html", req=req, user=user, action=action,
+                               issues=issues, default_remark=default_remark, error=None)
+
+    remark = request.form.get("remark", "").strip()
+    if not remark:
+        return render_template("requests/email_action.html", req=req, user=user, action=action, issues=[],
+                               default_remark="", error="A remark is required."), 400
+
+    before = req.status
+    req_id, token = req.id, req.public_token
+    g._login_user = user          # act as the link's owner for this one request; no session is created
+    try:
+        (approve_request if action == "approve" else reject_request)(token)
+    finally:
+        g.pop("_login_user", None)   # never let the link owner linger as "the logged-in user"
+    messages = get_flashed_messages(with_categories=True)
+    after = db.session.get(OnboardingRequest, req_id)
+    db.session.refresh(after)
+    done = after.status != before
+    heading = ("Approved" if action == "approve" else "Rejected") if done else "Not recorded"
+    return render_template("requests/email_action_result.html", ok=done, heading=heading,
+                           message=(f"{after.candidate_name} is now \"{after.status_label}\"." if done
+                                    else "Nothing was changed."), messages=messages)
+
+
 # ── Approve ────────────────────────────────────────────────────────────────────
 
 @requests_bp.route("/<string:token>/approve", methods=["POST"])
@@ -2168,8 +2268,8 @@ def approve_request(token):
     remark = request.form.get("remark", "").strip()
     # A remark is mandatory but has no length requirement — "OK" is fine (2026-10-08).
     if not remark:
-        label = "justification for hiring outside norms" if req.is_special_case else "approval comment"
-        flash(f"A {label} is required.", "danger")
+        label = "A justification for hiring outside norms" if req.is_special_case else "An approval comment"
+        flash(f"{label} is required.", "danger")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
     try:
         new_status = get_new_status(req, current_user.role, ApprovalActionType.APPROVED)
@@ -2217,7 +2317,8 @@ def approve_request(token):
                       "from_status": _from_status.value,
                       "to_status": new_status.value,
                       "approver_role": current_user.role.value,
-                      "remark": remark})
+                      "remark": remark,
+                      **({"via": "email_link"} if request.form.get("via") == "email" else {})})
     try:
         db.session.commit()
     except SQLAlchemyError:
@@ -2380,7 +2481,8 @@ def reject_request(token):
                       "from_status": _from_status_r.value,
                       "to_status": new_status.value,
                       "rejector_role": current_user.role.value,
-                      "remark": remark})
+                      "remark": remark,
+                      **({"via": "email_link"} if request.form.get("via") == "email" else {})})
     try:
         db.session.commit()
     except SQLAlchemyError:
@@ -2430,7 +2532,8 @@ def _send_approval_notifications(db, req, new_status):
         recipients = User.query.filter(User.id.in_(hr_manager_ids_for_company(req.company_code))).all()
         notify_users(db, req, recipients,
                      subject=f"Approved by Functional Head: {req.candidate_name}",
-                     body=f"Please review the request for {req.candidate_name}.")
+                     body=f"Please review the request for {req.candidate_name}.",
+                     actions=True)
     elif new_status == RequestStatus.PENDING_HEAD_HR:
         # Unscoped — Head HR is never company-scoped. approved_by already
         # reads correctly for non-RDC: is_special_case is always False for
@@ -2445,7 +2548,8 @@ def _send_approval_notifications(db, req, new_status):
         notify_users(db, req, recipients,
                      subject=f"Approved by {approved_by}: {req.candidate_name}",
                      body=f"{'Over-norm special approval' if req.is_special_case else 'Final approval'} "
-                          f"needed for {req.candidate_name}.")
+                          f"needed for {req.candidate_name}.",
+                     actions=True)
     elif new_status == RequestStatus.PENDING_DR_BHOON:
         recipients = User.query.filter_by(role=UserRole.DR_BHOON, is_active=True).all()  # unscoped
         if req.company_code == "RDC":
@@ -2456,7 +2560,7 @@ def _send_approval_notifications(db, req, new_status):
                      f"needs your final approval.")
         notify_users(db, req, recipients,
                      subject=f"Final approval required: {req.candidate_name}",
-                     body=body)
+                     body=body, actions=True)
     elif new_status == RequestStatus.ACTIVE:
         initiator = db.session.get(User, req.initiated_by)
         hr_managers = User.query.filter(User.id.in_(hr_manager_ids_for_company(req.company_code))).all()

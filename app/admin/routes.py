@@ -334,6 +334,12 @@ def edit_user(user_id):
         new_username = new_username_raw or None
         new_empcode = request.form.get("employee_code", "").strip().upper() or None
 
+        if not new_name or not new_email:
+            flash("Name and email are required.", "danger")
+            return render_template("admin/user_form.html", user=user, UserRole=UserRole,
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
+
         # Email uniqueness check (exclude self)
         existing_email = User.query.filter_by(email=new_email).first()
         if existing_email and existing_email.id != user.id:
@@ -359,6 +365,12 @@ def edit_user(user_id):
             except ValueError:
                 flash("Invalid role selected.", "danger")
                 return render_template("admin/user_form.html", user=user, UserRole=UserRole,
+                                   clusters=clusters, current_region_ids=current_region_ids,
+                                   companies=COMPANY_CHOICES, current_companies=current_company_ids)
+
+        if user.id == current_user.id and _effective_role != user.role:
+            flash("You cannot change your own role — ask another administrator.", "warning")
+            return render_template("admin/user_form.html", user=user, UserRole=UserRole,
                                    clusters=clusters, current_region_ids=current_region_ids,
                                    companies=COMPANY_CHOICES, current_companies=current_company_ids)
 
@@ -579,6 +591,7 @@ def email_settings():
             "has_password": bool(_get("email_pass") or current_app.config.get("MAIL_PASSWORD")),
             "is_active":    bool(cfg_now["username"]),
         },
+        base_url=(current_app.config.get("APP_BASE_URL") or "").strip(),
     )
 
 
@@ -815,6 +828,10 @@ def new_plant():
             company = "RDC"
         if not name:
             flash("Plant name is required.", "danger")
+        elif PlantLocation.query.filter(
+                db.func.lower(PlantLocation.name) == name.lower(),
+                PlantLocation.company == company, PlantLocation.is_deleted == False).first():  # noqa: E712
+            flash(f"A {company} plant named '{name}' already exists.", "danger")
         else:
             max_order = db.session.query(db.func.max(PlantLocation.sort_order)).scalar() or 0
             plant = PlantLocation(name=name, company=company, sort_order=max_order + 1)
@@ -986,6 +1003,12 @@ def new_designation():
 def edit_designation(desig_id):
     desig = db.get_or_404(Designation, desig_id)
     if request.method == "POST":
+        if not request.form.get("name", desig.name).strip():
+            flash("Designation name is required.", "danger")
+            norm_categories = NormRoleCategory.query.filter_by(is_active=True, is_deleted=False).order_by(
+                NormRoleCategory.scope, NormRoleCategory.sort_order).all()
+            return render_template("admin/designation_form.html", designation=desig, norm_categories=norm_categories,
+                                   companies=COMPANY_CHOICES, default_company=desig.company)
         _old_name   = desig.name
         _old_days   = desig.notice_period_days
         _old_att    = desig.truein_app_attendance
@@ -1120,10 +1143,19 @@ def new_form_field():
         min_length = int(min_len_raw) if min_len_raw.isdigit() else None
         max_length = int(max_len_raw) if max_len_raw.isdigit() else None
 
+        try:
+            FieldType(ftype)
+            OptionsSource(options_source)
+            _enums_ok = True
+        except ValueError:
+            _enums_ok = False
+
         if not key or not label:
             flash("Key and label are required.", "danger")
-        elif FormField.query.filter_by(field_key=key, is_deleted=False).first():
-            flash(f"Field key '{key}' already exists.", "danger")
+        elif not _enums_ok:
+            flash("Invalid field type or options source.", "danger")
+        elif FormField.query.filter_by(field_key=key).first():
+            flash(f"Field key '{key}' already exists (it may belong to a removed field — pick a different key).", "danger")
         else:
             max_order = db.session.query(db.func.max(FormField.sort_order)).filter(
                 FormField.step == step).scalar() or 0
@@ -1178,6 +1210,16 @@ def new_form_field():
 def edit_form_field(field_id):
     field = db.get_or_404(FormField, field_id)
     if request.method == "POST":
+        try:
+            FieldType(request.form.get("field_type", field.field_type.value))
+            OptionsSource(request.form.get("options_source", field.options_source.value))
+            _enums_ok = True
+        except ValueError:
+            _enums_ok = False
+        if not _enums_ok or not request.form.get("field_label", field.field_label).strip():
+            flash("Field label is required, and the type/options source must be valid.", "danger")
+            return render_template("admin/field_form.html", field=field,
+                                   FieldType=FieldType, OptionsSource=OptionsSource)
         # Capture before-state for diff
         _old_label   = field.field_label
         _old_type    = field.field_type.value
@@ -1645,6 +1687,9 @@ def run_cluster_auto_match():
 def edit_cluster_mapping(mapping_id):
     row = db.get_or_404(ClusterNameMapping, mapping_id)
     if request.method == "POST":
+        if not request.form.get("canonical_cluster_name", row.canonical_cluster_name).strip():
+            flash("Cluster name is required.", "danger")
+            return render_template("admin/cluster_mapping_form.html", row=row)
         _old = {"dvt_region": row.dvt_region, "zinghr_city": row.zinghr_city, "truein_category": row.truein_category}
         row.canonical_cluster_name = request.form.get("canonical_cluster_name", row.canonical_cluster_name).strip()
         row.dvt_region = request.form.get("dvt_region", "").strip() or None
@@ -1676,6 +1721,9 @@ def new_cluster_mapping():
         name = request.form.get("canonical_cluster_name", "").strip()
         if not name:
             flash("Cluster name is required.", "danger")
+            return render_template("admin/cluster_mapping_form.html", row=None)
+        if ClusterNameMapping.query.filter(db.func.lower(ClusterNameMapping.canonical_cluster_name) == name.lower()).first():
+            flash(f"A cluster named '{name}' already exists.", "danger")
             return render_template("admin/cluster_mapping_form.html", row=None)
         row = ClusterNameMapping(
             canonical_cluster_name=name,

@@ -455,10 +455,7 @@ def _handle_dropped_fields(db, req, dropped: list, triggered_by: str) -> None:
     )
 
     # Notify HR Managers (and Head HR) so someone can complete the record in Truein.
-    recipients = User.query.filter(
-        User.role.in_([UserRole.HR_MANAGER, UserRole.HEAD_HR]),
-        User.is_active == True,  # noqa: E712
-    ).all()
+    recipients = _ops_alert_recipients(req, [UserRole.HR_MANAGER, UserRole.HEAD_HR])
 
     if recipients:
         subject = f"Action needed: incomplete Truein push for {req.candidate_name}"
@@ -475,6 +472,18 @@ def _handle_dropped_fields(db, req, dropped: list, triggered_by: str) -> None:
             notify_users(db, req, recipients, subject, body, category="ADMIN")
         except Exception:
             pass  # never let notification failure break the push flow
+
+
+def _ops_alert_recipients(req, roles):
+    """Active users with one of `roles` who should hear about a Truein problem on `req`.
+    HR Managers are company-scoped (fail-closed, see UserCompanyScope) — one ticked only for
+    ROBO must not be told candidate names/request numbers of an RDC hire, so they are
+    narrowed to the request's company; Super Admin / Head HR are unscoped by design."""
+    from ..models import User, UserRole
+    from ..utils import hr_manager_ids_for_company
+    users = User.query.filter(User.role.in_(roles), User.is_active == True).all()  # noqa: E712
+    allowed_hrm = hr_manager_ids_for_company(req.company_code)
+    return [u for u in users if u.role != UserRole.HR_MANAGER or u.id in allowed_hrm]
 
 
 def _notify_push_failed(db, req, error_message: str, triggered_by: str, will_retry: bool = True) -> None:
@@ -506,10 +515,7 @@ def _notify_push_failed(db, req, error_message: str, triggered_by: str, will_ret
     from ..models import User, UserRole
     from ..utils import log_audit, notify_users
 
-    recipients = User.query.filter(
-        User.role.in_([UserRole.SUPER_ADMIN, UserRole.HEAD_HR, UserRole.HR_MANAGER]),
-        User.is_active == True,  # noqa: E712
-    ).all()
+    recipients = _ops_alert_recipients(req, [UserRole.SUPER_ADMIN, UserRole.HEAD_HR, UserRole.HR_MANAGER])
     if not recipients:
         return
 

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="robots" content="noindex,nofollow"/>
+  <title>{{ 'Approve' if action == 'approve' else 'Reject' }} hiring request — RDC Associates Onboarding</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/inter-font.css') }}">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; display: flex; align-items: center;
+           justify-content: center; background: #0D3460 linear-gradient(135deg, #0A2540 0%, #0D3460 50%, #1a1060 100%) fixed no-repeat; background-size: cover; -webkit-font-smoothing: antialiased; }
+    .card { background: #fff; border-radius: 16px; padding: 34px 36px; width: 100%; max-width: 520px; margin: 20px;
+            box-shadow: 0 32px 80px rgba(0,0,0,.35); }
+    .brand { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #0B5CAD; }
+    h1 { font-size: 21px; margin: 8px 0 4px; color: #101828; }
+    .sub { font-size: 13.5px; color: #475467; margin: 0 0 18px; line-height: 1.55; }
+    table { border-collapse: collapse; width: 100%; margin: 0 0 18px; }
+    td { padding: 6px 0; font-size: 13.5px; vertical-align: top; }
+    td:first-child { color: #667085; width: 38%; padding-right: 12px; }
+    td:last-child { color: #101828; font-weight: 600; }
+    label { display: block; font-size: 12px; font-weight: 700; color: #344054; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+    textarea { width: 100%; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid #D0D5DD; border-radius: 8px; resize: vertical; min-height: 84px; }
+    textarea:focus { outline: 2px solid #9CC3EE; border-color: #0B5CAD; }
+    .btn { display: block; width: 100%; margin-top: 16px; padding: 13px 18px; font: inherit; font-size: 15px; font-weight: 700; color: #fff;
+           border: 0; border-radius: 10px; cursor: pointer; }
+    .btn.approve { background: #067647; } .btn.reject { background: #B42318; }
+    .btn[disabled] { opacity: .6; cursor: default; }
+    .warn { background: #FEF3C7; border: 1px solid #FDE68A; color: #92400E; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin: 0 0 16px; }
+    .warn ul { margin: 6px 0 0; padding-left: 18px; }
+    .err { background: #FEF3F2; border: 1px solid #FECDCA; color: #B42318; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin: 0 0 14px; }
+    .alt { text-align: center; margin: 14px 0 0; font-size: 12.5px; }
+    .alt a { color: #0B5CAD; }
+    .foot { font-size: 11.5px; color: #98A2B3; margin: 22px 0 0; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">RDC Associates Onboarding</div>
+  <h1>{{ 'Approve' if action == 'approve' else 'Reject' }} this hiring request?</h1>
+  <p class="sub">Hello {{ user.name }} — you are acting as <strong>{{ user.role | role_name }}</strong>. Nothing is recorded until you confirm below.</p>
+
+  <table>
+    <tr><td>Candidate</td><td>{{ req.candidate_name or '—' }}</td></tr>
+    <tr><td>Company</td><td>{{ req.company_code or '—' }}</td></tr>
+    <tr><td>Designation</td><td>{{ req.designation or '—' }}</td></tr>
+    <tr><td>Plant</td><td>{{ req.plant_location or '—' }}</td></tr>
+    <tr><td>Raised by</td><td>{{ req.initiator.name if req.initiator else '—' }}</td></tr>
+    <tr><td>Stage</td><td>{{ req.status_label }}</td></tr>
+  </table>
+
+  {% if req.is_special_case %}
+  <div class="warn">This is an over-norm hiring request (outside staffing norms). Your justification is required and recorded.</div>
+  {% endif %}
+  {% if issues %}
+  <div class="warn">Heads up — this is the final approval and it will push the employee to Truein. We can already see these won't go through cleanly:
+    <ul>{% for i in issues %}<li>{{ i }}</li>{% endfor %}</ul>
+    The affected field(s) will be skipped and the HR Manager notified to complete them in Truein.</div>
+  {% endif %}
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+  <form method="POST" id="ea-form">
+    <input type="hidden" name="via" value="email"/>
+    <label for="remark">{{ 'Comment' if action == 'approve' else 'Reason for rejection' }} (required)</label>
+    <textarea id="remark" name="remark" required placeholder="{{ 'Add a comment…' if action == 'approve' else 'Explain the reason for rejection…' }}">{{ default_remark }}</textarea>
+    <button type="submit" id="ea-btn" class="btn {{ action }}">{{ 'Confirm approval' if action == 'approve' else 'Confirm rejection' }}</button>
+  </form>
+
+  <p class="alt">
+    {% if action == 'approve' %}Not right? <a href="{{ url_for('requests_bp.email_action', signed=request.view_args.signed, action='reject') }}">Reject instead</a>
+    {% else %}Changed your mind? <a href="{{ url_for('requests_bp.email_action', signed=request.view_args.signed, action='approve') }}">Approve instead</a>{% endif %}
+    &nbsp;·&nbsp; <a href="{{ url_for('auth.login') }}">Sign in to the app</a>
+  </p>
+  <p class="foot">This link is personal to you and expires 3 days after the email was sent.</p>
+</div>
+<script>
+  document.getElementById('ea-form').addEventListener('submit', function () {
+    var b = document.getElementById('ea-btn');
+    setTimeout(function () { b.disabled = true; b.textContent = 'Recording…'; }, 0);
+  });
+</script>
+</body>
+</html>

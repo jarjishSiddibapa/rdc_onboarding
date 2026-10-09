@@ -218,7 +218,7 @@ def _auto_migrate(engine):
 _IST_OFFSET = timedelta(hours=5, minutes=30)
 
 
-def _format_ist(dt, fmt="%d %b %Y, %H:%M"):
+def _format_ist(dt, fmt="%d/%m/%Y, %H:%M"):
     """Jinja filter: naive-UTC datetime -> IST-formatted string. None-safe."""
     if dt is None:
         return "—"

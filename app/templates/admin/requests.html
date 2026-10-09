@@ -35,7 +35,7 @@
       <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
       <td style="color:var(--c-text-3);">{{ req.initiator.name }}</td>
       <td><span class="badge {{ badge_cls }}">{{ req.status_label }}</span></td>
-      <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.updated_at | ist('%d %b %Y') }}</td>
+      <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.updated_at | ist('%d/%m/%Y') }}</td>
       <td style="text-align:right;">
         <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">
           <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-secondary btn-sm">View</a>

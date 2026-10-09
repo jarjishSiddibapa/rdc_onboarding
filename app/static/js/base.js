@@ -405,3 +405,91 @@ document.addEventListener('change', function(e) {
   url.searchParams.delete('page');
   window.location.href = url.toString();
 });
+
+/* DD/MM/YYYY date boxes (filters). Every date in this app is shown day-month-year; a native <input type=date>
+   follows the browser's own locale, so filters use this typed box + calendar button instead. The box carries
+   the visible DD/MM/YYYY text; a hidden input with the real name (data-name) carries YYYY-MM-DD to the server. */
+(function () {
+  var pad = function (n) { return String(n).padStart(2, '0'); };
+  function isReal(d, m, y) {
+    if (y < 1900 || y > 2100) return false;
+    var t = new Date(y, m - 1, d);
+    return t.getFullYear() === y && t.getMonth() === m - 1 && t.getDate() === d;
+  }
+  function init() {
+    document.querySelectorAll('input.ddmm-date').forEach(function (inp) {
+      if (inp.dataset.ready) return;
+      inp.dataset.ready = '1';
+      var wrap = document.createElement('div');
+      wrap.className = 'date-cal-wrap';
+      inp.parentNode.insertBefore(wrap, inp);
+      wrap.appendChild(inp);
+      inp.setAttribute('inputmode', 'numeric');
+      inp.setAttribute('maxlength', '10');
+      inp.setAttribute('autocomplete', 'off');
+      inp.style.paddingRight = '42px';
+
+      var hid = document.createElement('input');
+      hid.type = 'hidden';
+      hid.name = inp.getAttribute('data-name');
+      wrap.after(hid);
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'date-cal-btn';
+      btn.title = 'Pick from calendar';
+      btn.setAttribute('aria-label', 'Open calendar');
+      btn.innerHTML = '<svg width="17" height="17" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
+      var nat = document.createElement('input');
+      nat.type = 'date';
+      nat.className = 'date-cal-native';
+      nat.tabIndex = -1;
+      nat.setAttribute('aria-hidden', 'true');
+      wrap.appendChild(btn);
+      wrap.appendChild(nat);
+
+      function sync() {
+        var raw = inp.value.replace(/\D/g, '');
+        var ok = false;
+        if (raw.length === 8) {
+          var d = parseInt(raw.slice(0, 2), 10), m = parseInt(raw.slice(2, 4), 10), y = parseInt(raw.slice(4), 10);
+          if (isReal(d, m, y)) { hid.value = y + '-' + pad(m) + '-' + pad(d); ok = true; }
+        }
+        if (!ok) hid.value = '';
+        inp.style.borderColor = (!ok && raw.length) ? 'var(--c-danger)' : '';
+      }
+
+      // pre-filled value arrives as YYYY-MM-DD (server echo) -> show DD/MM/YYYY
+      var m0 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(inp.value.trim());
+      if (m0) inp.value = m0[3] + '/' + m0[2] + '/' + m0[1];
+      sync();
+
+      inp.addEventListener('keydown', function (e) {
+        if ([8, 9, 13, 35, 36, 37, 38, 39, 40, 46].indexOf(e.keyCode) !== -1) return;
+        if (e.ctrlKey || e.metaKey) return;
+        if (e.key && e.key.length === 1 && !/[0-9]/.test(e.key)) e.preventDefault();
+      });
+      inp.addEventListener('input', function () {
+        var raw = this.value.replace(/\D/g, '').substring(0, 8), f = '';
+        if (raw.length > 0) f = raw.substring(0, 2);
+        if (raw.length > 2) f += '/' + raw.substring(2, 4);
+        if (raw.length > 4) f += '/' + raw.substring(4, 8);
+        this.value = f;
+        sync();
+      });
+      btn.addEventListener('click', function () {
+        nat.value = hid.value || '';
+        if (nat.showPicker) { try { nat.showPicker(); return; } catch (e) { /* fall through */ } }
+        nat.focus(); nat.click();
+      });
+      nat.addEventListener('change', function () {
+        if (!nat.value) return;
+        var p = nat.value.split('-');
+        inp.value = p[2] + '/' + p[1] + '/' + p[0];
+        sync();
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();

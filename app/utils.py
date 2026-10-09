@@ -612,3 +612,21 @@ def log_audit(category, action_type, *,
             current_app.logger.warning(f"[audit] log_audit({action_type}) failed: {exc}")
         except Exception:
             pass
+
+
+def fmt_date(value):
+    """Any date the app displays is DD/MM/YYYY. Accepts a date/datetime, an ISO string ("2026-10-09",
+    optionally with a time) or ZingHR's "18 Aug 2025"; anything else is returned unchanged (never guessed),
+    None/blank gives ""."""
+    from datetime import date as _d, datetime as _dt
+    if value is None or value == "":
+        return ""
+    if isinstance(value, (_dt, _d)):
+        return value.strftime("%d/%m/%Y")
+    txt = str(value).strip()
+    for fmt, n in (("%Y-%m-%d", 10), ("%d %b %Y", None), ("%d-%b-%Y", None)):
+        try:
+            return _dt.strptime(txt[:n] if n else txt, fmt).strftime("%d/%m/%Y")
+        except ValueError:
+            continue
+    return txt

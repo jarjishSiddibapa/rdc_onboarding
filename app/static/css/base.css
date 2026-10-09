@@ -995,3 +995,9 @@
 @media (max-width: 640px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
 }
+
+/* DD/MM/YYYY date boxes with a calendar button (js/base.js, input.ddmm-date) */
+.date-cal-wrap{position:relative;}
+.date-cal-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--c-text-3);cursor:pointer;border-radius:8px;}
+.date-cal-btn:hover{background:var(--c-bg-2);color:var(--c-primary);}
+.date-cal-native{position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;}

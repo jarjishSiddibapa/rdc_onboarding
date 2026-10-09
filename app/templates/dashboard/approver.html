@@ -126,7 +126,7 @@
             <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
             <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
             <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
-            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.created_at | ist('%d %b %Y') }}</td>
+            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.created_at | ist('%d/%m/%Y') }}</td>
             <td style="text-align:right;">
               <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-primary btn-sm">
                 Review →
@@ -170,7 +170,7 @@
             <td><span style="font-weight:600;color:var(--c-text-1);">{{ req.candidate_name or '—' }}</span></td>
             <td style="color:var(--c-text-3);">{{ req.designation or '—' }}</td>
             <td style="color:var(--c-text-3);">{{ req.company_code or '—' }}</td>
-            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.created_at | ist('%d %b %Y') }}</td>
+            <td style="color:var(--c-text-4);font-size:12.5px;">{{ req.created_at | ist('%d/%m/%Y') }}</td>
             <td style="text-align:right;">
               <a href="{{ url_for('requests_bp.view_request', token=req.public_token) }}" class="btn btn-primary btn-sm">
                 Review →

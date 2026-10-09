@@ -135,12 +135,12 @@
 
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Date From</label>
-          <input type="date" name="date_from" value="{{ date_from or '' }}" class="inp" style="font-size:13px;"/>
+          <input type="text" class="inp ddmm-date" data-name="date_from" value="{{ date_from or '' }}" placeholder="DD/MM/YYYY" style="font-size:13px;"/>
         </div>
 
         <div>
           <label style="display:block;font-size:11px;font-weight:700;color:var(--c-text-3);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.07em;">Date To</label>
-          <input type="date" name="date_to" value="{{ date_to or '' }}" class="inp" style="font-size:13px;"/>
+          <input type="text" class="inp ddmm-date" data-name="date_to" value="{{ date_to or '' }}" placeholder="DD/MM/YYYY" style="font-size:13px;"/>
         </div>
 
       </div>
@@ -174,7 +174,7 @@
 
           {# Timestamp #}
           <td style="white-space:nowrap;color:var(--c-text-4);font-size:12px;">
-            {{ entry.created_at | ist('%d %b %Y') }}<br>
+            {{ entry.created_at | ist('%d/%m/%Y') }}<br>
             <span style="color:var(--c-text-5);font-size:11px;">{{ entry.created_at | ist('%H:%M:%S') }}</span>
           </td>
 

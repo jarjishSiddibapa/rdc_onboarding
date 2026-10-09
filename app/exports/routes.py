@@ -1,4 +1,5 @@
 import io
+import re
 from datetime import datetime, timedelta
 from flask import make_response, render_template, request, jsonify
 from flask_login import login_required, current_user
@@ -12,7 +13,7 @@ from ..models import (
     FormField, FieldType, PlantLocation, Designation, ApprovalAction,
 )
 from ..extensions import limiter
-from ..utils import role_required, log_audit
+from ..utils import role_required, log_audit, fmt_date
 from . import exports_bp
 
 _ALLOWED_ROLES = (UserRole.SUPER_ADMIN, UserRole.HEAD_HR, UserRole.HR_MANAGER, UserRole.DR_BHOON)
@@ -208,11 +209,11 @@ def _filter_chips(params):
         chips.append({"label": "Status", "value": "Approved (default)"})
 
     if p["date_from_s"] or p["date_to_s"]:
-        val = f"{p['date_from_s'] or '…'} → {p['date_to_s'] or '…'}"
+        val = f"{fmt_date(p['date_from_s']) or '…'} → {fmt_date(p['date_to_s']) or '…'}"
         chips.append({"label": "Submitted", "value": val})
 
     if p["joining_from_s"] or p["joining_to_s"]:
-        val = f"{p['joining_from_s'] or '…'} → {p['joining_to_s'] or '…'}"
+        val = f"{fmt_date(p['joining_from_s']) or '…'} → {fmt_date(p['joining_to_s']) or '…'}"
         chips.append({"label": "Joining date", "value": val})
 
     if p["plant_filter"]:
@@ -300,6 +301,8 @@ def _cell_val(req, key, plant_name_cache=None):
             return f"Other: {other}" if other else "Other"
         if key == "plant_location" and raw:
             return _plant_display_name(raw, plant_name_cache if plant_name_cache is not None else {})
+        if isinstance(raw, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw.strip()):
+            return fmt_date(raw)         # date fields (contract_from, date_of_birth, ...) are stored ISO
         return raw
 
 
@@ -340,7 +343,7 @@ def _build_excel(records, report_title="Employee Onboarding Report"):
     # Title row
     ws.merge_cells(f"A1:{get_column_letter(len(all_cols))}1")
     tc = ws["A1"]
-    tc.value = f"{report_title}  |  Generated: {datetime.now().strftime('%d %b %Y %H:%M')}"
+    tc.value = f"{report_title}  |  Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     tc.font  = Font(name="Calibri", size=13, bold=True, color="1F3864")
     tc.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 28
@@ -494,7 +497,7 @@ def download_excel():
     data = buf.getvalue()
 
     slug     = "_".join(params["statuses_raw"]) if params["statuses_raw"] else "ACTIVE"
-    filename = f"onboarding_{slug}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"onboarding_{slug}_{datetime.now().strftime('%d%m%Y_%H%M')}.xlsx"
 
     _filters = {k: v for k, v in params.items() if v}
     log_audit("EXPORT", "EXPORT_DOWNLOADED",

@@ -3,6 +3,7 @@ Export report: filters (including the joining-date one that used to match nothin
 workbook's real contents, and company scoping for HR Managers.
 """
 import io
+import re
 import uuid
 from datetime import datetime, timedelta
 
@@ -95,7 +96,7 @@ class TestExportFilters:
         assert _preview(client, "?joining_from=2026-06-01")["total"] == 2
         assert _preview(client, "?joining_to=2026-02-01")["total"] == 1
         chips = _preview(client, "?joining_from=2026-06-01&joining_to=2026-06-30")["chips"]
-        assert {"label": "Joining date", "value": "2026-06-01 → 2026-06-30"} in chips
+        assert {"label": "Joining date", "value": "01/06/2026 → 30/06/2026"} in chips
         assert _preview(client, "?joining_from=not-a-date")["total"] == 4
 
     def test_plant_designation_company_retry_and_submission_date(self, client, db, world):
@@ -155,6 +156,9 @@ class TestExportWorkbook:
         assert row["Functional Head Approval"] == "Exp BH (BH001)"
         assert row["Special Approver Approval"].startswith("Exp SA")
         assert row["Associate Name (as per Aadhaar)"] == "Excel Person"
+        assert row["Contract From (Date of Joining)"] == "01/07/2026"          # DD/MM/YYYY, never ISO
+        assert "Generated: " in ws["A1"].value and re.search(r"Generated: \d{2}/\d{2}/\d{4} \d{2}:\d{2}", ws["A1"].value)
+        assert re.fullmatch(r"\d{2}/\d{2}/\d{4}", row["Submitted On"])
         assert ws.cell(row=4, column=1).value == "Total records: 1"
 
     def test_download_is_audited_and_names_the_status(self, client, db, world):

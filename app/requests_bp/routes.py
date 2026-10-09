@@ -23,7 +23,7 @@ from ..extensions import limiter, csrf
 from ..utils import (
     role_required, get_new_status, can_act_on,
     notify_users, allowed_file, validate_mime, REJECTED_STATUSES, log_audit,
-    get_db_mail_config,
+    get_db_mail_config, fmt_date,
 )
 from . import requests_bp
 
@@ -1358,7 +1358,7 @@ def staffing_status_download():
 
     def _employee_row(cluster_name, plant_name, e):
         return (cluster_name, plant_name, e.employee_name, e.employee_code,
-                e.designation, e.department, e.date_of_joining, e.source.value)
+                e.designation, e.department, fmt_date(e.date_of_joining), e.source.value)
 
     # Resolved ONCE for the whole report instead of once per cluster/plant
     # (28 clusters + 140 plants previously meant ~336 redundant
@@ -1417,7 +1417,7 @@ def staffing_status_download():
     else:
         unmapped_rows = [
             (e.plant_location_key or "(no location on record)", e.employee_name, e.employee_code,
-             e.designation, e.department, e.date_of_joining, e.source.value)
+             e.designation, e.department, fmt_date(e.date_of_joining), e.source.value)
             for e in headcount.get_rdc_unmapped_employees(shown_employee_ids, latest_run=latest_employee_run)
         ]
     unmapped_cols = [("Location (as recorded)", 30), ("Employee Name", 26), ("Employee Code", 16),
@@ -1438,7 +1438,7 @@ def staffing_status_download():
     wb.save(buf)
     data = buf.getvalue()
 
-    filename = f"rdc_staffing_status_{_dt.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"rdc_staffing_status_{_dt.now().strftime('%d%m%Y_%H%M')}.xlsx"
     log_audit("EXPORT", "EXPORT_DOWNLOADED", resource_type="StaffingStatus",
               resource_label="RDC Staffing Status report")
     db.session.commit()
@@ -1501,7 +1501,7 @@ def staffing_status_company_download(company):
     for p in plant_summary:
         for e in headcount.get_other_company_employees_at_plant(company, p["plant"].name):
             employee_rows.append((p["plant"].name, e.employee_name, e.employee_code,
-                                   e.designation, e.department, e.date_of_joining, e.source.value))
+                                   e.designation, e.department, fmt_date(e.date_of_joining), e.source.value))
 
     unmapped_cols = [("Employee Name", 26), ("Employee Code", 16), ("Designation", 26),
                       ("Department", 20), ("Date of Joining", 16), ("Source", 10)]
@@ -1513,7 +1513,7 @@ def staffing_status_company_download(company):
                       .order_by(EmployeeLocationSnapshot.employee_name).all())
         for e in unresolved:
             unmapped_rows.append((e.employee_name, e.employee_code, e.designation,
-                                   e.department, e.date_of_joining, e.source.value))
+                                   e.department, fmt_date(e.date_of_joining), e.source.value))
 
     wb = Workbook()
     ws1 = wb.active
@@ -1528,7 +1528,7 @@ def staffing_status_company_download(company):
     wb.save(buf)
     data = buf.getvalue()
 
-    filename = f"{company.lower()}_staffing_status_{_dt.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    filename = f"{company.lower()}_staffing_status_{_dt.now().strftime('%d%m%Y_%H%M')}.xlsx"
     log_audit("EXPORT", "EXPORT_DOWNLOADED", resource_type="StaffingStatus",
               resource_label=f"{company} Staffing Status report")
     db.session.commit()

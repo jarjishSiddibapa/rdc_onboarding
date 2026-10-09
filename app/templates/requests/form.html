@@ -584,18 +584,33 @@
     return d.getFullYear() === yyyy && d.getMonth() === mm - 1 && d.getDate() === dd;
   }
 
-  function setDateState(visible, key, ok) {
-    var wrap = visible.closest('.field-wrap') || visible.parentElement;
-    var msg  = wrap ? wrap.querySelector('.field-msg') : null;
+  // The date box has its own feedback line (the generic blur validator and character counter skip it): it
+  // goes AFTER the .date-cal-wrap, never inside it — anything inside would stretch the wrap and push the
+  // calendar button (centred on the wrap) off the box.
+  function setDateState(visible, key, ok, errText) {
+    var wrap   = visible.closest('.date-cal-wrap') || visible.parentElement;
+    var holder = visible.closest('.field-wrapper') || wrap.parentElement;
+    var old = holder ? holder.querySelector('.date-msg') : null;
+    if (old) old.remove();
+    var text = '', color = '';
     if (ok === true) {
       visible.style.borderColor = 'var(--c-success)';
-      if (msg) { msg.textContent = '✓ Looks good'; msg.style.color = 'var(--c-success)'; }
+      visible.style.boxShadow   = '0 0 0 3px rgba(9,130,93,0.10)';
+      text = '✓ Looks good'; color = 'var(--c-success)';
     } else if (ok === false) {
       visible.style.borderColor = 'var(--c-danger)';
-      if (msg) { msg.textContent = 'Enter a valid date (DD/MM/YYYY)'; msg.style.color = 'var(--c-danger)'; }
+      visible.style.boxShadow   = '0 0 0 3px rgba(220,38,38,0.10)';
+      text = errText || 'Enter a valid date (DD/MM/YYYY)'; color = 'var(--c-danger)';
     } else {
       visible.style.borderColor = '';
-      if (msg) { msg.textContent = ''; }
+      visible.style.boxShadow   = '';
+    }
+    if (text) {
+      var p = document.createElement('p');
+      p.className = 'date-msg';
+      p.style.cssText = 'font-size:var(--t-xs);margin-top:5px;color:' + color + ';';
+      p.textContent = text;
+      wrap.after(p);
     }
   }
 
@@ -615,19 +630,9 @@
           var entered = new Date(yyyy, mm - 1, dd);
           if (entered < today) {
             hidden.value = '';
-            visible.style.borderColor = 'var(--c-danger)';
-            var errEl = visible.parentElement.querySelector('.date-min-err');
-            if (!errEl) {
-              errEl = document.createElement('p');
-              errEl.className = 'date-min-err';
-              errEl.style.cssText = 'font-size:12px;color:var(--c-danger);margin-top:5px;';
-              visible.after(errEl);
-            }
-            errEl.textContent = 'Contract From cannot be before today.';
+            setDateState(visible, key, false, 'Contract From cannot be before today.');
             return;
           }
-          var oldErr = visible.parentElement.querySelector('.date-min-err');
-          if (oldErr) oldErr.remove();
         }
         hidden.value = yyyy + '-' + pad(mm) + '-' + pad(dd);
         setDateState(visible, key, true);
@@ -635,8 +640,8 @@
       }
     }
     hidden.value = '';
-    if (raw.length === 8) setDateState(visible, key, false);
-    else if (raw.length === 0) setDateState(visible, key, null);
+    if (raw.length === 0) setDateState(visible, key, visible.required ? false : null, 'This field is required.');
+    else setDateState(visible, key, false);
   }
 
   function initMasks() {
@@ -1101,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     /* Blur validation on text/email/tel/number/textarea inputs */
-    document.querySelectorAll('.field-wrapper .inp:not([readonly])').forEach(function(inp) {
+    document.querySelectorAll('.field-wrapper .inp:not([readonly]):not(.date-mask-visible)').forEach(function(inp) {
       inp.addEventListener('blur', function() { validateField(this); });
       /* Live char counter if maxlength exists */
       var max = parseInt(inp.getAttribute('maxlength'));

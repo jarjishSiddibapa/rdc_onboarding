@@ -271,7 +271,7 @@ def create_app():
         app.logger.warning(
             "[Email] APP_BASE_URL is not set - approval emails will go out WITHOUT the Approve/Reject "
             "buttons and 'Open request' links. Set it in .env to the address people use to reach this app "
-            "(e.g. https://onboarding.yourcompany.com).")
+            "(e.g. https://onboarding.yourcompany.com), or enter the App address in Admin > Email Settings.")
 
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 

@@ -387,13 +387,20 @@ def read_email_action_token(token):
 
 
 def app_base_url():
-    """Public address of this app for links inside emails — ONLY from the APP_BASE_URL setting.
-    Deliberately never derived from the incoming request: this app sits behind ProxyFix, which
-    trusts X-Forwarded-Host, and even a plain Host header is client-controlled, so anyone able to
-    submit a request could otherwise make the approvers' emails (which carry personal approval
-    links) point at a server they control. Returns "" when unset — emails then simply go out
-    without links/buttons."""
-    base = (current_app.config.get("APP_BASE_URL") or "").strip().rstrip("/")
+    """Public address of this app for links inside emails — ONLY from settings an administrator controls:
+    the address saved in Admin -> Email Settings (SystemConfig "app_base_url"), else the APP_BASE_URL env
+    setting. Deliberately never derived from the incoming request: this app sits behind ProxyFix, which
+    trusts X-Forwarded-Host, and even a plain Host header is client-controlled, so anyone able to submit a
+    request could otherwise make the approvers' emails (which carry personal approval links) point at a
+    server they control. Returns "" when unset — emails then simply go out without links/buttons."""
+    base = ""
+    try:
+        from .models import SystemConfig
+        row = SystemConfig.query.filter_by(key="app_base_url").first()
+        base = (row.value or "").strip() if row else ""
+    except Exception:
+        base = ""
+    base = (base or current_app.config.get("APP_BASE_URL") or "").strip().rstrip("/")
     return base if base.lower().startswith(("http://", "https://")) else ""
 
 

@@ -520,7 +520,7 @@ class TestLinksNeverTrustRequestHeaders:
         _make_user("EaAdm", "eaadm@t.com", UserRole.SUPER_ADMIN, db)
         db.session.commit()
         login(client, "eaadm@t.com")
-        assert "buttons are switched off" in client.get("/admin/settings/email").get_data(as_text=True)
+        assert "Off — approval emails currently go out as plain text" in client.get("/admin/settings/email").get_data(as_text=True)
         app.config["APP_BASE_URL"] = BASE
         try:
             assert BASE in client.get("/admin/settings/email").get_data(as_text=True)
@@ -553,3 +553,60 @@ def test_a_link_from_an_earlier_round_is_dead_after_reject_and_resubmit(client, 
     with patch("app.utils.send_email"):
         assert client.post(f"/requests/email-action/{fresh}/approve", data={"remark": "ok"}).status_code == 200
     assert _status(req) == RequestStatus.PENDING_HR_MANAGER
+
+
+class TestAppAddressSetting:
+    """The address behind the e-mail buttons is set by an administrator in Admin -> Email Settings."""
+
+    def _admin(self, client, db, tag):
+        _make_user("EaAd" + tag, f"eaad{tag}@t.com", UserRole.SUPER_ADMIN, db)
+        db.session.commit()
+        login(client, f"eaad{tag}@t.com")
+
+    def _save(self, client, value):
+        return client.post("/admin/settings/email", data={"action": "save_base_url", "app_base_url": value}, follow_redirects=True)
+
+    def test_saving_the_address_switches_the_buttons_on(self, client, db, app):
+        init, bh, hrm, req = _world(db, "A1")
+        self._admin(client, db, "1")
+        app.config["APP_BASE_URL"] = ""
+        r = self._save(client, " http://192.168.1.20:5000/ ")
+        assert "App address saved" in _page(r)
+        assert utils.app_base_url() == "http://192.168.1.20:5000"
+        with patch("app.utils.send_email") as send:
+            utils.notify_users(db, req, [bh], "Subj", "Body", actions=True)
+        assert "http://192.168.1.20:5000/requests/email-action/" in send.call_args.kwargs["html"]
+        assert "http://192.168.1.20:5000" in _page(client.get("/admin/settings/email"))
+
+    def test_the_admin_value_beats_the_env_value(self, client, db, app):
+        self._admin(client, db, "2")
+        app.config["APP_BASE_URL"] = "https://from-env.example.com"
+        try:
+            assert utils.app_base_url() == "https://from-env.example.com"
+            self._save(client, "https://from-admin.example.com")
+            assert utils.app_base_url() == "https://from-admin.example.com"
+            self._save(client, "")                                           # cleared -> falls back to env
+            assert utils.app_base_url() == "https://from-env.example.com"
+        finally:
+            app.config["APP_BASE_URL"] = ""
+
+    @pytest.mark.parametrize("bad", ["onboarding.example.com", "ftp://x.example.com", "https://x.example.com/dashboard",
+                                     "https://x.example.com?a=1", "https:// x.example.com", "javascript:alert(1)"])
+    def test_bad_addresses_are_refused(self, client, db, app, bad):
+        self._admin(client, db, "3")
+        before = utils.app_base_url()
+        r = self._save(client, bad)
+        assert "Enter just the address" in _page(r)
+        assert utils.app_base_url() == before
+
+    def test_only_admins_can_change_it(self, client, db, app):
+        _, bh, _, _ = _world(db, "A4")
+        login(client, bh.pemail)
+        assert client.post("/admin/settings/email", data={"action": "save_base_url", "app_base_url": "https://evil.example.com"}).status_code == 403
+        assert utils.app_base_url() == ""
+
+    def test_spoofed_headers_still_never_set_the_address(self, client, db, app):
+        self._admin(client, db, "5")
+        app.config["APP_BASE_URL"] = ""
+        client.get("/admin/settings/email", headers={"Host": "evil.example.com", "X-Forwarded-Host": "evil.example.com"})
+        assert utils.app_base_url() == ""

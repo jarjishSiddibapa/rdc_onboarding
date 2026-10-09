@@ -36,16 +36,35 @@
   </div>
 
   <!-- Approve/Reject-from-email links need the app's public address -->
-  {% if base_url %}
-  <div style="padding:12px 18px;background:var(--c-success-soft);border:1px solid var(--c-success-border);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--c-success);">
-    Approval emails carry Approve / Reject buttons that open <strong>{{ base_url }}</strong>.
+  <div class="card" style="padding:24px 28px;margin-bottom:24px;{{ 'border-color:var(--c-warn-border);' if not base_url else '' }}">
+    <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Approve / Reject buttons in emails</h2>
+    {% if base_url %}
+    <p style="font-size:13px;color:var(--c-success);margin:0 0 14px;">On — the buttons in approval emails open <strong>{{ base_url }}</strong>.</p>
+    {% else %}
+    <p style="font-size:13px;color:var(--c-warn);margin:0 0 14px;"><strong>Off — approval emails currently go out as plain text with no buttons.</strong>
+      Enter the address people use to open this app and save.</p>
+    {% endif %}
+    <form method="POST" id="base-url-form" style="display:flex;flex-direction:column;gap:10px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <input type="hidden" name="action" value="save_base_url"/>
+      <label style="font-size:12.5px;font-weight:600;color:var(--c-text-2);" for="app_base_url">App address</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input class="inp" type="text" id="app_base_url" name="app_base_url" value="{{ base_url }}" style="flex:1;min-width:220px;"
+               placeholder="https://onboarding.yourcompany.com" autocomplete="off"/>
+        <button type="button" class="btn btn-secondary" id="use-this-address" data-no-busy>Use the address I'm on now</button>
+      </div>
+      <p style="font-size:11.5px;color:var(--c-text-4);margin:0;">
+        It must be reachable by the people who get the emails (their phones and PCs) — for example the same address you type in your browser to open this app.
+        Just the address, no page path. Leave blank to switch the buttons off.
+      </p>
+      <div><button type="submit" class="btn btn-primary">Save app address</button></div>
+    </form>
   </div>
-  {% else %}
-  <div style="padding:12px 18px;background:var(--c-warn-soft);border:1px solid var(--c-warn-border);border-radius:10px;margin-bottom:16px;font-size:13px;color:var(--c-warn);">
-    <strong>Approve / Reject buttons are switched off.</strong> Set <code>APP_BASE_URL</code> in the server's <code>.env</code> file to the address people use to open this app
-    (for example <code>https://onboarding.yourcompany.com</code>) and restart the server. Until then approval emails go out as plain text without links.
-  </div>
-  {% endif %}
+  <script>
+    document.getElementById('use-this-address').addEventListener('click', function () {
+      document.getElementById('app_base_url').value = window.location.origin;
+    });
+  </script>
 
   <!-- Info banner -->
   <div style="padding:14px 18px;background:var(--c-info-soft);border:1px solid var(--c-info-border);border-radius:10px;margin-bottom:24px;display:flex;gap:12px;align-items:flex-start;">

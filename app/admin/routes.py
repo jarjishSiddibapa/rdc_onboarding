@@ -524,7 +524,7 @@ def _smtp_for_email(email_addr):
 @role_required(UserRole.SUPER_ADMIN)
 def email_settings():
     from ..models import SystemConfig
-    from ..utils import get_db_mail_config, _send_smtp
+    from ..utils import get_db_mail_config, _send_smtp, app_base_url
 
     def _get(key):
         row = SystemConfig.query.filter_by(key=key).first()
@@ -536,6 +536,25 @@ def email_settings():
             row.value = value
         else:
             db.session.add(SystemConfig(key=key, value=value))
+
+    if request.method == "POST" and request.form.get("action") == "save_base_url":
+        # The public address used for the Approve / Reject / Open links in emails. Admin-only (this route),
+        # so safe to trust — unlike anything derived from the request (see utils.app_base_url()).
+        from urllib.parse import urlsplit
+        raw = request.form.get("app_base_url", "").strip()
+        if raw:
+            u = urlsplit(raw)
+            if u.scheme not in ("http", "https") or not u.netloc or " " in raw or u.query or u.fragment or u.path not in ("", "/"):
+                flash("Enter just the address people use to open the app, e.g. https://onboarding.yourcompany.com "
+                      "(or http://192.168.1.20:5000) — no page path.", "danger")
+                return redirect(url_for("admin.email_settings"))
+            raw = f"{u.scheme}://{u.netloc}"
+        _set("app_base_url", raw)
+        log_audit("USER_MGMT", "APP_BASE_URL_UPDATED", detail={"app_base_url": raw or None})
+        db.session.commit()
+        flash("App address saved. Approval emails now carry Approve / Reject buttons." if raw
+              else "App address cleared. Approval emails will go out without buttons.", "success")
+        return redirect(url_for("admin.email_settings"))
 
     if request.method == "POST":
         user     = request.form.get("email_user", "").strip()
@@ -591,7 +610,7 @@ def email_settings():
             "has_password": bool(_get("email_pass") or current_app.config.get("MAIL_PASSWORD")),
             "is_active":    bool(cfg_now["username"]),
         },
-        base_url=(current_app.config.get("APP_BASE_URL") or "").strip(),
+        base_url=app_base_url(),
     )
 
 

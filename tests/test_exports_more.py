@@ -80,7 +80,7 @@ class TestExportFilters:
         login(client, "expadmin@t.com")
         data = _preview(client, "?status=PENDING_BH&status=REJECTED_BH")
         assert data["total"] == 2
-        assert data["title"] == "Pending Functional Head + Rejected by Functional Head — Onboarding Report"
+        assert data["title"] == "Pending Business / Functional Head + Rejected by Business / Functional Head — Onboarding Report"
         assert _preview(client, "?status=BOGUS")["total"] in (0, 1, 3)       # junk never breaks the report
 
     def test_joining_date_filter_uses_the_real_form_field(self, client, db, world):
@@ -147,13 +147,13 @@ class TestExportWorkbook:
         assert "no-store" in resp.headers["Cache-Control"]
         ws = load_workbook(io.BytesIO(resp.data)).active
         headers = [c.value for c in ws[2]]
-        for h in ("Request ID", "Status", "Initiated By", "Functional Head Approval", "HR Manager Approval",
+        for h in ("Request ID", "Status", "Initiated By", "Business / Functional Head Approval", "HR Manager Approval",
                   "Head HR Approval", "Special Approver Approval", "Submitted On", "Retry Count"):
             assert h in headers, h
         assert "BH Approval" not in headers and "HR Mgr Approval" not in headers
         row = {headers[i]: c.value for i, c in enumerate(ws[3])}
         assert row["Status"] == "Approved" and row["Initiated By"] == "Exp Ini"
-        assert row["Functional Head Approval"] == "Exp BH (BH001)"
+        assert row["Business / Functional Head Approval"] == "Exp BH (BH001)"
         assert row["Special Approver Approval"].startswith("Exp SA")
         assert row["Associate Name (as per Aadhaar)"] == "Excel Person"
         assert row["Contract From (Date of Joining)"] == "01/07/2026"          # DD/MM/YYYY, never ISO
@@ -178,7 +178,7 @@ class TestExportWorkbook:
         db.session.commit()
         login(client, email)
         page = client.get("/exports/active-employees").get_data(as_text=True)
-        assert "Export Report" in page and "Pending Functional Head" in page
+        assert "Export Report" in page and "Pending Business / Functional Head" in page
 
 
 class TestExportCompanyScoping:

@@ -30,14 +30,14 @@ def _req(db, user, company="RDC", status=RequestStatus.PENDING_BH, designation="
 class TestRoleAndStatusNames:
     def test_role_labels(self):
         assert ROLE_LABELS["INITIATOR"] == "Reporting Manager (RM)"
-        assert ROLE_LABELS["BUSINESS_HEAD"] == "Functional Head"
+        assert ROLE_LABELS["BUSINESS_HEAD"] == "Business / Functional Head"
         assert ROLE_LABELS["DR_BHOON"] == "Special Approver"
         assert ROLE_LABELS["HR_MANAGER"] == "HR Manager" and ROLE_LABELS["HEAD_HR"] == "Head HR"
 
     def test_status_labels(self):
-        assert STATUS_LABELS["PENDING_BH"] == "Pending Functional Head"
+        assert STATUS_LABELS["PENDING_BH"] == "Pending Business / Functional Head"
         assert STATUS_LABELS["PENDING_DR_BHOON"] == "Pending Special Approval"
-        assert STATUS_LABELS["REJECTED_BH"] == "Rejected by Functional Head"
+        assert STATUS_LABELS["REJECTED_BH"] == "Rejected by Business / Functional Head"
         assert STATUS_LABELS["REJECTED_DR_BHOON"] == "Rejected by Special Approver"
 
     def test_models_use_the_shared_labels(self, db):
@@ -72,7 +72,7 @@ class TestRoleAndStatusNames:
         with app.app_context():
             login(client, admin.email)
             html = client.get("/admin/users/new").get_data(as_text=True)
-        assert "Reporting Manager (RM)" in html and "Functional Head" in html and "Special Approver" in html
+        assert "Reporting Manager (RM)" in html and "Business / Functional Head" in html and "Special Approver" in html
 
 
 class TestAppName:

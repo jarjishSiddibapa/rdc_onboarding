@@ -130,14 +130,14 @@
             <p style="font-size:11px;color:var(--c-text-4);margin:5px 0 0;">Filter by the HR who submitted the request</p>
           </div>
           <div>
-            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Functional Head</label>
+            <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">Business / Functional Head</label>
             <select name="bh_id" class="inp inp-select" id="bh-select">
               <option value="">All functional heads</option>
               {% for bh in business_heads %}
               <option value="{{ bh.id }}">{{ bh.name }}</option>
               {% endfor %}
             </select>
-            <p style="font-size:11px;color:var(--c-text-4);margin:5px 0 0;">Shows all requests from Reporting Managers assigned to this Functional Head</p>
+            <p style="font-size:11px;color:var(--c-text-4);margin:5px 0 0;">Shows all requests from Reporting Managers assigned to this Business / Functional Head</p>
           </div>
         </div>
       </div>

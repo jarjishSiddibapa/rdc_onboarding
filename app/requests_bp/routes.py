@@ -154,7 +154,7 @@ def _finalize_submission(req):
         db.session.rollback()
         flash("An unexpected error occurred. Please try again.", "danger")
         return False
-    flash("Request submitted for Functional Head approval.", "success")
+    flash("Request submitted for Business / Functional Head approval.", "success")
     return True
 
 
@@ -184,7 +184,7 @@ def _validate_approver_availability(req):
     initiator = db.session.get(User, req.initiated_by)
     company = req.form_data.get("company_code", "")
     if not bh_ids_for_initiator(initiator, company):
-        return (f"No Functional Head is currently configured for {company}. "
+        return (f"No Business / Functional Head is currently configured for {company}. "
                 f"Contact your administrator before submitting this request.")
     # An HR-Manager-initiated request never visits PENDING_HR_MANAGER at all
     # (see get_new_status()) — checked here via the initiator's live role
@@ -254,7 +254,7 @@ def _persist_gate_check(req, gate: dict) -> StaffingGateCheck:
 
 
 def _bh_region_ids(user) -> set[int]:
-    """Cluster ids a Functional Head is scoped to on the RDC staffing dashboard."""
+    """Cluster ids a Business / Functional Head is scoped to on the RDC staffing dashboard."""
     from ..models import BusinessHeadRegion
     return {r.cluster_id for r in BusinessHeadRegion.query.filter_by(business_head_id=user.id)}
 
@@ -1914,7 +1914,7 @@ def view_request(token):
     cur_progress_hrm_skip = _PROGRESS_HRM_SKIP.get(sv, 0)
 
     _NEXT_ROLE_LABEL = {
-        "PENDING_BH":        "Functional Head",
+        "PENDING_BH":        "Business / Functional Head",
         "PENDING_DR_BHOON":  "Special Approver",
         "PENDING_HR_MANAGER":"HR Manager",
         "PENDING_HEAD_HR":   "Head HR",
@@ -1980,20 +1980,20 @@ def view_request(token):
 
         if path == "BH_BYPASS":
             _stage_defs = [
-                ("PENDING_BH",        "Functional Head Review"),
+                ("PENDING_BH",        "Business / Functional Head Review"),
                 ("PENDING_DR_BHOON",  "Special Approver Review"),
                 ("ACTIVE",            "Approved"),
             ]
         elif path == "OVER_NORM":
             _stage_defs = [
-                ("PENDING_BH",         "Functional Head — Over-Norm Approval"),
+                ("PENDING_BH",         "Business / Functional Head — Over-Norm Approval"),
                 ("PENDING_HEAD_HR",    "Head HR — Over-Norm Approval"),
                 ("PENDING_DR_BHOON",   "Special Approver — Over-Norm Approval"),
                 ("ACTIVE",             "Approved"),
             ]
         elif path == "OTHER_COMPANY":
             _stage_defs = [
-                ("PENDING_BH",         "Functional Head Review"),
+                ("PENDING_BH",         "Business / Functional Head Review"),
                 ("PENDING_HR_MANAGER", "HR Manager Review"),
                 ("PENDING_HEAD_HR",    "Head HR Review"),
                 ("PENDING_DR_BHOON",   "Special Approver Review"),
@@ -2001,20 +2001,20 @@ def view_request(token):
             ]
         elif path == "HR_MGR_SKIP_DR_BHOON":
             _stage_defs = [
-                ("PENDING_BH",        "Functional Head Review"),
+                ("PENDING_BH",        "Business / Functional Head Review"),
                 ("PENDING_HEAD_HR",   "Head HR Review"),
                 ("PENDING_DR_BHOON",  "Special Approver Review"),
                 ("ACTIVE",            "Approved"),
             ]
         elif path == "HR_MGR_SKIP":
             _stage_defs = [
-                ("PENDING_BH",        "Functional Head Review"),
+                ("PENDING_BH",        "Business / Functional Head Review"),
                 ("PENDING_HEAD_HR",   "Head HR Review"),
                 ("ACTIVE",            "Approved"),
             ]
         else:
             _stage_defs = [
-                ("PENDING_BH",         "Functional Head Review"),
+                ("PENDING_BH",         "Business / Functional Head Review"),
                 ("PENDING_HR_MANAGER", "HR Manager Review"),
                 ("PENDING_HEAD_HR",    "Head HR Review"),
                 ("ACTIVE",             "Approved"),
@@ -2531,7 +2531,7 @@ def _send_approval_notifications(db, req, new_status):
     if new_status == RequestStatus.PENDING_HR_MANAGER:
         recipients = User.query.filter(User.id.in_(hr_manager_ids_for_company(req.company_code))).all()
         notify_users(db, req, recipients,
-                     subject=f"Approved by Functional Head: {req.candidate_name}",
+                     subject=f"Approved by Business / Functional Head: {req.candidate_name}",
                      body=f"Please review the request for {req.candidate_name}.",
                      actions=True)
     elif new_status == RequestStatus.PENDING_HEAD_HR:
@@ -2544,7 +2544,7 @@ def _send_approval_notifications(db, req, new_status):
         # already does, or it would wrongly credit an HR Manager step that
         # never happened.
         recipients = User.query.filter_by(role=UserRole.HEAD_HR, is_active=True).all()
-        approved_by = "Functional Head" if (req.is_special_case or req.hr_manager_initiated) else "HR Manager"
+        approved_by = "Business / Functional Head" if (req.is_special_case or req.hr_manager_initiated) else "HR Manager"
         notify_users(db, req, recipients,
                      subject=f"Approved by {approved_by}: {req.candidate_name}",
                      body=f"{'Over-norm special approval' if req.is_special_case else 'Final approval'} "

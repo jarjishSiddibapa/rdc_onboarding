@@ -273,7 +273,7 @@ class TestNoEligibleApproverGuard:
             login(client, initiator.email)
             resp = client.post(f"/requests/{req.public_token}/submit", follow_redirects=True)
         assert resp.status_code == 200
-        assert b"no functional head" in resp.data.lower()
+        assert b"no business / functional head" in resp.data.lower()
         with app.app_context():
             assert _db.session.get(OnboardingRequest, req.id).status == RequestStatus.DRAFT
 

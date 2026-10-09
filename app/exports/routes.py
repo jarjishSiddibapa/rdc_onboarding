@@ -20,12 +20,12 @@ _ALLOWED_ROLES = (UserRole.SUPER_ADMIN, UserRole.HEAD_HR, UserRole.HR_MANAGER, U
 
 _STATUS_LABELS = {
     "DRAFT":             "Draft",
-    "PENDING_BH":        "Pending Functional Head",
+    "PENDING_BH":        "Pending Business / Functional Head",
     "PENDING_DR_BHOON":  "Pending Special Approval",
     "PENDING_HR_MANAGER":"Pending HR Manager",
     "PENDING_HEAD_HR":   "Pending Head HR",
     "ACTIVE":            "Approved",
-    "REJECTED_BH":       "Rejected by Functional Head",
+    "REJECTED_BH":       "Rejected by Business / Functional Head",
     "REJECTED_DR_BHOON": "Rejected by Special Approver",
     "REJECTED_HRM":      "Rejected by HR Manager",
     "REJECTED_HEAD_HR":  "Rejected by Head HR",
@@ -231,7 +231,7 @@ def _filter_chips(params):
 
     if p["bh_id_s"]:
         u = db.session.get(User, int(p["bh_id_s"])) if p["bh_id_s"].isdigit() else None
-        chips.append({"label": "Functional Head", "value": u.name if u else p["bh_id_s"]})
+        chips.append({"label": "Business / Functional Head", "value": u.name if u else p["bh_id_s"]})
 
     if p["retry_min_s"] or p["retry_max_s"]:
         val = f"{p['retry_min_s'] or '0'} – {p['retry_max_s'] or '∞'}"
@@ -316,7 +316,7 @@ def _build_excel(records, report_title="Employee Onboarding Report"):
         ("Status",            "_status",      22),
         ("Initiated By",      "_initiator",   22),
         ("RM Emp Code","_init_code",   18),
-        ("Functional Head Approval", "_bh_approval", 28),
+        ("Business / Functional Head Approval", "_bh_approval", 28),
         ("HR Manager Approval",      "_hrm_approval",28),
         ("Head HR Approval",         "_hhr_approval",28),
         ("Special Approver Approval","_sa_approval", 28),
@@ -453,7 +453,7 @@ def preview_excel():
         ("Status",            "_status"),
         ("Initiated By",      "_initiator"),
         ("RM Emp Code","_init_code"),
-        ("Functional Head Approval", "_bh_approval"),
+        ("Business / Functional Head Approval", "_bh_approval"),
         ("HR Manager Approval",      "_hrm_approval"),
         ("Head HR Approval",         "_hhr_approval"),
         ("Special Approver Approval","_sa_approval"),

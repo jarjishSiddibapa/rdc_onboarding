@@ -1086,7 +1086,7 @@ def get_all_employees(source=None, designation=None, department=None, resolved=N
     not just the ones with a known location). Filters combine with AND;
     `resolved` is 'yes' / 'no' / None (any). `cluster_names`, if given,
     restricts to employees whose cluster_location_key is in that set — used
-    to region-scope a Functional Head's view. Returns (rows, total_count) —
+    to region-scope a Business / Functional Head's view. Returns (rows, total_count) —
     rows capped at _EMPLOYEE_DIRECTORY_LIMIT so an unfiltered query of a
     few thousand employees doesn't render an enormous table. Scoped to RDC
     only (`company.is_(None)`, added 2026-09-15) — this is the "All

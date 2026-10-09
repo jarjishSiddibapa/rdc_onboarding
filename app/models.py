@@ -31,11 +31,11 @@ class RequestStatus(str, enum.Enum):
 
 
 # Display names (the enum VALUES above are stored in the DB and used in logic — never rename those).
-# 2026-10-08 stakeholder rename: Initiator -> Reporting Manager (RM), Business Head -> Functional Head,
+# 2026-10-08 stakeholder rename: Initiator -> Reporting Manager (RM), Business Head -> Business / Functional Head,
 # Dr. Bhoon -> Special Approver (status "Pending Special Approval").
 ROLE_LABELS = {
     "INITIATOR": "Reporting Manager (RM)",
-    "BUSINESS_HEAD": "Functional Head",
+    "BUSINESS_HEAD": "Business / Functional Head",
     "HR_MANAGER": "HR Manager",
     "HEAD_HR": "Head HR",
     "DR_BHOON": "Special Approver",
@@ -43,12 +43,12 @@ ROLE_LABELS = {
 }
 STATUS_LABELS = {
     "DRAFT": "Draft",
-    "PENDING_BH": "Pending Functional Head",
+    "PENDING_BH": "Pending Business / Functional Head",
     "PENDING_DR_BHOON": "Pending Special Approval",
     "PENDING_HR_MANAGER": "Pending HR Manager",
     "PENDING_HEAD_HR": "Pending Head HR",
     "ACTIVE": "Approved",
-    "REJECTED_BH": "Rejected by Functional Head",
+    "REJECTED_BH": "Rejected by Business / Functional Head",
     "REJECTED_DR_BHOON": "Rejected by Special Approver",
     "REJECTED_HRM": "Rejected by HR Manager",
     "REJECTED_HEAD_HR": "Rejected by Head HR",
@@ -671,7 +671,7 @@ class ClusterNameMapping(db.Model):
 
 
 class BusinessHeadRegion(db.Model):
-    """Which region(s) (clusters) a Functional Head is scoped to for the RDC staffing dashboard."""
+    """Which region(s) (clusters) a Business / Functional Head is scoped to for the RDC staffing dashboard."""
     __tablename__ = "business_head_regions"
     __table_args__ = (db.UniqueConstraint("business_head_id", "cluster_id"),)
 

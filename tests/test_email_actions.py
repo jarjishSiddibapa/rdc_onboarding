@@ -187,7 +187,7 @@ class TestConfirmPage:
         assert resp.status_code == 200
         assert "Approve this hiring request?" in page and "Asha &lt;b&gt;Rao&lt;/b&gt;" in page      # escaped
         assert "Confirm approval" in page and "Approved via email." in page
-        assert "Functional Head" in page and "Pending Functional Head" in page
+        assert "Business / Functional Head" in page and "Pending Business / Functional Head" in page
         assert "Sign in" not in page.split("<form")[0]                                              # nothing demanded first
 
     def test_reject_page_has_no_prefilled_reason(self, client, db, app):

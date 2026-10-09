@@ -963,7 +963,7 @@ def resume_pending_retries(app) -> int:
 
 _CACHE_TTL = 3 * 3600  # seconds — how long a pull is reused instead of re-fetching
 # How old the cache may be and still count as "warm" for read-only callers (duplicate
-# Aadhar/mobile/email checks). The full sync is nightly now, so this must outlast a day.
+# Aadhaar/mobile/email checks). The full sync is nightly now, so this must outlast a day.
 _WARM_MAX_AGE = 30 * 3600
 
 # Truein caps each getEmployeeDtls call at 1000 rows. The response's

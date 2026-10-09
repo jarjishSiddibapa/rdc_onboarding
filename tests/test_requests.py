@@ -175,11 +175,11 @@ class TestFormMobileFieldValidation:
 
 class TestGovtIdDuplicateCheck:
     """
-    Regression coverage for the 2026-09-10 fix: a Govt ID (Aadhar) collision
+    Regression coverage for the 2026-09-10 fix: a Govt ID (Aadhaar) collision
     with an existing Truein employee (request #32 'Barkha Patil' — "Govt ID
     already exist. Match found with GULSHAN KUMAR...") was only discovered
     at final-approval push time, after the entire multi-step approval chain
-    had already run. This live-checks the Aadhar field the moment the
+    had already run. This live-checks the Aadhaar field the moment the
     initiator fills it, mirroring the existing duplicate-email OTP check.
     """
 
@@ -221,7 +221,7 @@ class TestGovtIdDuplicateCheck:
 
     def test_aadhar_field_renders_with_duplicate_check_hook(self, client, db, app, initiator):
         db.session.add(FormField(
-            field_key="aadhar_no", field_label="Aadhar Number",
+            field_key="aadhar_no", field_label="Aadhaar Number",
             field_type=FieldType.TEXT, step=1, is_required=True, is_active=True,
         ))
         db.session.commit()
@@ -242,7 +242,7 @@ class TestMobileDuplicateCheck:
     warning) was only discovered at final-approval push time, after the
     entire multi-step approval chain had already run. This live-checks the
     Mobile Number field the moment the initiator fills it, mirroring the
-    existing duplicate-email/duplicate-Aadhar checks exactly.
+    existing duplicate-email/duplicate-Aadhaar checks exactly.
     """
 
     def test_no_duplicate_returns_ok(self, client, db, app, initiator):
@@ -259,7 +259,7 @@ class TestMobileDuplicateCheck:
         # column (kept in sync by _sync_quick_access() on every real form
         # save) rather than scanning form_data — this test bypasses that
         # helper by writing form_data directly, so it must set the mirror
-        # column itself too, same convention as the Aadhar test above.
+        # column itself too, same convention as the Aadhaar test above.
         other_req.candidate_mobile = "9123456789"
         db.session.commit()
         with app.app_context():
@@ -889,7 +889,7 @@ class TestSubmitAuthoritativeDuplicateCheck:
     _check_govt_id_registered/_check_mobile_registered were only ever wired
     into the on-blur AJAX endpoints (pure advisory UX) — nothing re-ran them
     at the actual submit, so a crafted POST (or simply two drafts saved with
-    the same Aadhar/email/mobile before either was submitted) bypassed them
+    the same Aadhaar/email/mobile before either was submitted) bypassed them
     completely, the exact "Barkha Patil" collision class this checking
     exists to catch. submit_request() now re-runs all three authoritatively
     right before the request leaves DRAFT.

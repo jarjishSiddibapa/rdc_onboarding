@@ -50,7 +50,7 @@ def _warm_caches(app):
     """
     Fill the in-process ZingHR/Truein employee caches WITHOUT writing a snapshot.
     Those caches are per-process (CLAUDE.md gotcha #1) and feed the form's Reporting
-    Manager picker and the duplicate Aadhar/mobile/email checks — with the snapshot
+    Manager picker and the duplicate Aadhaar/mobile/email checks — with the snapshot
     only recomputed at night, a mid-day restart would otherwise leave them empty
     until 2am.
     """

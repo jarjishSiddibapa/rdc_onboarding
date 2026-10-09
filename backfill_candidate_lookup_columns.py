@@ -11,7 +11,7 @@ app/requests_bp/routes.py).
 
 Reads directly from each row's form_data JSON blob — the same source
 _sync_quick_access() itself reads from — and writes the same
-lowercased-email / digits-only-Aadhar / digits-only-mobile normalization.
+lowercased-email / digits-only-Aadhaar / digits-only-mobile normalization.
 
 Idempotent — only touches rows where a mirror column doesn't already
 match what form_data implies. Safe to rerun after candidate_mobile was

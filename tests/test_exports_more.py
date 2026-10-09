@@ -43,7 +43,7 @@ def _preview(client, qs=""):
 
 def _cands(data):
     cols = data["columns"]
-    i = cols.index("Associate Name (as per Aadhar)")
+    i = cols.index("Associate Name (as per Aadhaar)")
     return sorted(row[i] for row in data["rows"])
 
 
@@ -52,7 +52,7 @@ def world(db):
     admin = _make_user("Exp Admin", "expadmin@t.com", UserRole.SUPER_ADMIN, db)
     ini = _make_user("Exp Ini", "expini@t.com", UserRole.INITIATOR, db, companies=["RDC", "ROBO"])
     # the report's form columns come from the configured FormFields (the test DB isn't seeded)
-    for i, (key, label) in enumerate((("associate_name", "Associate Name (as per Aadhar)"),
+    for i, (key, label) in enumerate((("associate_name", "Associate Name (as per Aadhaar)"),
                                        ("contract_from", "Contract From (Date of Joining)"))):
         db.session.add(FormField(field_key=key, field_label=label, field_type=FieldType.TEXT, step=1, sort_order=i))
     db.session.commit()
@@ -154,7 +154,7 @@ class TestExportWorkbook:
         assert row["Status"] == "Approved" and row["Initiated By"] == "Exp Ini"
         assert row["Functional Head Approval"] == "Exp BH (BH001)"
         assert row["Special Approver Approval"].startswith("Exp SA")
-        assert row["Associate Name (as per Aadhar)"] == "Excel Person"
+        assert row["Associate Name (as per Aadhaar)"] == "Excel Person"
         assert ws.cell(row=4, column=1).value == "Total records: 1"
 
     def test_download_is_audited_and_names_the_status(self, client, db, world):

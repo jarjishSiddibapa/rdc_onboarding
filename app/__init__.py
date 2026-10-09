@@ -312,7 +312,7 @@ def create_app():
 
     # ── Uploaded onboarding documents are NOT public (2026-10-07) ────────────
     # Flask's built-in static route serves everything under app/static/, which
-    # includes uploads/ — candidate Aadhar/PAN/certificates were reachable
+    # includes uploads/ — candidate Aadhaar/PAN/certificates were reachable
     # without any login by anyone holding the (random) file URL. Documents are
     # now only served through requests_bp.view_document/download_document,
     # which apply the same access rules as the request page. Profile pictures

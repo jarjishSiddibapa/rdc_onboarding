@@ -369,7 +369,7 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
 
     Checks, in order (mirrors _check_email_registered exactly):
       1. Our own DB — any other non-deleted, non-rejected request already
-         using this Aadhar number, via the indexed candidate_govt_id column
+         using this Aadhaar number, via the indexed candidate_govt_id column
          (kept in sync by _sync_quick_access() on every form save) rather
          than loading and JSON-parsing every request row on every blur.
       2. Truein's warm employee cache ONLY (never triggers a live pull).
@@ -386,7 +386,7 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
     if exclude_token:
         dup_q = dup_q.filter(OnboardingRequest.public_token != exclude_token)
     if dup_q.first():
-        return "This Aadhar number is already used on another onboarding request in this system."
+        return "This Aadhaar number is already used on another onboarding request in this system."
 
     from ..integrations import truein
     for e in (truein.get_cached_employees_if_warm() or []):
@@ -395,7 +395,7 @@ def _check_govt_id_registered(aadhar_no: str, exclude_token: str | None = None) 
             name = (e.get("name") or "").strip()
             code = (e.get("empId") or "").strip()
             who = f" — matches existing employee {name} ({code})" if name else ""
-            return f"This Aadhar number appears to already be registered in Truein{who}."
+            return f"This Aadhaar number appears to already be registered in Truein{who}."
 
     return None
 
@@ -574,7 +574,7 @@ def verify_email_otp():
 @role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
 def check_govt_id():
     """
-    Live duplicate check for the Aadhar Number field, fired on blur (see
+    Live duplicate check for the Aadhaar Number field, fired on blur (see
     form.html's checkGovtIdDuplicate()) — same "show the problem immediately"
     pattern as send_email_otp()'s duplicate-email check, added 2026-09-10.
     """
@@ -955,7 +955,7 @@ def submit_request(token):
     # _check_govt_id_registered/_check_mobile_registered were only ever wired
     # into the on-blur AJAX endpoints (pure advisory UX). Nothing re-ran them
     # at the actual submit, so a crafted POST — or simply two drafts saved
-    # with the same Aadhar/email/mobile before either is submitted — bypassed
+    # with the same Aadhaar/email/mobile before either is submitted — bypassed
     # them completely, exactly the "Barkha Patil" collision class this
     # checking exists to catch. Re-run all three here, authoritatively,
     # right before the request leaves DRAFT.
@@ -1049,7 +1049,7 @@ def resubmit_request(token):
     # Authoritative duplicate check — see the matching comment in
     # submit_request() above. A resubmit after rejection is exactly the
     # kind of second attempt that could otherwise reintroduce a collision
-    # (e.g. the initiator "fixes" one field but the Aadhar/email/mobile
+    # (e.g. the initiator "fixes" one field but the Aadhaar/email/mobile
     # duplicate was never the field they touched).
     for _dup_reason in (
         _check_email_registered(req.form_data.get("email_id", ""), exclude_token=req.public_token),

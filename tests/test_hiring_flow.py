@@ -34,7 +34,7 @@ def _fields(db):
         ("associate_name", "Associate Name", FieldType.TEXT, 1, True, OptionsSource.INLINE),
         ("email_id", "Email ID", FieldType.EMAIL, 1, True, OptionsSource.INLINE),
         ("mobile_number", "Mobile Number", FieldType.TEL, 1, True, OptionsSource.INLINE),
-        ("aadhar_no", "Aadhar Number", FieldType.TEXT, 1, True, OptionsSource.INLINE),
+        ("aadhar_no", "Aadhaar Number", FieldType.TEXT, 1, True, OptionsSource.INLINE),
         ("pan_number", "PAN Number", FieldType.TEXT, 1, True, OptionsSource.INLINE),
         ("designation", "Designation", FieldType.DROPDOWN, 1, True, OptionsSource.DESIGNATION),
         ("uan_number", "UAN Number", FieldType.TEXT, 1, False, OptionsSource.INLINE),
@@ -42,7 +42,7 @@ def _fields(db):
         ("contract_from", "Contract From", FieldType.DATE, 2, True, OptionsSource.INLINE),
         ("reporting_manager_name", "Reporting Manager Name", FieldType.TEXT, 2, True, OptionsSource.INLINE),
         ("pan_card", "PAN Card", FieldType.FILE, 3, True, OptionsSource.INLINE),
-        ("aadhar_card", "Aadhar Card", FieldType.FILE, 3, True, OptionsSource.INLINE),
+        ("aadhar_card", "Aadhaar Card", FieldType.FILE, 3, True, OptionsSource.INLINE),
         ("cv_resume", "CV / Resume", FieldType.FILE, 3, False, OptionsSource.INLINE),
     ]
     for i, (key, label, ftype, step, req, src) in enumerate(spec):

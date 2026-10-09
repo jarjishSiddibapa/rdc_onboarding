@@ -97,8 +97,8 @@ FORM_FIELDS = [
      "Select company", None,
      [("RDC", "RDC"), ("Ultrafine", "Ultrafine"), ("ROBO", "ROBO")]),
 
-    ("associate_name", "Associate Name (as per Aadhar)", FieldType.TEXT, 1, True, OptionsSource.INLINE, False, False,
-     "Full name as on Aadhar card", "Must exactly match Aadhar ID", []),
+    ("associate_name", "Associate Name (as per Aadhaar)", FieldType.TEXT, 1, True, OptionsSource.INLINE, False, False,
+     "Full name as on Aadhaar card", "Must exactly match Aadhaar ID", []),
 
     ("father_name", "Father Name", FieldType.TEXT, 1, True, OptionsSource.INLINE, False, False,
      "Father's full name", None, []),
@@ -146,8 +146,8 @@ FORM_FIELDS = [
     ("email_id", "Email ID", FieldType.EMAIL, 1, True, OptionsSource.INLINE, False, False,
      "candidate@example.com", None, []),
 
-    ("aadhar_no", "Aadhar Number", FieldType.TEXT, 1, True, OptionsSource.INLINE, False, False,
-     "12-digit Aadhar number", None, []),
+    ("aadhar_no", "Aadhaar Number", FieldType.TEXT, 1, True, OptionsSource.INLINE, False, False,
+     "12-digit Aadhaar number", None, []),
 
     ("pan_number", "PAN Number", FieldType.TEXT, 1, True, OptionsSource.INLINE, False, False,
      "e.g. ABCDE1234F", "Format: 5 letters + 4 digits + 1 letter", []),
@@ -224,7 +224,7 @@ FORM_FIELDS = [
     ("pan_card", "PAN Card (Photo/PDF)", FieldType.FILE, 3, True, OptionsSource.INLINE, False, False,
      None, "PDF or image, max 5MB", []),
 
-    ("aadhar_card", "Aadhar Card (Photo/PDF)", FieldType.FILE, 3, True, OptionsSource.INLINE, False, False,
+    ("aadhar_card", "Aadhaar Card (Photo/PDF)", FieldType.FILE, 3, True, OptionsSource.INLINE, False, False,
      None, "PDF or image, max 5MB", []),
 
     ("bank_details", "Bank Details (Statement/ Passbook Front/ Cancelled Cheque)", FieldType.FILE, 3, True, OptionsSource.INLINE, False, False,

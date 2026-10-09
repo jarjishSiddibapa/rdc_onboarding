@@ -977,6 +977,59 @@ _PAGE_DELAY_S = 50
 _employees_cache: list | None = None
 _employees_cache_at: float = 0.0
 
+# The pull takes ~8 minutes, so a copy is kept on disk (instance/ is gitignored — it holds real
+# employee data) and loaded back on the first read after a server restart. Without it every restart
+# left the Reporting Manager picker and the duplicate Aadhaar/mobile/email checks empty until the
+# next full pull finished. Disabled under tests so they never read or write the real file.
+_DISK_CACHE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                "instance", "truein_employees_cache.json")
+_disk_loaded = False
+_disk_lock = threading.Lock()
+
+
+def _disk_cache_enabled() -> bool:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return False
+    try:
+        from flask import current_app
+        return not current_app.config.get("TESTING")
+    except Exception:       # no app context (plain script) — fine to use the file
+        return True
+
+
+def _save_disk_cache(items: list, fetched_at: float) -> None:
+    if not _disk_cache_enabled():
+        return
+    try:
+        os.makedirs(os.path.dirname(_DISK_CACHE_PATH), exist_ok=True)
+        tmp = _DISK_CACHE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"fetched_at": fetched_at, "data": items}, f)
+        os.replace(tmp, _DISK_CACHE_PATH)
+    except Exception:
+        pass                # never let a disk problem break a real fetch
+
+
+def _load_disk_cache() -> None:
+    """Fill the in-memory cache from the last saved pull (once per process, only if memory is empty)."""
+    global _employees_cache, _employees_cache_at, _disk_loaded
+    if _disk_loaded or _employees_cache is not None:
+        return
+    with _disk_lock:
+        if _disk_loaded or _employees_cache is not None:
+            return
+        if not _disk_cache_enabled():
+            return
+        _disk_loaded = True
+        try:
+            with open(_DISK_CACHE_PATH, encoding="utf-8") as f:
+                blob = json.load(f)
+            data, at = blob.get("data"), float(blob.get("fetched_at") or 0)
+            if isinstance(data, list) and data and at > 0:
+                _employees_cache, _employees_cache_at = data, at
+        except Exception:
+            pass
+
 
 def _sub_key_headers() -> dict:
     return {"Subscription-key": SUBSCRIPTION_KEY, "Content-Type": "application/json"}
@@ -985,6 +1038,7 @@ def _sub_key_headers() -> dict:
 def _fetch_all_employees_raw() -> list[dict]:
     """Return the full raw employee list from Truein (all pages), cached for 3 hours."""
     global _employees_cache, _employees_cache_at
+    _load_disk_cache()
     now = time.time()
     if _employees_cache is not None and (now - _employees_cache_at) < _CACHE_TTL:
         return _employees_cache
@@ -1009,6 +1063,7 @@ def _fetch_all_employees_raw() -> list[dict]:
 
     _employees_cache = all_items
     _employees_cache_at = now
+    _save_disk_cache(all_items, now)
     return _employees_cache
 
 
@@ -1021,6 +1076,7 @@ def get_cached_employees_if_warm() -> list[dict] | None:
     of fetch_managers() when a stale/cold answer is acceptable. Returns None
     if nothing is cached yet.
     """
+    _load_disk_cache()
     if _employees_cache is not None and (time.time() - _employees_cache_at) < _WARM_MAX_AGE:
         return _employees_cache
     return None
@@ -1041,6 +1097,7 @@ def fetch_managers() -> list[dict]:
     raises if there's truly no cached data at all yet (e.g. a live failure
     on the very first call after a fresh server start).
     """
+    _load_disk_cache()
     try:
         employees = _fetch_all_employees_raw()
     except Exception:
@@ -1074,6 +1131,7 @@ def get_managers_from_cache_only() -> list[dict]:
     in practice, so this only ever returns [] in the narrow window right
     after a fresh server start before that first refresh completes.
     """
+    _load_disk_cache()
     return _filter_managers(_employees_cache or [])
 
 

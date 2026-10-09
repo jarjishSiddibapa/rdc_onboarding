@@ -57,6 +57,10 @@ def _warm_caches(app):
     from ..integrations import truein, zinghr
     for name, fn in (("Truein", truein._fetch_all_employees_raw), ("ZingHR", zinghr.fetch_active_employees)):
         try:
+            # Truein's pull takes ~8 min; if the copy saved on disk by the last pull is still usable,
+            # a restart just reuses it instead of starting another one.
+            if name == "Truein" and truein.get_cached_employees_if_warm() is not None:
+                continue
             fn()
         except Exception as exc:
             app.logger.error(f"[StaffingSnapshot] {name} cache warm-up failed: {exc}")

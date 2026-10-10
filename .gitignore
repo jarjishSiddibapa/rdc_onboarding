@@ -57,3 +57,7 @@ demo.db
 *.db
 
 *.log
+
+# Database backups (full copies of the live DB incl. personal data - never commit)
+backups/
+*.sql

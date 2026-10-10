@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Database Backup — RDC Associates Hiring Admin{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">Dashboard</a>
+  <span class="bc-sep">/</span>
+  <span class="bc-item bc-current">Database Backup</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+{% set s = settings %}
+<div style="max-width:980px;">
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:16px;flex-wrap:wrap;">
+    <div>
+      <h1 class="page-title">Database Backup</h1>
+      <p class="page-sub">A complete copy of the whole database — every table and all its data — saved automatically every day.</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      {% if running %}
+      <span class="badge" style="background:var(--c-warn-soft);color:var(--c-warn);border:1px solid var(--c-warn-border);">Backup running…</span>
+      {% elif s.enabled %}
+      <span class="badge" style="background:var(--c-success-soft);color:var(--c-success);border:1px solid var(--c-success-border);">Automatic backup ON</span>
+      {% else %}
+      <span class="badge" style="background:var(--c-warn-soft);color:var(--c-warn);border:1px solid var(--c-warn-border);">Automatic backup OFF</span>
+      {% endif %}
+      <form method="POST" action="{{ url_for('admin.backup_run_now') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-primary" {% if running %}disabled{% endif %}>Back up now</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- At a glance -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:14px;margin-bottom:22px;">
+    <div class="card" style="padding:16px 18px;">
+      <div style="font-size:11.5px;color:var(--c-text-4);margin-bottom:4px;">Next automatic backup</div>
+      <div style="font-size:15px;font-weight:700;color:var(--c-text-1);">
+        {% if next_run %}{{ next_run.strftime('%d/%m/%Y, %H:%M') }} IST{% else %}Off{% endif %}
+      </div>
+    </div>
+    <div class="card" style="padding:16px 18px;">
+      <div style="font-size:11.5px;color:var(--c-text-4);margin-bottom:4px;">Last good backup</div>
+      <div style="font-size:15px;font-weight:700;color:var(--c-text-1);">
+        {% if last_ok %}{{ last_ok.started_at|ist }}{% else %}None yet{% endif %}
+      </div>
+      {% if last_ok %}<div style="font-size:11.5px;color:var(--c-text-4);">{{ '%.1f'|format(last_ok.size_bytes / 1048576) }} MB · {{ last_ok.tables_count }} tables · {{ '{:,}'.format(last_ok.rows_count or 0) }} rows</div>{% endif %}
+    </div>
+    <div class="card" style="padding:16px 18px;">
+      <div style="font-size:11.5px;color:var(--c-text-4);margin-bottom:4px;">Saved in</div>
+      <div style="font-size:12.5px;font-weight:600;color:var(--c-text-1);word-break:break-all;">{{ directory }}</div>
+      {% if free_bytes is not none %}<div style="font-size:11.5px;color:var(--c-text-4);">{{ '%.1f'|format(free_bytes / 1073741824) }} GB free</div>{% endif %}
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card" style="padding:26px 28px;margin-bottom:24px;">
+    <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0 0 16px;">Settings</h2>
+    <form method="POST" style="display:flex;flex-direction:column;gap:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--c-text-1);">
+        <input type="checkbox" name="enabled" value="1" {% if s.enabled %}checked{% endif %} style="width:17px;height:17px;"/>
+        Take a backup automatically every day
+      </label>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:18px;">
+        <div>
+          <label for="bk-time" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Time of day (India time)</label>
+          <input class="inp" type="time" id="bk-time" name="time" value="{{ '%02d:%02d'|format(s.hour, s.minute) }}" required/>
+          <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">If the server was off at that time, the backup runs as soon as it is back on.</p>
+        </div>
+        <div>
+          <label for="bk-ret" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Keep backups for (days)</label>
+          <input class="inp" type="number" id="bk-ret" name="retention_days" min="0" max="3650" value="{{ s.retention_days }}"/>
+          <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">Older files are deleted automatically (the newest 3 are always kept). 0 = never delete.</p>
+        </div>
+      </div>
+
+      <div>
+        <label for="bk-dir" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Backup folder</label>
+        <input class="inp" type="text" id="bk-dir" name="backup_dir" value="{{ s.backup_dir or '' }}" placeholder="{{ default_dir }}" autocomplete="off"/>
+        <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">
+          Leave blank for the default folder next to the app. A backup on the same drive as the app is lost if that drive fails —
+          point this at another drive or a network folder (e.g. <code>D:\RDC-Backups</code>) for real safety.
+        </p>
+      </div>
+
+      <div style="border-top:1px solid var(--c-border);padding-top:18px;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--c-text-1);">
+          <input type="checkbox" name="email_enabled" value="1" {% if s.email_enabled %}checked{% endif %} style="width:17px;height:17px;"/>
+          Also e-mail each backup
+        </label>
+        <div style="margin-top:12px;">
+          <label for="bk-mail" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Send to (comma separated)</label>
+          <input class="inp" type="text" id="bk-mail" name="email_recipients" value="{{ s.email_recipients or '' }}" placeholder="name@company.com, other@company.com" autocomplete="off"/>
+          <p style="font-size:11.5px;color:var(--c-text-4);margin-top:4px;">
+            The file contains personal data and password hashes — only add people who may see everything.
+            Files over 20 MB are saved but not e-mailed.
+            {% if not email_ready %}<strong style="color:var(--c-warn);">E-mail is not set up yet — configure it in Email Settings first.</strong>{% endif %}
+          </p>
+        </div>
+      </div>
+
+      <div><button type="submit" class="btn btn-primary">Save settings</button></div>
+    </form>
+  </div>
+
+  <!-- History -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--c-border);">
+      <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">Backup history</h2>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl" style="width:100%;">
+        <thead><tr>
+          <th>When</th><th>How</th><th>Result</th><th>Size</th><th>E-mail</th><th style="text-align:right;">File</th>
+        </tr></thead>
+        <tbody>
+        {% for r in runs %}
+          <tr>
+            <td>{{ r.started_at|ist }}</td>
+            <td>{{ 'Automatic' if r.triggered_by == 'schedule' else 'Manual' }}</td>
+            <td>
+              {% if r.status == 'success' %}<span style="color:var(--c-success);font-weight:600;">Done</span>
+              {% elif r.status == 'running' %}<span style="color:var(--c-warn);font-weight:600;">Running…</span>
+              {% else %}<span style="color:var(--c-danger);font-weight:600;">Failed</span>
+                <div style="font-size:11.5px;color:var(--c-text-4);max-width:360px;">{{ r.message }}</div>{% endif %}
+            </td>
+            <td>{% if r.size_bytes %}{{ '%.2f'|format(r.size_bytes / 1048576) }} MB{% else %}—{% endif %}</td>
+            <td style="font-size:12px;">
+              {% if r.email_status == 'sent' %}Sent{% elif r.email_status == 'failed' %}<span style="color:var(--c-danger);" title="{{ r.email_message }}">Failed</span>
+              {% elif r.email_status == 'skipped' %}<span title="{{ r.email_message }}">Skipped</span>{% else %}—{% endif %}
+            </td>
+            <td style="text-align:right;white-space:nowrap;">
+              {% if r.status == 'success' and not r.is_deleted %}
+                <a class="btn btn-sm btn-secondary" href="{{ url_for('admin.backup_download', run_id=r.id) }}" download>Download</a>
+                <form method="POST" action="{{ url_for('admin.backup_delete', run_id=r.id) }}" style="display:inline;" class="js-confirm-form"
+                      data-confirm-title="Delete this backup?" data-confirm-body="{{ r.filename }} will be removed from the server. This cannot be undone."
+                      data-confirm-label="Delete">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                  <button type="submit" class="btn btn-sm btn-ghost" style="color:var(--c-danger);">Delete</button>
+                </form>
+              {% elif r.is_deleted %}<span style="font-size:12px;color:var(--c-text-4);">Removed</span>{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" style="text-align:center;color:var(--c-text-4);padding:28px;">No backups yet. Press “Back up now” to take the first one.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="padding:18px 22px;margin-top:24px;background:var(--c-info-soft);border-color:var(--c-info-border);">
+    <div style="font-size:13px;color:var(--c-info);line-height:1.7;">
+      <strong>Restoring a backup:</strong> each file is a standard MySQL dump that recreates the database and every table.
+      On a server with MySQL installed, run <code>mysql -u root -p &lt; file.sql</code>. Restoring replaces the current data with the backup's data,
+      so stop the app first. Keep the file private — it holds everything.
+    </div>
+  </div>
+</div>
+
+{% if running %}
+<script>
+  (function () {
+    var t = setInterval(function () {
+      fetch("{{ url_for('admin.backup_status') }}", {busy: false}).then(function (r) { return r.json(); })
+        .then(function (d) { if (!d.running) { clearInterval(t); window.location.reload(); } }).catch(function () {});
+    }, 3000);
+  })();
+</script>
+{% endif %}
+{% endblock %}

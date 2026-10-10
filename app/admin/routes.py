@@ -1767,3 +1767,168 @@ def new_cluster_mapping():
         return redirect(url_for("admin.cluster_mappings_list"))
     return render_template("admin/cluster_mapping_form.html", row=None)
 
+
+# ── Database Backup (2026-10-10) ──────────────────────────────────────────────
+# Settings + history for the automatic full-database backup (see app/services/db_backup.py).
+# SUPER_ADMIN only: a backup contains every table, including personal data and password hashes.
+
+def _backup_overview():
+    import shutil
+    from ..models import BackupRun
+    from ..services import db_backup
+    settings = db_backup.get_settings()
+    directory = db_backup.backup_dir(settings)
+    free = None
+    try:
+        probe = directory
+        while probe and not os.path.isdir(probe):
+            probe = os.path.dirname(probe)
+        free = shutil.disk_usage(probe).free if probe else None
+    except OSError:
+        pass
+    runs = BackupRun.query.order_by(BackupRun.started_at.desc()).limit(60).all()
+    last_ok = next((r for r in runs if r.status == "success"), None)
+    return {
+        "settings": settings, "directory": directory, "free_bytes": free, "runs": runs,
+        "running": db_backup.is_backup_running(), "last_ok": last_ok,
+        "next_run": db_backup.next_run_ist(settings),
+        "default_dir": db_backup.default_backup_dir(),
+        "email_ready": bool(db_backup_mail_ready()),
+    }
+
+
+def db_backup_mail_ready():
+    from ..utils import get_db_mail_config
+    return get_db_mail_config().get("username")
+
+
+@admin_bp.route("/backups", methods=["GET", "POST"])
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+def backups():
+    from ..services import db_backup
+    s = db_backup.get_settings()
+    if request.method == "POST":
+        errors = []
+        enabled = request.form.get("enabled") == "1"
+        try:
+            hh, mm = (request.form.get("time", "04:00").strip() or "04:00").split(":")[:2]
+            hour, minute = int(hh), int(mm)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError
+        except ValueError:
+            errors.append("Enter the time as HH:MM (24-hour, India time).")
+            hour, minute = s.hour, s.minute
+        try:
+            retention = int(request.form.get("retention_days", "14") or 0)
+            if not (0 <= retention <= 3650):
+                raise ValueError
+        except ValueError:
+            errors.append("Keep-for days must be a number from 0 to 3650 (0 = keep every backup).")
+            retention = s.retention_days
+        folder, folder_err = db_backup.validate_backup_dir(request.form.get("backup_dir", ""))
+        if folder_err:
+            errors.append(folder_err)
+            folder = s.backup_dir
+        email_enabled = request.form.get("email_enabled") == "1"
+        recipients_raw = request.form.get("email_recipients", "")
+        good, bad = db_backup.parse_recipients(recipients_raw)
+        if bad:
+            errors.append("These e-mail addresses look wrong: " + ", ".join(bad[:5]))
+        if len(good) > 10:
+            errors.append("At most 10 e-mail recipients.")
+        if email_enabled and not good:
+            errors.append("Add at least one e-mail address, or turn the e-mail copy off.")
+        if errors:
+            for e in errors:
+                flash(e, "danger")
+        else:
+            before = {"enabled": s.enabled, "time": f"{s.hour:02d}:{s.minute:02d}", "retention_days": s.retention_days,
+                      "backup_dir": s.backup_dir, "email_enabled": s.email_enabled}
+            s.enabled, s.hour, s.minute, s.retention_days = enabled, hour, minute, retention
+            s.backup_dir = folder or None
+            s.email_enabled, s.email_recipients = email_enabled, ", ".join(good) or None
+            s.updated_by = current_user.id
+            after = {"enabled": enabled, "time": f"{hour:02d}:{minute:02d}", "retention_days": retention,
+                     "backup_dir": s.backup_dir, "email_enabled": email_enabled, "recipients": good}
+            log_audit("USER_MGMT", "BACKUP_SETTINGS_UPDATED", resource_type="BackupSettings", resource_id=s.id,
+                      resource_label="Database backup settings", detail={"from": before, "to": after})
+            db.session.commit()
+            flash("Backup settings saved. They apply immediately.", "success")
+            return redirect(url_for("admin.backups"))
+    return render_template("admin/backups.html", **_backup_overview())
+
+
+@admin_bp.route("/backups/run", methods=["POST"])
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+@limiter.limit("10 per hour")
+def backup_run_now():
+    from ..services import db_backup
+    if db_backup.trigger_manual_backup(current_app._get_current_object(), current_user.id):
+        log_audit("USER_MGMT", "BACKUP_STARTED_MANUALLY", resource_type="BackupSettings",
+                  resource_label="Database backup (manual)")
+        db.session.commit()
+        flash("Backup started. It takes a moment - this page updates by itself.", "success")
+    else:
+        flash("A backup is already running. Wait for it to finish.", "warning")
+    return redirect(url_for("admin.backups"))
+
+
+@admin_bp.route("/backups/status")
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+def backup_status():
+    from ..models import BackupRun
+    from ..services import db_backup
+    last = BackupRun.query.order_by(BackupRun.started_at.desc()).first()
+    return jsonify({"running": db_backup.is_backup_running(), "last_id": last.id if last else None,
+                    "last_status": last.status if last else None})
+
+
+def _backup_file(run):
+    """The on-disk path of a backup, only if it is exactly the file we recorded."""
+    from ..services.db_backup import _FILENAME_RE
+    path = run.file_path or ""
+    if (run.is_deleted or run.status != "success" or not path or os.path.basename(path) != run.filename
+            or not _FILENAME_RE.match(run.filename) or not os.path.isfile(path)):
+        return None
+    return path
+
+
+@admin_bp.route("/backups/<int:run_id>/download")
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+def backup_download(run_id):
+    from flask import send_file
+    from ..models import BackupRun
+    run = db.session.get(BackupRun, run_id) or abort(404)
+    path = _backup_file(run)
+    if not path:
+        flash("That backup file is no longer on disk.", "warning")
+        return redirect(url_for("admin.backups"))
+    log_audit("USER_MGMT", "BACKUP_DOWNLOADED", resource_type="BackupRun", resource_id=run.id,
+              resource_label=run.filename)
+    db.session.commit()
+    resp = send_file(path, as_attachment=True, download_name=run.filename, mimetype="application/sql")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@admin_bp.route("/backups/<int:run_id>/delete", methods=["POST"])
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+def backup_delete(run_id):
+    from ..models import BackupRun
+    from ..services import db_backup
+    run = db.session.get(BackupRun, run_id) or abort(404)
+    if run.status == "running":
+        flash("That backup is still running.", "warning")
+    elif db_backup._remove_file(run):
+        log_audit("USER_MGMT", "BACKUP_DELETED", resource_type="BackupRun", resource_id=run.id,
+                  resource_label=run.filename)
+        db.session.commit()
+        flash(f"Deleted {run.filename}.", "success")
+    else:
+        flash("The file could not be removed.", "danger")
+    return redirect(url_for("admin.backups"))

@@ -536,6 +536,45 @@ class SystemConfig(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# ── Database backup (2026-10-10) ───────────────────────────────────────────────
+
+class BackupSettings(db.Model):
+    """Single-row, admin-editable settings for the automatic database backup (Admin -> Database Backup)."""
+    __tablename__ = "backup_settings"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    enabled          = db.Column(db.Boolean, nullable=False, default=True)
+    hour             = db.Column(db.Integer, nullable=False, default=4)      # IST wall clock
+    minute           = db.Column(db.Integer, nullable=False, default=0)
+    retention_days   = db.Column(db.Integer, nullable=False, default=14)     # 0 = keep every backup
+    backup_dir       = db.Column(db.String(500), nullable=True)              # blank = <project>/backups
+    email_enabled    = db.Column(db.Boolean, nullable=False, default=False)
+    email_recipients = db.Column(db.String(1000), nullable=True)
+    updated_by       = db.Column(db.Integer, nullable=True)
+    updated_at       = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BackupRun(db.Model):
+    """One backup attempt (scheduled or manual) and what happened to it."""
+    __tablename__ = "backup_runs"
+
+    id            = db.Column(db.Integer, primary_key=True)
+    filename      = db.Column(db.String(255), nullable=False)
+    file_path     = db.Column(db.String(600), nullable=True)
+    size_bytes    = db.Column(db.BigInteger, nullable=True)
+    tables_count  = db.Column(db.Integer, nullable=True)
+    rows_count    = db.Column(db.BigInteger, nullable=True)
+    status        = db.Column(db.String(20), nullable=False, default="running")   # running | success | failed
+    message       = db.Column(db.Text, nullable=True)
+    email_status  = db.Column(db.String(20), nullable=True)                       # sent | failed | skipped
+    email_message = db.Column(db.Text, nullable=True)
+    triggered_by  = db.Column(db.String(20), nullable=False, default="schedule")  # schedule | manual
+    triggered_by_user = db.Column(db.Integer, nullable=True)
+    is_deleted    = db.Column(db.Boolean, nullable=False, default=False)          # file removed (retention / admin)
+    started_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    finished_at   = db.Column(db.DateTime, nullable=True)
+
+
 # ── Audit Log ──────────────────────────────────────────────────────────────────
 
 class AuditLog(db.Model):

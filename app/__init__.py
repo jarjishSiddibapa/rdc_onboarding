@@ -444,4 +444,8 @@ def create_app():
     from .services.digest_email import start_digest_thread
     start_digest_thread(app)
 
+    # ── Automatic database backup (Admin -> Database Backup; on/off + time are admin settings) ──
+    from .services.db_backup import start_backup_scheduler
+    start_backup_scheduler(app)
+
     return app

@@ -60,7 +60,7 @@
           {# Legacy direct assignment — no longer settable via the UI, kept only so pre-2026-09-04 data still shows something meaningful. #}
           <span style="font-size:12.5px;color:#3A5CCC;font-weight:500;">{{ bh_info.name }}</span>
           <span style="font-size:10.5px;color:var(--c-text-5);background:var(--c-bg-2);border:1px solid var(--c-border);border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle;">legacy Business / Functional Head link</span>
-        {% elif user.role.value == 'INITIATOR' %}<span style="font-size:12px;color:var(--c-text-5);">Unassigned (all Business / Functional Heads see it)</span>
+        {% elif user.role.value == 'INITIATOR' %}<span style="font-size:12px;color:var(--c-text-5);">No region assigned</span>
         {% elif user.role.value == 'BUSINESS_HEAD' and bh_regions %}
           <span style="font-size:12.5px;color:#0891B2;font-weight:500;">{{ bh_regions|sort|join(', ') }}</span>
         {% elif user.role.value == 'BUSINESS_HEAD' %}<span style="font-size:12px;color:var(--c-text-5);">No regions</span>

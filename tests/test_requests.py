@@ -1002,16 +1002,46 @@ class TestSubmitAsSpecialCaseCompanyGuard:
 
     def test_rdc_request_is_still_marked_special_case(self, client, db, app):
         initiator = _make_user("SpecInitD", "specinitd@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        _make_user("SpecBH", "specbh@t.com", UserRole.BUSINESS_HEAD, db, companies=["RDC"])
         req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="RDC")
         req.form_data = dict(req.form_data, uan_number="UAN123456789")
         db.session.commit()
         token, req_id = req.public_token, req.id
 
+        import app.requests_bp.routes as _routes
+        from unittest import mock
+        blocked = {"allowed": False, "reason": "over_capacity", "details": {}}
         with app.app_context():
             login(client, initiator.email)
-            resp = client.post(f"/requests/{token}/submit-as-special-case", follow_redirects=True)
+            with mock.patch.object(_routes, "_check_submittable", return_value=None),                  mock.patch("app.services.staffing_norms.check_rdc_staffing_gate", return_value=blocked):
+                resp = client.post(f"/requests/{token}/submit-as-special-case", follow_redirects=True)
         assert resp.status_code == 200
-        assert _db.session.get(OnboardingRequest, req_id).is_special_case is True
+        got = _db.session.get(OnboardingRequest, req_id)
+        assert got.is_special_case is True
+        assert got.status == RequestStatus.PENDING_BH
+
+    def test_incomplete_draft_cannot_use_special_case_to_skip_validation(self, client, db, app):
+        """The fallback used to call _finalize_submission directly, skipping every submit rule."""
+        initiator = _make_user("SpecInitV", "specinitv@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="RDC")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+        with app.app_context():
+            login(client, initiator.email)
+            client.post(f"/requests/{token}/submit-as-special-case", follow_redirects=True)
+        got = _db.session.get(OnboardingRequest, req_id)
+        assert got.status == RequestStatus.DRAFT
+        assert got.is_special_case is False
+
+    def test_company_not_ticked_for_initiator_is_rejected(self, client, db, app):
+        initiator = _make_user("SpecInitC", "specinitc@t.com", UserRole.INITIATOR, db, companies=["RDC"])
+        req = _create_request(db, initiator, RequestStatus.DRAFT, company_code="ROBO")
+        db.session.commit()
+        token, req_id = req.public_token, req.id
+        with app.app_context():
+            login(client, initiator.email)
+            client.post(f"/requests/{token}/submit-as-special-case", follow_redirects=True)
+        assert _db.session.get(OnboardingRequest, req_id).status == RequestStatus.DRAFT
 
 
 class TestApproveRejectConcurrencyGuard:

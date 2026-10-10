@@ -122,7 +122,7 @@ def my_profile():
             current_pwd = request.form.get("current_password", "")
             new_pwd = request.form.get("new_password", "").strip()
             confirm_pwd = request.form.get("confirm_password", "").strip()
-            if not bcrypt.check_password_hash(current_user.password_hash, current_pwd):
+            if len(current_pwd.encode("utf-8")) > 72 or not bcrypt.check_password_hash(current_user.password_hash, current_pwd):
                 flash("Current password is incorrect.", "danger")
             else:
                 pwd_errors = validate_password(new_pwd)

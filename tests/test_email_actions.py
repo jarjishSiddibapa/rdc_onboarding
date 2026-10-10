@@ -447,6 +447,8 @@ class TestApprovalEmailsCarryButtons:
         db.session.flush()
         req.form_data = {"company_code": "ROBO", "associate_name": "Nidhi Gala", "plant_location": "Plant A",
                          "designation": "Engineer", "uan_number": "AB1234567890"}
+        from app.models import PlantLocation
+        db.session.add(PlantLocation(name="Plant A", company="ROBO"))
         db.session.commit()
         return init.email, bh.email, bh.id, req.public_token
 

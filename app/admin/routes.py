@@ -234,10 +234,16 @@ def new_user():
             parsed_role_for_check = None
         if not all([name, email, password, role_val, employee_code]):
             flash("All fields are required, including Employee Code.", "danger")
+        elif "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+            flash("Enter a valid email address.", "danger")
+        elif validate_password(password):
+            flash(" ".join(validate_password(password)), "danger")
         elif User.query.filter_by(email=email).first():
             flash("Email already in use.", "danger")
         elif username and User.query.filter_by(username=username).first():
             flash("Username already taken.", "danger")
+        elif User.query.filter_by(employee_code=employee_code).first():
+            flash("Employee Code already in use.", "danger")
         elif parsed_role_for_check in _COMPANY_SCOPED_ROLES and not ticked_companies:
             flash("Select at least one Company Scope tick mark for this role.", "danger")
         else:

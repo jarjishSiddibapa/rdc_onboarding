@@ -207,6 +207,9 @@ def _calc_allowed(requirements: list, basis_value: float):
     return total
 
 
+_LAST_KNOWN_VOLUME_RUNS = 5     # how many recent snapshot runs the volume fallback looks back over
+
+
 def get_last_known_plant_volumes() -> dict[str, float]:
     """
     plant_code -> most recent known-good production volume, reconstructed
@@ -216,9 +219,19 @@ def get_last_known_plant_volumes() -> dict[str, float]:
     slightly stale-but-real number reads far better than "Unknown" for
     something that was known minutes/hours ago.
     """
+    # Only the few most recent runs: each run re-writes the carried-forward volume, so older history adds
+    # nothing, and scanning/sorting the whole append-only table here took ~8s on the live DB.
+    recent_runs = (
+        db.session.query(StaffingSnapshot.computed_at).distinct()
+        .order_by(StaffingSnapshot.computed_at.desc()).limit(_LAST_KNOWN_VOLUME_RUNS).all()
+    )
+    if not recent_runs:
+        return {}
+    cutoff = min(r[0] for r in recent_runs)
     rows = (
         db.session.query(StaffingSnapshot.location_key, StaffingSnapshot.production_volume)
-        .filter(StaffingSnapshot.scope == NormScope.PLANT, StaffingSnapshot.production_volume.isnot(None))
+        .filter(StaffingSnapshot.scope == NormScope.PLANT, StaffingSnapshot.production_volume.isnot(None),
+                StaffingSnapshot.computed_at >= cutoff)
         .order_by(StaffingSnapshot.location_key, StaffingSnapshot.computed_at.desc())
         .all()
     )

@@ -71,6 +71,7 @@ def send_due_digests(app) -> dict:
 
 
 def _digest_loop(app):
+    from ..extensions import db
     with app.app_context():
         while True:
             try:
@@ -78,6 +79,11 @@ def _digest_loop(app):
                 app.logger.info(f"[DigestEmail] pass complete: {result}")
             except Exception as exc:
                 app.logger.error(f"[DigestEmail] pass failed: {exc}")
+            finally:
+                try:   # same long-lived-context hazard as snapshot_refresh._refresh_loop
+                    db.session.remove()
+                except Exception:
+                    pass
             time.sleep(_CHECK_INTERVAL_S)
 
 

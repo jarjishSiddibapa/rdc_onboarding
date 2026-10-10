@@ -28,6 +28,7 @@ def _apply_col_filters(q, company, designation):
 
 from flask_login import login_required, current_user
 from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 from ..extensions import db
 from ..models import OnboardingRequest, RequestStatus, UserRole, Notification, User
 from ..utils import ROLE_QUEUES, REJECTED_STATUSES, PENDING_STATUSES, log_audit
@@ -309,7 +310,7 @@ def notifications():
         filter_type = "all"
         q = base_q
 
-    pagination = q.order_by(Notification.sent_at.desc()).paginate(
+    pagination = q.options(joinedload(Notification.request)).order_by(Notification.sent_at.desc()).paginate(
         page=page, per_page=pp, error_out=False
     )
 

@@ -255,7 +255,15 @@ def create_app():
 
     # ── ProxyFix: trust 1 level of reverse-proxy headers so that
     #    request.remote_addr, request.scheme, etc. reflect the real client ───────
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    #    The app is normally served directly (no proxy in front), where trusting these headers lets any
+    #    client forge its IP (defeating rate limits, falsifying audit IPs) and Host. Trust them only when
+    #    TRUSTED_PROXIES (env) says how many proxies really sit in front.
+    try:
+        _proxies = int(os.environ.get("TRUSTED_PROXIES", "0") or 0)
+    except ValueError:
+        _proxies = 0
+    if _proxies > 0:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxies, x_proto=_proxies, x_host=_proxies, x_prefix=_proxies)
 
     # ── Warn at startup if running with the insecure default secret key ─────────
     _sk = app.config.get("SECRET_KEY", "")
@@ -293,10 +301,13 @@ def create_app():
     @app.before_request
     def enforce_session_timeout():
         """Force re-login if user has been idle for PERMANENT_SESSION_LIFETIME."""
+        # Static assets first: checking current_user would cost a DB user load per CSS/JS/font file.
+        if request.endpoint == "static":
+            return
         if not current_user.is_authenticated:
             return
         # Exempt the logout route itself to avoid redirect loop
-        if request.endpoint in ("auth.logout", "auth.login", "static"):
+        if request.endpoint in ("auth.logout", "auth.login"):
             return
         last_active = session.get("_last_active")
         now = datetime.utcnow().timestamp()
@@ -376,7 +387,11 @@ def create_app():
             "style-src 'self' 'unsafe-inline'; "
             "font-src 'self'; "
             "img-src 'self' data:; "
-            "connect-src 'self';"
+            "connect-src 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "frame-ancestors 'self'; "
+            "object-src 'none';"
         )
         return response
 

@@ -30,8 +30,8 @@
       --c-text-1:   #2d3142;
       --c-text-2:   #3d4357;
       --c-text-3:   #5a6278;
-      --c-text-4:   #7d8699;
-      --c-text-5:   #a8adb8;
+      --c-text-4:   #667085;
+      --c-text-5:   #8590a2;
 
       --c-border:          #e2e5ec;
       --c-border-h:        #c8ccd6;
@@ -109,9 +109,9 @@
 
       --c-text-1:   #f0f2f7;
       --c-text-2:   #d2d7e4;
-      --c-text-3:   #8c96aa;
-      --c-text-4:   #626c7e;
-      --c-text-5:   #454d60;
+      --c-text-3:   #a3adc0;
+      --c-text-4:   #98a2b6;
+      --c-text-5:   #7b869b;
 
       --c-border:          rgba(255,255,255,0.09);
       --c-border-h:        rgba(255,255,255,0.16);
@@ -1041,3 +1041,14 @@
 .ss-opt mark { background: var(--c-primary-glow); color: inherit; border-radius: 2px; padding: 0; }
 .ss-group { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--c-text-4); }
 .ss-none { padding: 10px; font-size: 13px; color: var(--c-text-4); }
+
+/* ── Responsive / motion fixes (2026-10-10 audit) ───────────────────────── */
+@media (max-width: 900px) {
+  .detail-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+@media (max-width: 480px) {
+  .step-label { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

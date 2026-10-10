@@ -1035,6 +1035,9 @@ def _sub_key_headers() -> dict:
     return {"Subscription-key": SUBSCRIPTION_KEY, "Content-Type": "application/json"}
 
 
+_pull_lock = threading.Lock()
+
+
 def _fetch_all_employees_raw() -> list[dict]:
     """Return the full raw employee list from Truein (all pages), cached for 3 hours."""
     global _employees_cache, _employees_cache_at
@@ -1042,7 +1045,17 @@ def _fetch_all_employees_raw() -> list[dict]:
     now = time.time()
     if _employees_cache is not None and (now - _employees_cache_at) < _CACHE_TTL:
         return _employees_cache
+    # One ~8-minute pull at a time: boot warm-up and "Sync Now" used to be able to run two at once
+    # (rate-limit risk). A caller that waited here picks up the fresh result instead of pulling again.
+    with _pull_lock:
+        now = time.time()
+        if _employees_cache is not None and (now - _employees_cache_at) < _CACHE_TTL:
+            return _employees_cache
+        return _pull_all_employees(now)
 
+
+def _pull_all_employees(now: float) -> list[dict]:
+    global _employees_cache, _employees_cache_at
     all_items: list[dict] = []
     last_uid = ""
     while True:

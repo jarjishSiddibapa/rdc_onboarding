@@ -1,7 +1,7 @@
 import json as _json
 import threading
 from functools import wraps
-from flask import abort, current_app
+from flask import abort, current_app, g
 from flask_login import current_user
 from flask_mail import Message
 from .extensions import mail
@@ -15,6 +15,8 @@ def validate_password(pw: str) -> list[str]:
     errors = []
     if len(pw) < 8:
         errors.append("Password must be at least 8 characters.")
+    if len(pw.encode("utf-8")) > 72:   # bcrypt only handles 72 bytes (longer raises, which used to be a 500)
+        errors.append("Password is too long (maximum 72 characters).")
     if not any(c.isupper() for c in pw):
         errors.append("Password must contain at least one uppercase letter.")
     if not any(c.isdigit() for c in pw):
@@ -351,10 +353,37 @@ def notify_users(db, request_obj, recipients, subject, body, category="HIRING", 
             continue
         links = build_email_links(request_obj, user, with_actions=actions)
         if links:
-            send_email(subject, [user.email], render_email_text(body, links),
-                       html=render_email_html(subject, body, request_obj, links))
+            _dispatch_email(subject, [user.email], render_email_text(body, links),
+                            html=render_email_html(subject, body, request_obj, links))
         else:
-            send_email(subject, [user.email], body)
+            _dispatch_email(subject, [user.email], body)
+
+
+# Mail that describes a database change must only go out once that change is really saved. A route that
+# calls begin_deferred_emails() collects its notify_users() mail here; flush_deferred_emails() sends it after
+# a successful commit, discard_deferred_emails() drops it if the commit failed. Without begin_*, mail is
+# sent immediately (the old behaviour) so every other caller is unaffected.
+def begin_deferred_emails():
+    g._deferred_emails = []
+
+
+def discard_deferred_emails():
+    g._deferred_emails = None
+
+
+def flush_deferred_emails():
+    pending = g.get("_deferred_emails")
+    g._deferred_emails = None
+    for args, kwargs in (pending or []):
+        send_email(*args, **kwargs)
+
+
+def _dispatch_email(subject, recipients, body, **kwargs):
+    pending = g.get("_deferred_emails")
+    if pending is not None:
+        pending.append(((subject, recipients, body), kwargs))
+    else:
+        send_email(subject, recipients, body, **kwargs)
 
 
 # ── Approve / Reject straight from the email (2026-10-08) ─────────────────────
@@ -578,13 +607,8 @@ def log_audit(category, action_type, *,
 
         _ip = None
         try:
-            # ProxyFix (applied in create_app) makes remote_addr the real client IP.
-            # Fall back through common forwarding headers just in case.
-            _ip = (
-                _freq.environ.get("HTTP_X_REAL_IP")
-                or _freq.environ.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
-                or _freq.remote_addr
-            )
+            # ProxyFix (only when TRUSTED_PROXIES is set) makes remote_addr the real client IP.
+            _ip = _freq.remote_addr   # client-supplied forwarding headers are forgeable
         except Exception:
             pass
 

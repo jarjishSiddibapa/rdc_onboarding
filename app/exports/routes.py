@@ -77,6 +77,9 @@ def _apply_filters(params, viewer=None):
         my_companies = company_scope_ids(viewer.id)
         q = q.filter(OnboardingRequest.company_code.in_(my_companies)) if my_companies else q.filter(db.false())
 
+    # Drafts are private to their Reporting Manager everywhere else in the app - never export them.
+    q = q.filter(OnboardingRequest.status != RequestStatus.DRAFT)
+
     # Status
     if p["statuses_raw"]:
         try:
@@ -362,6 +365,8 @@ def _build_excel(records, report_title="Employee Onboarding Report"):
         for ci, (_, key, _) in enumerate(all_cols, 1):
             val = _cell_val(req, key, plant_name_cache)
             c = ws.cell(row=ri, column=ci, value=val)
+            if isinstance(val, str) and val[:1] in ("=", "+", "-", "@"):
+                c.data_type = "s"   # user text must never be evaluated as a spreadsheet formula
             c.font = dat_font; c.alignment = dat_align; c.border = bdr
             if ri % 2 == 0:
                 c.fill = alt_fill

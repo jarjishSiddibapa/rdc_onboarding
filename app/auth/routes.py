@@ -4,7 +4,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from ..extensions import db, bcrypt, mail, limiter
 from ..models import User
-from ..utils import send_email, validate_password, log_audit
+from ..utils import send_email, validate_password, log_audit, app_base_url
 from . import auth_bp
 
 
@@ -70,7 +70,8 @@ def login():
             or User.query.filter_by(username=login_lower).first()
         )
 
-        if user and user.is_active and bcrypt.check_password_hash(user.password_hash, password):
+        if (user and user.is_active and len(password.encode("utf-8")) <= 72
+                and bcrypt.check_password_hash(user.password_hash, password)):
             # ── Successful login — reset counters ──
             user.failed_login_attempts = 0
             user.locked_until = None
@@ -83,7 +84,8 @@ def login():
             session["_last_active"] = datetime.utcnow().timestamp()
             next_page = request.args.get("next")
             # Guard against open-redirect: only allow relative paths
-            if next_page and (next_page.startswith("http") or "//" in next_page):
+            if next_page and (not next_page.startswith("/") or next_page.startswith("//")
+                              or "\\" in next_page or "//" in next_page):
                 next_page = None
             return redirect(next_page or url_for("main.dashboard"))
 
@@ -146,7 +148,13 @@ def forgot_password():
         # Always show success even if email not found (prevents user enumeration)
         if user and user.is_active:
             token = _make_reset_token(user)
-            reset_url = url_for("auth.reset_password", token=token, _external=True)
+            # Link host comes from the admin-controlled app address, never the request's Host header
+            # (a forged Host would otherwise point the victim's reset link at an attacker's server).
+            _base = app_base_url()
+            if _base:
+                reset_url = _base + url_for("auth.reset_password", token=token)
+            else:
+                reset_url = url_for("auth.reset_password", token=token, _external=True)
             body = (
                 f"Hello {user.name},\n\n"
                 f"You requested a password reset for your RDC Associates Hiring account.\n\n"

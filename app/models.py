@@ -296,7 +296,9 @@ class User(UserMixin, db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return db.session.get(User, int(user_id))
+    # A deactivated account must lose its live session / remember-me cookie at once.
+    u = db.session.get(User, int(user_id))
+    return u if u is not None and u.is_active else None
 
 
 # ── Onboarding Request ─────────────────────────────────────────────────────────

@@ -42,7 +42,7 @@
           <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
           {% else %}{{ i }}{% endif %}
         </div>
-        <span style="font-size:12.5px;font-weight:{% if step == i %}600{% else %}500{% endif %};color:{% if step > i %}var(--c-success){% elif step == i %}var(--c-primary){% else %}var(--c-text-4){% endif %};">{{ label }}</span>
+        <span class="step-label" style="font-size:12.5px;font-weight:{% if step == i %}600{% else %}500{% endif %};color:{% if step > i %}var(--c-success){% elif step == i %}var(--c-primary){% else %}var(--c-text-4){% endif %};">{{ label }}</span>
       </div>
       {% if not loop.last %}
       <div style="flex:1;height:1.5px;margin:0 12px;background:{% if step > i %}var(--c-success){% else %}var(--c-border){% endif %};"></div>
@@ -274,7 +274,7 @@
             {% set opts = field.active_options if field.options_source == OptionsSource.INLINE else [] %}
             <div style="display:flex;flex-wrap:wrap;gap:10px;">
               {% for opt in opts %}
-              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 14px;border-radius:8px;border:1.5px solid {% if val == opt.option_value %}#ef8354{% else %}#D9DDE8{% endif %};background:{% if val == opt.option_value %}#F5F3FF{% else %}#fff{% endif %};transition:all 0.12s;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 14px;border-radius:8px;border:1.5px solid {% if val == opt.option_value %}#ef8354{% else %}var(--c-border){% endif %};background:{% if val == opt.option_value %}var(--c-primary-soft){% else %}var(--c-surface){% endif %};transition:all 0.12s;">
                 <input type="radio" name="{{ field.field_key }}" value="{{ opt.option_value }}"
                   {% if val == opt.option_value %}checked{% endif %}
                   {% if field.is_required %}required{% endif %}
@@ -372,7 +372,7 @@
               <span style="color:#6EE7B7;font-size:12px;">— already uploaded. Upload again to replace.</span>
             </div>
             {% endif %}
-            <div style="border:1.5px dashed #D9DDE8;border-radius:8px;padding:16px;text-align:center;background:#FAFBFC;transition:border 0.15s;">
+            <div style="border:1.5px dashed var(--c-border);border-radius:8px;padding:16px;text-align:center;background:var(--c-surface-2);transition:border 0.15s;">
               <input type="file" name="{{ field.field_key }}"
                 {% if field.is_required and not existing %}required{% endif %}
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
@@ -480,7 +480,7 @@
   <!-- Hiring Capacity popup — RDC staffing gate live pre-check (see /requests/api/check-hiring-capacity) -->
   <div id="capacity-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
     <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="capacity-modal-overlay"></div>
-    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+    <div style="position:relative;background:var(--c-surface);border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
       <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
         <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
           <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -492,7 +492,7 @@
       </div>
       <!-- Short summary: production volume / bracket, manpower now, maximum allowed (filled by showCapacityModal) -->
       <ul id="capacity-modal-summary" style="display:none;list-style:none;margin:0 0 14px;padding:12px 14px;font-size:13px;line-height:1.55;color:var(--c-text-2);background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;"></ul>
-      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+      <p style="font-size:12.5px;color:var(--c-text-3);background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
         In case you need extra manpower, please obtain <strong>SPECIAL approval</strong> from the Head Office
         through your Business / Functional Head, providing detailed justification.
       </p>
@@ -505,7 +505,7 @@
 
   <div id="duplicate-email-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
     <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="duplicate-email-modal-overlay"></div>
-    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+    <div style="position:relative;background:var(--c-surface);border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
       <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
         <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
           <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -515,7 +515,7 @@
           <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="duplicate-email-modal-msg"></p>
         </div>
       </div>
-      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+      <p style="font-size:12.5px;color:var(--c-text-3);background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
         This is an early best-effort check, not a guarantee — please double-check the email before continuing. If you're sure it's correct, you can still send the OTP again.
       </p>
       <div style="display:flex;gap:10px;">
@@ -526,7 +526,7 @@
 
   <div id="duplicate-govtid-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
     <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="duplicate-govtid-modal-overlay"></div>
-    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+    <div style="position:relative;background:var(--c-surface);border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
       <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
         <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
           <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -536,7 +536,7 @@
           <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="duplicate-govtid-modal-msg"></p>
         </div>
       </div>
-      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+      <p style="font-size:12.5px;color:var(--c-text-3);background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
         This is an early best-effort check, not a guarantee — please double-check the number before continuing. If it's genuinely correct, fix the collision (with HR) before this request can be approved.
       </p>
       <div style="display:flex;gap:10px;">
@@ -547,7 +547,7 @@
 
   <div id="duplicate-mobile-modal" style="display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;">
     <div style="position:absolute;inset:0;background:rgba(10,37,64,0.45);backdrop-filter:blur(4px);" id="duplicate-mobile-modal-overlay"></div>
-    <div style="position:relative;background:#fff;border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
+    <div style="position:relative;background:var(--c-surface);border-radius:14px;padding:28px;width:440px;max-width:calc(100vw - 32px);box-shadow:0 24px 64px rgba(10,37,64,0.22);">
       <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;">
         <div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:#FEF2F2;display:flex;align-items:center;justify-content:center;">
           <svg width="20" height="20" fill="none" stroke="#DC2626" viewBox="0 0 24 24" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -557,7 +557,7 @@
           <p style="font-size:13.5px;color:var(--c-text-3);margin:0;" id="duplicate-mobile-modal-msg"></p>
         </div>
       </div>
-      <p style="font-size:12.5px;color:var(--c-text-3);background:#F9FAFB;border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
+      <p style="font-size:12.5px;color:var(--c-text-3);background:var(--c-surface-2);border:1px solid var(--c-border);border-radius:8px;padding:10px 12px;margin:0 0 18px;">
         This is an early best-effort check, not a guarantee — please double-check the number before continuing. If it's genuinely correct, fix the collision (with HR) before this request can be approved.
       </p>
       <div style="display:flex;gap:10px;">

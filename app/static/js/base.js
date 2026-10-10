@@ -48,7 +48,8 @@ document.addEventListener('click', function(e) {
   var b = e.target.closest('.flash-close');
   if (b) dismissFlash(b);
 });
-document.querySelectorAll('.flash').forEach(function(el, i) {
+document.querySelectorAll('.flash-success, .flash-info').forEach(function(el, i) {
+  // Errors and warnings stay until dismissed - they may be the only explanation of why an action failed.
   setTimeout(function() {
     if (el.parentElement) { var b = el.querySelector('.flash-close'); if (b) b.click(); }
   }, 5200 + i * 350);
@@ -74,7 +75,9 @@ function animateCount(el) {
    STAGGERED TABLE ROW ENTRANCE
 ════════════════════════════════════════════════════ */
 function animateTableRows() {
-  document.querySelectorAll('.tbl tbody tr').forEach(function(tr, i) {
+  var rows = document.querySelectorAll('.tbl tbody tr');
+  if (rows.length > 40) return;   // long lists just appear - a 200-row staggered fade took seconds to finish
+  rows.forEach(function(tr, i) {
     tr.style.cssText += 'opacity:0;transform:translateY(7px);transition:none;';
     setTimeout(function() {
       tr.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
@@ -275,6 +278,7 @@ document.addEventListener('submit', function(e) {
   // (The old querySelector('[type=submit]') picked the first one, so on the hiring form
   // "Back" (steps 2-3) and "Save Draft" (step 1) disabled THEMSELVES, and a disabled
   // submitter's name/value is left out of the POST — the server never got action=back.)
+  if (e.target.classList && e.target.classList.contains('js-confirm-form')) return;   // confirm modal not answered yet
   var btn = e.submitter || e.target.querySelector('[type="submit"]');
   if (!btn || btn.dataset.noLoading) return;
   btn.classList.add('btn--loading');
@@ -381,11 +385,17 @@ document.addEventListener('click', function(e) {
   var link = e.target.closest('a[href]');
   if (!link) return;
   var href = link.getAttribute('href');
-  if (!href || href.startsWith('#') || href.startsWith('javascript') || e.ctrlKey || e.metaKey || link.target === '_blank') return;
+  if (!href || href.startsWith('#') || href.startsWith('javascript') || href.startsWith('mailto:') || href.startsWith('tel:') ||
+      e.ctrlKey || e.metaKey || e.shiftKey || link.target === '_blank') return;
+  // File downloads never unload the page, so fading the body out would leave a blank screen for good.
+  if (link.hasAttribute('download') || link.hasAttribute('data-no-busy') ||
+      /\/download|\/documents\//.test(link.pathname || '')) return;
   e.preventDefault();
   document.body.style.transition = 'opacity 0.16s ease';
   document.body.style.opacity = '0';
   setTimeout(function() { window.location = href; }, 160);
+  // Safety net: if navigation never replaces this page (unexpected download response), bring it back.
+  setTimeout(function() { document.body.style.opacity = '1'; }, 4000);
 });
 window.addEventListener('pageshow', function() {
   document.body.style.transition = '';

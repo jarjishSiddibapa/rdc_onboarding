@@ -68,6 +68,7 @@ def _warm_caches(app):
 
 def _refresh_loop(app):
     from . import headcount
+    from ..extensions import db
     with app.app_context():
         next_run = None
         while True:
@@ -89,6 +90,14 @@ def _refresh_loop(app):
                 app.logger.error(f"[StaffingSnapshot] refresh failed: {exc}")
                 # Don't hammer a failing source: retry in 30 minutes, not every poll tick.
                 next_run = datetime.utcnow() + timedelta(minutes=30)
+            finally:
+                # This thread holds ONE app context for the process lifetime. Without releasing the session
+                # each tick, an idle read transaction outlives MySQL's wait_timeout (8h) and every later
+                # query - including the 02:00 sync - fails until restart (PendingRollbackError).
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
             time.sleep(_POLL_S)
 
 

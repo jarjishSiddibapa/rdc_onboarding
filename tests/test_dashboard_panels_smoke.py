@@ -62,4 +62,4 @@ class TestDashboardSpecialNormalPanels:
         assert "Normal Approvals" in body
         assert "Special Candidate" in body
         assert "Normal Candidate" in body
-        assert "View completed onboardings" in body
+        assert "View completed hires" in body

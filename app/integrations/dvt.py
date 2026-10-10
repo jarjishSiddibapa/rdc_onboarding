@@ -72,6 +72,10 @@ def _auth_headers() -> dict:
 _CACHE_TTL_S = 3600
 _volumes_cache: dict[str, dict] = {}
 _volumes_cache_at: dict[str, float] = {}
+# After a failed call, don't retry for a short while: during a DVT outage every request would otherwise
+# wait out the full timeouts again (token call + volume call) before falling back to last-known data.
+_FAILURE_BACKOFF_S = 60
+_last_failure_at = 0.0
 
 
 def fetch_monthly_volumes(month: str) -> dict:
@@ -85,14 +89,22 @@ def fetch_monthly_volumes(month: str) -> dict:
     if month in _volumes_cache and (now - cached_at) < _CACHE_TTL_S:
         return _volumes_cache[month]
 
-    resp = requests.get(
-        f"{BASE_URL}/api/v1/volumes/monthly",
-        params={"month": month},
-        headers=_auth_headers(),
-        timeout=30,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    global _last_failure_at
+    if _last_failure_at and (now - _last_failure_at) < _FAILURE_BACKOFF_S:
+        raise RuntimeError("DVT recently unreachable - skipping live call for a moment")
+    try:
+        resp = requests.get(
+            f"{BASE_URL}/api/v1/volumes/monthly",
+            params={"month": month},
+            headers=_auth_headers(),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        _last_failure_at = time.time()
+        raise
+    _last_failure_at = 0.0
     _volumes_cache[month] = data
     _volumes_cache_at[month] = now
     return data

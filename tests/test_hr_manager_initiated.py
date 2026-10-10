@@ -36,6 +36,10 @@ def _create_request(db, user, status=RequestStatus.DRAFT, candidate_name="Test C
     req.form_data = {"company_code": company_code, "associate_name": candidate_name,
                       "plant_location": "Plant A", "designation": "Engineer",
                       "uan_number": "UAN123456789"}
+    if company_code != "RDC":   # submit now requires a non-RDC plant to be a real plant of that company
+        from app.models import PlantLocation
+        if not PlantLocation.query.filter_by(name="Plant A", company=company_code).first():
+            db.session.add(PlantLocation(name="Plant A", company=company_code))
     db.session.flush()
     return req
 

@@ -38,7 +38,7 @@
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
+  <div class="detail-grid" style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
 
     <!-- Left: Form data -->
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -358,7 +358,7 @@
 
 <!-- Approve modal -->
 <div id="approve-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
-  <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+  <div style="background:var(--c-surface);border-radius:14px;width:100%;max-width:440px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
       <div style="width:32px;height:32px;background:#ECFDF3;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
         <svg width="16" height="16" fill="none" stroke="#046C4E" viewBox="0 0 24 24" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -389,7 +389,7 @@
 
 <!-- Reject modal -->
 <div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
-  <div style="background:#fff;border-radius:14px;width:100%;max-width:440px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+  <div style="background:var(--c-surface);border-radius:14px;width:100%;max-width:440px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
       <div style="width:32px;height:32px;background:#FEF2F2;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
         <svg width="16" height="16" fill="none" stroke="var(--c-danger)" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -414,7 +414,7 @@
      seen locally. Lets them continue anyway (Truein's own fallback chain
      still runs) or go back without approving. -->
 <div id="truein-preflight-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
-  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+  <div style="background:var(--c-surface);border-radius:14px;width:100%;max-width:460px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
       <div style="width:32px;height:32px;background:#FFFBEB;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
         <svg width="16" height="16" fill="none" stroke="#D97706" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856C18.448 19 19 18.105 19 17L12 2 5 17c0 1.105.552 2 1.082 2z"/></svg>
@@ -441,7 +441,7 @@
      happened triggered a Truein push with a problem, instead of only a
      flash banner + a delayed email to HR Manager. -->
 <div id="truein-issue-modal" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,0.55);align-items:center;justify-content:center;z-index:9999;padding:20px;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);">
-  <div style="background:#fff;border-radius:14px;width:100%;max-width:460px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
+  <div style="background:var(--c-surface);border-radius:14px;width:100%;max-width:460px;padding:28px;box-shadow:0 24px 64px rgba(0,0,0,0.22);animation:scaleIn 0.25s cubic-bezier(0.16,1,0.3,1) both;">
     {% if req.truein_push_error %}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
       <div style="width:32px;height:32px;background:#FEF2F2;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">

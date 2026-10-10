@@ -3,12 +3,13 @@ import os
 import re
 import time
 import uuid
-import random
+import hmac
+import secrets
 import queue
 import threading
 import zipfile
 from datetime import datetime, date as _date
-from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify, send_file
+from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify, send_file, g
 from flask_login import login_required, current_user
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import SQLAlchemyError
@@ -24,6 +25,7 @@ from ..utils import (
     role_required, get_new_status, can_act_on,
     notify_users, allowed_file, validate_mime, REJECTED_STATUSES, log_audit,
     get_db_mail_config, fmt_date,
+    begin_deferred_emails, flush_deferred_emails, discard_deferred_emails,
 )
 from . import requests_bp
 
@@ -509,7 +511,7 @@ def send_email_otp():
     cfg = get_db_mail_config()
     if not cfg["username"]:
         return jsonify({"ok": False, "error": "Email service is not configured on this server. Contact the administrator."})
-    otp = f"{random.randint(0, 999999):06d}"
+    otp = f"{secrets.randbelow(1000000):06d}"
     result_q = queue.Queue(maxsize=1)
     threading.Thread(
         target=_send_smtp_to_queue,
@@ -527,8 +529,15 @@ def send_email_otp():
     if status == "error":
         return jsonify({"ok": False, "error": f"Could not send OTP email: {err}"})
     # Store in session only after confirmed delivery
-    session["_email_otp"] = {"email": email, "code": otp, "at": time.time(), "verified": False}
+    session["_email_otp"] = {"email": email, "hash": _otp_digest(email, otp), "at": time.time(),
+                             "verified": False, "tries": 0}
     return jsonify({"ok": True, "msg": f"OTP sent to {email}. Check inbox (and spam folder)."})
+
+
+def _otp_digest(email, otp):
+    """Keyed hash of an OTP so the code itself never sits (readable) in the client-side session cookie."""
+    key = (current_app.config.get("SECRET_KEY") or "").encode()
+    return hmac.new(key, f"{email}|{otp}".encode(), "sha256").hexdigest()
 
 
 @requests_bp.route("/verify-email-otp", methods=["POST"])
@@ -557,7 +566,12 @@ def verify_email_otp():
         return jsonify({"ok": False, "error": "Email mismatch — re-send OTP for this email address."})
     if time.time() - stored.get("at", 0) > 600:
         return jsonify({"ok": False, "error": "OTP expired (10 min limit). Request a new one."})
-    if stored.get("code") != otp_input:
+    if stored.get("tries", 0) >= 5:
+        return jsonify({"ok": False, "error": "Too many wrong attempts. Request a new OTP."})
+    expected = stored.get("hash") or _otp_digest(email, stored.get("code", ""))
+    if not hmac.compare_digest(expected, _otp_digest(email, otp_input)):
+        stored["tries"] = stored.get("tries", 0) + 1
+        session["_email_otp"] = stored
         return jsonify({"ok": False, "error": "Incorrect OTP. Please try again."})
     session["_email_otp"]["verified"] = True
     session["_email_otp_verified"] = email
@@ -717,6 +731,8 @@ def acknowledge_special_case(token):
     req = _get_req_by_token(token)
     if req.initiated_by != current_user.id:
         abort(403)
+    if req.status != RequestStatus.DRAFT or req.company_code != "RDC":
+        abort(400)
     req.is_special_case = True
     db.session.commit()
     return "", 204
@@ -900,24 +916,19 @@ def edit_request(token):
 
 # ── Submit ─────────────────────────────────────────────────────────────────────
 
-@requests_bp.route("/<string:token>/submit", methods=["POST"])
-@login_required
-@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
-def submit_request(token):
-    req = _get_req_by_token(token)
-    if req.initiated_by != current_user.id:
-        abort(403)
-    if req.status != RequestStatus.DRAFT:
-        flash("Only DRAFT requests can be submitted.", "warning")
-        return redirect(url_for("requests_bp.view_request", token=req.public_token))
-
-    # Validate required non-file fields
-    all_fields = _get_active_fields()
-    non_file_fields = [f for f in all_fields if f.field_type != FieldType.FILE and not f.is_readonly]
-    missing = _validate_required(non_file_fields, req.form_data)
-    if missing:
-        flash(f"Missing required fields: {', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}.", "danger")
-        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+def _check_submittable(req, full=True):
+    """Every rule a request must satisfy before it can leave DRAFT / be resubmitted. Returns a redirect
+    response when something fails (the reason is flashed), else None. ONE shared copy for submit,
+    resubmit and the special-case fallback - they used to be separate copies and the fallback route was
+    missing all of it. full=False (resubmit) skips the field-content rules already enforced at first submit."""
+    if full:
+        # Validate required non-file fields
+        all_fields = _get_active_fields()
+        non_file_fields = [f for f in all_fields if f.field_type != FieldType.FILE and not f.is_readonly]
+        missing = _validate_required(non_file_fields, req.form_data)
+        if missing:
+            flash(f"Missing required fields: {', '.join(missing[:5])}{'…' if len(missing) > 5 else ''}.", "danger")
+            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     # Defense-in-depth: the form dropdown already filters Company Code to
     # this initiator's ticked companies (see new_request()), but a crafted
@@ -927,18 +938,19 @@ def submit_request(token):
         flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
-    # Designations are per-company (2026-10-07): the dropdown only offers the
-    # chosen company's list, but a stale draft (company changed after the
-    # designation was picked) or a crafted POST could carry another company's.
-    _desig_company = req.form_data.get("company_code", "")
-    _desig_name = (req.form_data.get("designation", "") or "").strip()
-    # Only blocks a name that belongs to a DIFFERENT company's list; a name no
-    # company lists at all (legacy free text) is left alone, as before.
-    if _desig_name and not Designation.query.filter_by(
-            name=_desig_name, company=_desig_company, is_active=True, is_deleted=False).first()             and Designation.query.filter_by(name=_desig_name, is_deleted=False).first():
-        flash(f"Designation '{_desig_name}' is not available for {_desig_company}. "
-              "Please pick a designation from the list.", "danger")
-        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+    if full:
+        # Designations are per-company (2026-10-07): the dropdown only offers the
+        # chosen company's list, but a stale draft (company changed after the
+        # designation was picked) or a crafted POST could carry another company's.
+        _desig_company = req.form_data.get("company_code", "")
+        _desig_name = (req.form_data.get("designation", "") or "").strip()
+        # Only blocks a name that belongs to a DIFFERENT company's list; a name no
+        # company lists at all (legacy free text) is left alone, as before.
+        if _desig_name and not Designation.query.filter_by(
+                name=_desig_name, company=_desig_company, is_active=True, is_deleted=False).first()                 and Designation.query.filter_by(name=_desig_name, is_deleted=False).first():
+            flash(f"Designation '{_desig_name}' is not available for {_desig_company}. "
+                  "Please pick a designation from the list.", "danger")
+            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     # Defense-in-depth: the RDC plant dropdown already filters to this
     # initiator's own InitiatorRegion scope (see new_request()), but a
@@ -968,27 +980,63 @@ def submit_request(token):
             flash(_dup_reason, "danger")
             return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
-    # UAN: mandatory for non-trainee designations
-    designation_val = req.form_data.get("designation", "")
-    if designation_val and "trainee" not in designation_val.lower():
-        if not req.form_data.get("uan_number", "").strip():
-            flash("UAN Number is required for this designation.", "danger")
+    if full:
+        # UAN: mandatory for non-trainee designations
+        designation_val = req.form_data.get("designation", "")
+        if designation_val and "trainee" not in designation_val.lower():
+            if not req.form_data.get("uan_number", "").strip():
+                flash("UAN Number is required for this designation.", "danger")
+                return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+
+        # Replacement: both employee name and code required
+        if req.form_data.get("hiring_type") == "Replacement":
+            if not req.form_data.get("replacement_employee", "").strip():
+                flash("Replacement Employee Name is required when Hiring Type is Replacement.", "danger")
+                return redirect(url_for("requests_bp.new_request", step=2, token=req.public_token))
+            if not req.form_data.get("replacement_employee_code", "").strip():
+                flash("Replacement Employee Code is required when Hiring Type is Replacement.", "danger")
+                return redirect(url_for("requests_bp.new_request", step=2, token=req.public_token))
+
+        # Server-side format checks - the form's own checks run in the browser only, so a crafted POST
+        # (or a draft saved around them) could otherwise carry values Truein will later reject.
+        fd = req.form_data
+        _aadhaar = re.sub(r"\D", "", str(fd.get("aadhar_no", "") or ""))
+        if str(fd.get("aadhar_no", "") or "").strip() and len(_aadhaar) != 12:
+            flash("Aadhaar Number must be exactly 12 digits.", "danger")
+            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+        _mobile = str(fd.get("mobile_number", "") or "").strip()
+        if _mobile:
+            from ..integrations.truein import _clean_mobile
+            if _clean_mobile(_mobile)[0] is None:
+                flash("Mobile Number must be a valid 10-digit Indian mobile number (starting 6-9).", "danger")
+                return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+        _company = fd.get("company_code", "")
+        _plant = (fd.get("plant_location", "") or "").strip()
+        if _plant and _company != "RDC":
+            # Ultrafine/ROBO plants are a flat per-company list - a name outside it is never valid.
+            if not PlantLocation.query.filter_by(name=_plant, company=_company, is_active=True, is_deleted=False).first():
+                flash(f"Plant '{_plant}' is not an active {_company} plant. Please pick one from the list.", "danger")
+                return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
+        # Email verified, then changed afterwards (OTP proves one address only).
+        _verified = (req.candidate_email_verified or "").strip().lower()
+        _email = str(fd.get("email_id", "") or "").strip().lower()
+        if _verified and _email and _verified != _email:
+            flash("The email address was changed after it was verified. Please verify the new address.", "danger")
             return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
-    # Replacement: both employee name and code required
-    if req.form_data.get("hiring_type") == "Replacement":
-        if not req.form_data.get("replacement_employee", "").strip():
-            flash("Replacement Employee Name is required when Hiring Type is Replacement.", "danger")
-            return redirect(url_for("requests_bp.new_request", step=2, token=req.public_token))
-        if not req.form_data.get("replacement_employee_code", "").strip():
-            flash("Replacement Employee Code is required when Hiring Type is Replacement.", "danger")
-            return redirect(url_for("requests_bp.new_request", step=2, token=req.public_token))
+    return None
 
+
+def _gate_and_approvers(req):
+    """RDC staffing-gate decision (sets/clears is_special_case) + a reachable-approver check. Returns a
+    redirect response to stop the submission, else None. Shared by submit, resubmit and special-case."""
     # RDC staffing-norms gate: advisory at Submit. Ultrafine/ROBO are
     # unaffected — same form, same flow, this block simply never triggers
     # for them. A blocked plant only hard-stops the initiator if they never
     # acknowledged the popup (is_special_case still False) — otherwise the
     # request proceeds through the over-norm approval chain instead.
+    if req.form_data.get("company_code") != "RDC":
+        req.is_special_case = False   # only RDC has a staffing gate; a stray flag would force the over-norm wording/rules
     if req.form_data.get("company_code") == "RDC":
         from ..services.staffing_norms import check_rdc_staffing_gate
         gate = check_rdc_staffing_gate(req.form_data)
@@ -1018,7 +1066,26 @@ def submit_request(token):
         db.session.commit()   # persist the gate-check row already added above, if any
         flash(_approver_err, "danger")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
+    return None
 
+
+@requests_bp.route("/<string:token>/submit", methods=["POST"])
+@login_required
+@role_required(UserRole.INITIATOR, UserRole.HR_MANAGER)
+def submit_request(token):
+    req = _get_req_by_token(token)
+    if req.initiated_by != current_user.id:
+        abort(403)
+    if req.status != RequestStatus.DRAFT:
+        flash("Only DRAFT requests can be submitted.", "warning")
+        return redirect(url_for("requests_bp.view_request", token=req.public_token))
+    return _submit_draft(req)
+
+
+def _submit_draft(req):
+    stop = _check_submittable(req) or _gate_and_approvers(req)
+    if stop:
+        return stop
     _finalize_submission(req)
     return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
@@ -1036,59 +1103,9 @@ def resubmit_request(token):
         flash("Only rejected requests can be resubmitted.", "warning")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
-    from ..utils import company_scope_ids
-    if req.form_data.get("company_code", "") not in company_scope_ids(current_user.id):
-        flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
-        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
-
-    region_error = _validate_plant_region(req)
-    if region_error:
-        flash(region_error, "danger")
-        return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
-
-    # Authoritative duplicate check — see the matching comment in
-    # submit_request() above. A resubmit after rejection is exactly the
-    # kind of second attempt that could otherwise reintroduce a collision
-    # (e.g. the initiator "fixes" one field but the Aadhaar/email/mobile
-    # duplicate was never the field they touched).
-    for _dup_reason in (
-        _check_email_registered(req.form_data.get("email_id", ""), exclude_token=req.public_token),
-        _check_govt_id_registered(req.form_data.get("aadhar_no", ""), exclude_token=req.public_token),
-        _check_mobile_registered(req.form_data.get("mobile_number", ""), exclude_token=req.public_token),
-    ):
-        if _dup_reason:
-            flash(_dup_reason, "danger")
-            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
-
-    if req.form_data.get("company_code") == "RDC":
-        from ..services.staffing_norms import check_rdc_staffing_gate
-        gate = check_rdc_staffing_gate(req.form_data)
-        _persist_gate_check(req, gate)
-        if not gate["allowed"]:
-            if not req.is_special_case:
-                db.session.commit()
-                log_audit("REQUEST", "STAFFING_GATE_BLOCKED",
-                          resource_type="OnboardingRequest", resource_id=req.id,
-                          resource_label=f"Request #{req.id} — {req.candidate_name}",
-                          detail=gate)
-                db.session.commit()
-                return redirect(url_for("requests_bp.hiring_not_possible", token=req.public_token))
-            log_audit("REQUEST", "STAFFING_GATE_BLOCKED_PROCEEDING_AS_SPECIAL_CASE",
-                      resource_type="OnboardingRequest", resource_id=req.id,
-                      resource_label=f"Request #{req.id} — {req.candidate_name}",
-                      detail=gate)
-        else:
-            req.is_special_case = False
-            log_audit("REQUEST", "STAFFING_GATE_PASSED",
-                      resource_type="OnboardingRequest", resource_id=req.id,
-                      resource_label=f"Request #{req.id} — {req.candidate_name}",
-                      detail=gate)
-
-    _approver_err = _validate_approver_availability(req)
-    if _approver_err:
-        db.session.commit()   # persist the gate-check row already added above, if any
-        flash(_approver_err, "danger")
-        return redirect(url_for("requests_bp.view_request", token=req.public_token))
+    stop = _check_submittable(req, full=False) or _gate_and_approvers(req)
+    if stop:
+        return stop
 
     _prev_status = req.status.value
     req.status = RequestStatus.PENDING_BH
@@ -1162,13 +1179,8 @@ def submit_as_special_case(token):
     # _send_approval_notifications() claim "Approved by Business Head" to
     # Head HR when the HR Manager actually approved.
     if req.form_data.get("company_code") == "RDC":
-        req.is_special_case = True
-        log_audit("REQUEST", "STAFFING_GATE_BLOCKED_PROCEEDING_AS_SPECIAL_CASE",
-                  resource_type="OnboardingRequest", resource_id=req.id,
-                  resource_label=f"Request #{req.id} — {req.candidate_name}",
-                  detail={"acknowledged_at": "submit-time fallback"})
-    _finalize_submission(req)
-    return redirect(url_for("requests_bp.view_request", token=req.public_token))
+        req.is_special_case = True   # the gate re-check below clears it again if capacity has opened up
+    return _submit_draft(req)
 
 
 # ── RDC Staffing Status Dashboard ────────────────────────────────────────────────
@@ -1307,6 +1319,8 @@ def _write_xlsx_sheet(ws, columns, rows, style):
     for ri, row in enumerate(rows, 2):
         for ci, val in enumerate(row, 1):
             c = ws.cell(row=ri, column=ci, value=val)
+            if isinstance(val, str) and val[:1] in ("=", "+", "-", "@"):
+                c.data_type = "s"   # user text must never be evaluated as a spreadsheet formula
             c.font = dat_font; c.border = bdr
             if ri % 2 == 0:
                 c.fill = alt_fill
@@ -2243,10 +2257,12 @@ def email_action(signed, action):
     before = req.status
     req_id, token = req.id, req.public_token
     g._login_user = user          # act as the link's owner for this one request; no session is created
+    g.via_email = True            # set server-side only - a posted form field could be forged for the audit trail
     try:
         (approve_request if action == "approve" else reject_request)(token)
     finally:
         g.pop("_login_user", None)   # never let the link owner linger as "the logged-in user"
+        g.pop("via_email", None)
     messages = get_flashed_messages(with_categories=True)
     after = db.session.get(OnboardingRequest, req_id)
     db.session.refresh(after)
@@ -2307,6 +2323,7 @@ def approve_request(token):
     db.session.add(action)
     req.status = new_status
     req.updated_at = datetime.utcnow()
+    begin_deferred_emails()   # approver mail goes out only after the commit below succeeds
     _send_approval_notifications(db, req, new_status)
     # Log approve action
     _at = "REQUEST_ACTIVATED" if new_status == RequestStatus.ACTIVE else "REQUEST_APPROVED"
@@ -2318,13 +2335,15 @@ def approve_request(token):
                       "to_status": new_status.value,
                       "approver_role": current_user.role.value,
                       "remark": remark,
-                      **({"via": "email_link"} if request.form.get("via") == "email" else {})})
+                      **({"via": "email_link"} if g.get("via_email") else {})})
     try:
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
+        discard_deferred_emails()
         flash("An unexpected error occurred. Please try again.", "danger")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
+    flush_deferred_emails()
 
     flash(f"Approved. Status: {req.status_label}", "success")
 
@@ -2471,6 +2490,7 @@ def reject_request(token):
     req.status = new_status
     req.updated_at = datetime.utcnow()
     initiator = db.session.get(User, req.initiated_by)
+    begin_deferred_emails()
     notify_users(db, req, [initiator],
                  subject=f"Request rejected: {req.candidate_name}",
                  body=f"Rejected by {current_user.name}.\n\nRemark: {remark}")
@@ -2482,13 +2502,15 @@ def reject_request(token):
                       "to_status": new_status.value,
                       "rejector_role": current_user.role.value,
                       "remark": remark,
-                      **({"via": "email_link"} if request.form.get("via") == "email" else {})})
+                      **({"via": "email_link"} if g.get("via_email") else {})})
     try:
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
+        discard_deferred_emails()
         flash("An unexpected error occurred. Please try again.", "danger")
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
+    flush_deferred_emails()
     flash("Request rejected.", "info")
     return redirect(url_for("main.dashboard"))
 

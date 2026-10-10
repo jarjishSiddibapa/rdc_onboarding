@@ -1001,3 +1001,43 @@
 .date-cal-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--c-text-3);cursor:pointer;border-radius:8px;}
 .date-cal-btn:hover{background:var(--c-bg-2);color:var(--c-primary);}
 .date-cal-native{position:absolute;right:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;}
+
+/* ════════════════════════════════════════════════════
+   SEARCHABLE DROPDOWNS  (js/searchable-select.js)
+   Every <select> gets a button + a type-to-filter panel; the real select stays in the page, invisible.
+════════════════════════════════════════════════════ */
+.ss-wrap { position: relative; display: block; }
+.ss-wrap.ss-inline { display: inline-block; }
+.ss-native { position: absolute !important; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; z-index: -1; }
+.ss-trigger {
+  display: flex; align-items: center; text-align: left; cursor: pointer; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8699' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px;
+}
+.ss-trigger .ss-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-trigger.ss-placeholder { color: var(--c-text-5); }
+.th-filter-select.ss-trigger { width: auto; background-position: right 7px center; padding: 3px 22px 3px 8px; color: var(--c-text-3); }
+.th-filter-select.ss-trigger.ss-placeholder { color: var(--c-text-3); }
+.th-filter-select.ss-trigger.is-active { color: var(--c-primary); }
+.ss-trigger:disabled { opacity: .6; cursor: not-allowed; background-color: var(--c-surface-2); }
+.ss-trigger.ss-invalid, .ss-trigger.is-invalid { border-color: var(--c-danger); }
+
+.ss-panel {
+  position: fixed; z-index: 100000; box-sizing: border-box; padding: 6px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(10, 37, 64, 0.18);
+}
+.ss-search {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font: inherit; font-size: 13px; color: var(--c-text-1);
+  background: var(--c-surface); border: 1.5px solid var(--c-border); border-radius: 7px; outline: none;
+}
+.ss-search:focus { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-glow); }
+.ss-list { list-style: none; margin: 6px 0 0; padding: 0; overflow-y: auto; }
+.ss-opt { padding: 8px 10px; border-radius: 7px; font-size: 13px; line-height: 1.35; cursor: pointer; color: var(--c-text-1); }
+.ss-opt.ss-active { background: var(--c-primary-soft); }
+.ss-opt.ss-selected { font-weight: 700; color: var(--c-primary); }
+.ss-opt.ss-empty { color: var(--c-text-4); }
+.ss-opt.ss-disabled { opacity: .45; cursor: not-allowed; }
+.ss-opt mark { background: var(--c-primary-glow); color: inherit; border-radius: 2px; padding: 0; }
+.ss-group { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--c-text-4); }
+.ss-none { padding: 10px; font-size: 13px; color: var(--c-text-4); }

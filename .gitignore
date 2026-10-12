@@ -61,3 +61,8 @@ demo.db
 # Database backups (full copies of the live DB incl. personal data - never commit)
 backups/
 *.sql
+
+# Docker settings (real passwords / API keys)
+.env.docker
+rdc-migration-*/
+rdc-migration-*.tar.gz

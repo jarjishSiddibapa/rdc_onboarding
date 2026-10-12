@@ -1,0 +1,41 @@
+# Keep the image small and keep secrets / personal data OUT of it. Anything listed here is never
+# sent to the Docker daemon, so it can't end up in a layer or be pushed to a registry by accident.
+
+# Secrets
+.env
+*.env
+.env.*
+Truein_API_Developer_Reference.html
+TRUEIN_API_GUIDE.html
+Truein_API.postman_collection.json
+
+# Runtime data (lives in Docker volumes instead)
+app/static/uploads/
+instance/
+backups/
+truein_dryruns/
+*.sql
+*.xlsx
+*.log
+server_*.log
+
+# Dev-only
+venv/
+.venv/
+.git/
+.gitignore
+.claude/
+graphify-out/
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+docs/
+palette_compare.html
+requirements-dev.txt
+Dockerfile
+.dockerignore
+docker-compose*.yml
+docker/
+rdc-migration-*

@@ -1,0 +1,52 @@
+# RDC Associates Hiring - the app plus its MySQL database.
+#   cp .env.docker.example .env.docker      (then fill it in)
+#   docker compose up -d --build
+# Full guide, including moving to another server: DOCKER.md
+
+name: rdc-hiring
+
+services:
+  db:
+    image: mysql:9.5
+    restart: unless-stopped
+    env_file: .env.docker                  # MYSQL_ROOT_PASSWORD / MYSQL_DATABASE (first start only)
+    # Same character set / collation as the existing database (unique names are case-insensitive).
+    # max_allowed_packet is raised so a large .sql backup restores without "packet too big".
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_allowed_packet=256M
+    volumes:
+      - db_data:/var/lib/mysql
+    # Not published on a host port: only the app (same compose network) needs it.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  app:
+    build: .
+    image: rdc-hiring:latest
+    restart: unless-stopped
+    init: true
+    env_file: .env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"                        # change the LEFT number to serve on another port
+    stop_grace_period: 30s
+    volumes:
+      - uploads:/app/app/static/uploads    # candidate documents and profile pictures
+      - backups:/app/backups               # automatic database backups (Admin -> Database Backup)
+      - instance:/app/instance             # Truein employee-list cache (saves an 8-minute pull after a restart)
+      - truein_dryruns:/app/truein_dryruns # Truein dry-run output
+
+volumes:
+  db_data:
+  uploads:
+  backups:
+  instance:
+  truein_dryruns:

@@ -1,4 +1,4 @@
-{% from '_macros.html' import render_pagination, col_filter %}
+{% from '_macros.html' import render_pagination, col_filter, request_search %}
 {% extends "base.html" %}
 {% block title %}My Requests — RDC Associates Hiring{% endblock %}
 
@@ -9,7 +9,7 @@
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap;">
     <div>
       <h1 class="page-title">My Requests</h1>
-      <p class="page-sub">Welcome back, {{ current_user.name }} &mdash; {% if selected_status or selected_company or selected_designation %}showing {{ pagination.total }} of {{ counts.total }} request{{ 's' if counts.total != 1 else '' }}{% else %}{{ pagination.total }} request{{ 's' if pagination.total != 1 else '' }} total{% endif %}</p>
+      <p class="page-sub">Welcome back, {{ current_user.name }} &mdash; {% if selected_status or selected_company or selected_designation or search_q %}showing {{ pagination.total }} of {{ counts.total }} request{{ 's' if counts.total != 1 else '' }}{% else %}{{ pagination.total }} request{{ 's' if pagination.total != 1 else '' }} total{% endif %}</p>
     </div>
     <a href="{{ url_for('requests_bp.new_request') }}" class="btn btn-primary">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
@@ -49,7 +49,7 @@
   {% set status_opts = [] %}{% for s in statuses %}{% set _ = status_opts.append((s.value, s | status_name)) %}{% endfor %}
   {% set company_opts = [] %}{% for c in col_options.company %}{% set _ = company_opts.append((c, c)) %}{% endfor %}
   {% set desig_opts = [] %}{% for d in col_options.designation %}{% set _ = desig_opts.append((d, d)) %}{% endfor %}
-  {% if selected_status or selected_company or selected_designation %}
+  {% if selected_status or selected_company or selected_designation or search_q %}
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:12.5px;color:var(--c-text-3);">
     <span>Showing filtered results</span>
     <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-ghost">
@@ -58,6 +58,8 @@
     </a>
   </div>
   {% endif %}
+
+  {{ request_search(search_q, request.args) }}
 
   <!-- Requests table -->
   <div class="card" style="overflow:hidden;">
@@ -100,7 +102,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
         </svg>
       </div>
-      {% if selected_status or selected_company or selected_designation %}
+      {% if selected_status or selected_company or selected_designation or search_q %}
       <p style="font-size:14.5px;font-weight:600;color:var(--c-text-2);margin:0 0 6px;">No requests match these filters</p>
       <p style="font-size:13.5px;color:var(--c-text-4);margin:0 0 22px;">Try different filters or clear them to see all requests.</p>
       <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary">Clear filter</a>

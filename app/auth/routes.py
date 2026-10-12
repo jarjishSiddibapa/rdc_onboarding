@@ -119,13 +119,19 @@ def login():
 
 # ── Logout ─────────────────────────────────────────────────────────────────────
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["GET", "POST"])
 @login_required
 def logout():
+    # Signing out is a POST (a plain link could be triggered by any page/image on the web). A stray GET -
+    # an old bookmark - just goes back to the app instead of ending the session.
+    if request.method == "GET":
+        return redirect(url_for("main.dashboard"))
     # Log BEFORE logout_user() clears current_user
     log_audit("AUTH", "LOGOUT",
               resource_type="User", resource_id=current_user.id,
               resource_label=current_user.name)
+    # A copied session / remember-me cookie must not outlive the sign-out.
+    current_user.end_all_sessions()
     db.session.commit()
     logout_user()
     session.clear()
@@ -217,6 +223,7 @@ def reset_password(token):
         user.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
         user.failed_login_attempts = 0
         user.locked_until = None
+        user.end_all_sessions()
         log_audit("AUTH", "PASSWORD_RESET_COMPLETED",
                   resource_type="User", resource_id=user.id,
                   resource_label=user.name, actor_id=user.id,

@@ -194,6 +194,6 @@ class TestExportCompanyScoping:
         assert d["total"] == 1 and _cands(d) == ["Robo Person"]
         ws = load_workbook(io.BytesIO(client.get("/exports/active-employees/download").data)).active
         assert ws.cell(row=4, column=1).value == "Total records: 1"
-        client.get("/auth/logout")
+        client.post("/auth/logout")
         login(client, "exphrm0@t.com")
         assert _preview(client)["total"] == 0

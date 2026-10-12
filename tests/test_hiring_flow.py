@@ -202,7 +202,7 @@ class TestFormSteps:
     def test_a_draft_belongs_to_its_initiator(self, client, db, world, mailbox):
         login(client, world["ini"])
         token = _draft(client)
-        client.get("/auth/logout")
+        client.post("/auth/logout")
         _make_user("Other Ini", "otherini@t.com", UserRole.INITIATOR, db, companies=["ROBO"])
         db.session.commit()
         login(client, "otherini@t.com")
@@ -218,7 +218,7 @@ class TestSubmitAndApproveFromEmail:
         assert _status(token) == RequestStatus.PENDING_BH
         first = [m for m in mailbox.sent if m[1].startswith("New hiring request")]
         assert [m[0] for m in first] == [world["bh"]] and ">Approve</a>" in first[0][3]
-        client.get("/auth/logout")
+        client.post("/auth/logout")
 
         ok_push = {"success": True, "empId": "E1", "message": "ok", "dropped_fields": [], "http_status": 200,
                    "raw_response": {}, "payload_sent": {}}

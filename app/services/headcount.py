@@ -56,6 +56,13 @@ _DEPARTMENT_TO_CATEGORY = {
     "operations": "Operations",
 }
 
+# How the starting set looks when shown to an admin (Admin -> Department Mapping seeds from this).
+_DEFAULT_DEPARTMENT_LABELS = {
+    "pi/api/acting pi": "PI/API/Acting PI", "technical": "Technical", "techinical": "Techinical",
+    "plant & technical": "Plant & Technical", "batching": "Batching", "material": "Material",
+    "materials": "Materials", "assistant/rmx": "Assistant/RMX", "operations": "Operations",
+}
+
 _TRAINEE_CIVIL_DEPARTMENT = "trainee civil"
 # "more than 3 months of joining completed" — approximated as 90 days.
 _TRAINEE_CIVIL_MIN_TENURE_DAYS = 90
@@ -68,6 +75,21 @@ _TECHNICAL_DEPARTMENT_VALUES = {"technical", "techinical", "plant & technical"}
 def _normalize_department(department: str) -> str:
     norm = re.sub(r"\s+", " ", (department or "").strip()).lower()
     return re.sub(r"\s*/\s*", "/", norm)
+
+
+def load_department_map() -> dict:
+    """{normalized department: category name} used to classify existing employees.
+
+    Read from the admin-editable table (Admin -> Department Mapping). Falls back to the built-in starting set
+    only while the table has no rows at all (fresh database / before the admin page was first opened) - once
+    rows exist the table is the whole truth, so switching a department off really stops it being counted."""
+    from ..models import DepartmentCategoryMap, NormRoleCategory
+    rows = (db.session.query(DepartmentCategoryMap.department_norm, DepartmentCategoryMap.is_active,
+                             NormRoleCategory.name)
+            .join(NormRoleCategory, NormRoleCategory.id == DepartmentCategoryMap.norm_role_category_id).all())
+    if not rows and db.session.query(DepartmentCategoryMap.id).first() is None:
+        return dict(_DEPARTMENT_TO_CATEGORY)
+    return {norm: name for norm, active, name in rows if active}
 
 
 def _parse_join_date(raw: str):
@@ -86,7 +108,8 @@ def _parse_join_date(raw: str):
     return None
 
 
-def _classify_by_department(department: str, designation: str, date_of_joining_raw: str, cat_id_by_name: dict):
+def _classify_by_department(department: str, designation: str, date_of_joining_raw: str, cat_id_by_name: dict,
+                            dept_map: dict | None = None):
     """
     Maps a raw Department value straight onto one of the 6 manpower
     categories (see _DEPARTMENT_TO_CATEGORY) — the primary signal used to
@@ -119,9 +142,14 @@ def _classify_by_department(department: str, designation: str, date_of_joining_r
         if joined and (datetime.utcnow() - joined).days > _TRAINEE_CIVIL_MIN_TENURE_DAYS:
             return cat_id_by_name.get("Technical")
         return None
-    if norm in _TECHNICAL_DEPARTMENT_VALUES and "trainee" in (designation or "").lower():
+    table = _DEPARTMENT_TO_CATEGORY if dept_map is None else dept_map
+    cat_name = table.get(norm)
+    # A trainee in a department that reads as Technical does not count as Technical straight away (see above).
+    # "Reads as Technical" = whatever the map sends to the Technical category (the starting set is the
+    # three _TECHNICAL_DEPARTMENT_VALUES).
+    if "trainee" in (designation or "").lower() and (
+            (cat_name == "Technical") if dept_map is not None else (norm in _TECHNICAL_DEPARTMENT_VALUES)):
         return None
-    cat_name = _DEPARTMENT_TO_CATEGORY.get(norm)
     return cat_id_by_name.get(cat_name) if cat_name else None
 
 
@@ -452,6 +480,7 @@ def _compute_and_store_snapshot() -> dict:
     cat_scope_by_id = {c.id: c.scope for c in NormRoleCategory.query.all()}
     cat_name_by_id = {c.id: c.name for c in NormRoleCategory.query.all()}
     cat_id_by_name = {name: id_ for id_, name in cat_name_by_id.items()}
+    dept_map = load_department_map()
 
     buckets = {}          # (scope, location_key, norm_role_category_id) -> {'zinghr': n, 'truein': n}
     unclassified_by_key = {}  # (scope, location_key) -> count
@@ -491,7 +520,7 @@ def _compute_and_store_snapshot() -> dict:
 
         department = (e.get("Department") or "").strip()
         date_of_joining = e.get("dateOfJoining")
-        norm_cat_id = _classify_by_department(department, e.get("Designation"), date_of_joining, cat_id_by_name)
+        norm_cat_id = _classify_by_department(department, e.get("Designation"), date_of_joining, cat_id_by_name, dept_map)
         cat_scope = cat_scope_by_id.get(norm_cat_id) if norm_cat_id else None
 
         plant_key = plant_name_by_norm.get(_normalize_name(e.get("Location")))
@@ -549,7 +578,7 @@ def _compute_and_store_snapshot() -> dict:
 
         department = (e.get("department") or "").strip()
         date_of_joining = e.get("joining_date")
-        norm_cat_id = _classify_by_department(department, e.get("designation"), date_of_joining, cat_id_by_name)
+        norm_cat_id = _classify_by_department(department, e.get("designation"), date_of_joining, cat_id_by_name, dept_map)
         cat_scope = cat_scope_by_id.get(norm_cat_id) if norm_cat_id else None
 
         # 'sub_site' is the plant-level field for Truein (distinct from
@@ -910,7 +939,9 @@ def record_approved_hire(req, emp_run=None, staff_run=None) -> dict:
 
     mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant, is_deleted=False).first()
     cluster_name = mapping.cluster.canonical_cluster_name if (mapping and mapping.cluster_id) else None
-    category = db.session.get(NormRoleCategory, desig.norm_category_id) if (desig and desig.norm_category_id) else None
+    from .staffing_norms import resolve_norm_category_id
+    _cat_id = resolve_norm_category_id(desig, fd)
+    category = db.session.get(NormRoleCategory, _cat_id) if _cat_id else None
     db.session.add(EmployeeLocationSnapshot(
         computed_at=emp_run, source=ExternalDesignationSource.TRUEIN,
         employee_code=code, employee_name=req.candidate_name, designation=req.designation,

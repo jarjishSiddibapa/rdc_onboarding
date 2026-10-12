@@ -156,6 +156,11 @@
           {% for co in companies %}<option value="{{ co }}" {% if selected_company == co %}selected{% endif %}>{{ co }}</option>{% endfor %}
         </select>
       </div>
+      <div style="flex:2;min-width:220px;">
+        <label style="display:block;font-size:11.5px;font-weight:600;color:var(--c-text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">Search</label>
+        <input class="inp" type="search" name="q" value="{{ search_q or '' }}" maxlength="100" autocomplete="off"
+               placeholder="Candidate name, designation, plant or request no."/>
+      </div>
       <div style="display:flex;gap:8px;">
         <button type="submit" class="btn btn-primary">Filter</button>
         <a href="{{ url_for('admin.requests_list') }}" class="btn btn-secondary">Reset</a>

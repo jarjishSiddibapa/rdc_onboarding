@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Staffing Norms — RDC Associates Hiring Admin{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">Dashboard</a>
+  <span class="bc-sep">/</span>
+  <span class="bc-item bc-current">Staffing Norms</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1200px;">
+  <div style="margin-bottom:22px;">
+    <h1 class="page-title">Staffing Norms</h1>
+    <p class="page-sub">How many people each role is allowed at a plant or region, by production volume (plants) or number of plants (regions). The hiring check uses these limits straight away; the Staffing Status dashboard shows the new numbers after the next sync.</p>
+  </div>
+
+  {% for g in groups %}
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:24px;">
+    <div style="padding:16px 22px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">{{ g.title }}</h2>
+        <div style="font-size:12px;color:var(--c-text-4);margin-top:2px;">
+          {% if g.scope.value == 'PLANT' %}Brackets are the plant's average monthly production (last 3 months).{% else %}Brackets are the number of plants in the region.{% endif %}
+          Click a bracket's name to edit its limits.
+        </div>
+      </div>
+      <a href="{{ url_for('admin.new_norm_tier', sheet=g.sheet.value, scope=g.scope.value) }}" class="btn btn-secondary btn-sm">Add bracket</a>
+    </div>
+    <div style="overflow-x:auto;">
+      <table class="tbl" style="width:100%;">
+        <thead>
+          <tr>
+            <th>Role</th>
+            {% for t in g.tiers %}
+            <th style="white-space:nowrap;{% if not t.is_active %}opacity:.55;{% endif %}">
+              <a href="{{ url_for('admin.edit_norm_tier', tier_id=t.id) }}" style="color:var(--c-primary-d);font-weight:700;text-decoration:none;">{{ t.tier_label }}</a>
+              <div style="font-size:11px;font-weight:500;color:var(--c-text-4);">{{ range_text(t) }}{% if not t.is_active %} · off{% endif %}</div>
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in g.categories %}
+          <tr {% if not c.is_active %}style="opacity:.55;"{% endif %}>
+            <td style="font-weight:600;color:var(--c-text-1);white-space:nowrap;">
+              <a href="{{ url_for('admin.edit_norm_category', cat_id=c.id) }}" style="color:inherit;text-decoration:none;">{{ c.name }}</a>
+              {% if not c.is_capacity_gated %}<span style="font-size:10.5px;font-weight:600;color:var(--c-text-4);">· not limited</span>{% endif %}
+            </td>
+            {% for t in g.tiers %}
+            <td style="font-size:12.5px;color:var(--c-text-2);">{{ (cells.get((c.id, t.id)) or ['—']) | join(' + ') }}</td>
+            {% endfor %}
+          </tr>
+          {% else %}
+          <tr><td colspan="{{ g.tiers|length + 1 }}" style="text-align:center;padding:24px;color:var(--c-text-4);">No roles in this group yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card" style="padding:30px;text-align:center;color:var(--c-text-4);">No brackets set up yet.
+    <a href="{{ url_for('admin.new_norm_tier') }}">Add the first one</a>.</div>
+  {% endfor %}
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:16px 22px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">Roles (categories)</h2>
+        <div style="font-size:12px;color:var(--c-text-4);margin-top:2px;">
+          Which employees fall under each role is set in <a href="{{ url_for('admin.department_mapping') }}">Department Mapping</a>; which role a new hire falls under is set per designation.
+        </div>
+      </div>
+      <a href="{{ url_for('admin.new_norm_category') }}" class="btn btn-secondary btn-sm">Add role</a>
+    </div>
+    <table class="tbl" style="width:100%;">
+      <thead><tr><th>Role</th><th>Applies to</th><th>Limited by production?</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {% for c in categories %}
+        <tr>
+          <td style="font-weight:600;color:var(--c-text-1);">{{ c.name }}</td>
+          <td style="font-size:12.5px;color:var(--c-text-3);">{{ 'Plants' if c.scope.value == 'PLANT' else 'Regions' }} · {{ 'Sheet 1' if c.sheet.value == 'SHEET1' else 'Sheet 2' }}</td>
+          <td style="font-size:12.5px;">{{ 'Yes' if c.is_capacity_gated else 'No (shown only)' }}</td>
+          <td style="font-size:12.5px;">{{ 'Active' if c.is_active else 'Off' }}</td>
+          <td style="text-align:right;"><a href="{{ url_for('admin.edit_norm_category', cat_id=c.id) }}" class="btn btn-secondary btn-sm">Edit</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

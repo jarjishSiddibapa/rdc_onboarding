@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit role' if cat else 'Add role' }} — RDC Associates Hiring Admin{% endblock %}
+
+{% block content %}
+<div style="max-width:520px;">
+  <h1 class="page-title">{{ 'Edit role' if cat else 'Add role' }}</h1>
+  <p class="page-sub">A role is a group of employees that gets one headcount limit per bracket (Plant Manager, Technical, …).</p>
+
+  <form method="POST" class="card" style="padding:26px 28px;display:flex;flex-direction:column;gap:20px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <div>
+      <label for="name" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Name <span style="color:var(--c-danger);">*</span></label>
+      <input class="inp" id="name" name="name" maxlength="150" required value="{{ request.form.get('name', cat.name if cat else '') }}"/>
+    </div>
+    {% if not cat %}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <div>
+        <label for="scope" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Applies to</label>
+        <select class="inp" id="scope" name="scope"><option value="PLANT">A plant</option><option value="CLUSTER">A region</option></select>
+      </div>
+      <div>
+        <label for="sheet" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Sheet</label>
+        <select class="inp" id="sheet" name="sheet"><option value="SHEET1">Sheet 1</option><option value="SHEET2">Sheet 2</option></select>
+      </div>
+    </div>
+    {% endif %}
+    <label style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--c-text-1);cursor:pointer;">
+      <input type="checkbox" name="is_capacity_gated" value="1" style="width:17px;height:17px;margin-top:2px;"
+             {% if ((request.form.get('is_capacity_gated') == '1') if request.method == 'POST' else (cat.is_capacity_gated if cat else True)) %}checked{% endif %}/>
+      <span><strong>Hiring is limited by production</strong><br/>
+        <span style="font-size:12px;color:var(--c-text-4);">Off = the count is only shown, a new hire is never blocked (like Operations).</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:600;color:var(--c-text-1);cursor:pointer;">
+      <input type="checkbox" name="is_active" value="1" style="width:17px;height:17px;"
+             {% if ((request.form.get('is_active') == '1') if request.method == 'POST' else (cat.is_active if cat else True)) %}checked{% endif %}/>
+      Role is in use
+    </label>
+    <div>
+      <label for="sort_order" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Position in lists</label>
+      <input class="inp" id="sort_order" type="number" name="sort_order" style="width:120px;" value="{{ request.form.get('sort_order', cat.sort_order if cat else 0) }}"/>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.staffing_norms') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -165,6 +165,19 @@
 {# Per-column header filter (2026-10-08): the column label with a small dropdown right in the
    table header, replacing the separate filter bar above the table. base.js wires every
    select[data-col-filter]: on change it sets/clears that query param, drops ?page, reloads. #}
+{# Free-text search box for the request lists. `args` is request.args (macros can't see `request` themselves);
+   other filters in the URL are kept as hidden fields so searching never drops them. #}
+{% macro request_search(value, args) %}
+{% set keep = args.to_dict() %}{% set _ = keep.pop('q', None) %}{% set _ = keep.pop('page', None) %}
+<form method="GET" class="req-search" role="search">
+  {% for k, v in keep.items() if v %}<input type="hidden" name="{{ k }}" value="{{ v }}"/>{% endfor %}
+  <input class="inp" type="search" name="q" value="{{ value or '' }}" maxlength="100" autocomplete="off"
+         placeholder="Search name, designation, plant or request no." aria-label="Search requests"/>
+  <button class="btn btn-secondary btn-sm" type="submit">Search</button>
+  {% if value %}<a class="btn btn-ghost btn-sm" href="?{{ keep|urlencode }}">Clear search</a>{% endif %}
+</form>
+{% endmacro %}
+
 {% macro col_filter(param, label, options, selected) %}
 <div class="th-filter">
   <span>{{ label }}</span>

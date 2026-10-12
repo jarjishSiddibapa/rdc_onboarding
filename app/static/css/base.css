@@ -10,6 +10,11 @@
       --c-primary-d:       #c86030;
       --c-primary-glow:    rgba(239,131,84,0.18);
       --c-primary-soft:    rgba(239,131,84,0.09);
+      /* Fill behind WHITE text (buttons, active page, stepper dot). The brand coral above is only 2.6:1
+         against white; these are 5.2-6:1 (WCAG AA needs 4.5). Same in both themes. */
+      --c-btn:             #c44d19;
+      --c-btn-h:           #b94a16;
+      --c-btn-d:           #a8420f;
 
       --c-secondary:       #4f5d75;
       --c-secondary-soft:  rgba(79,93,117,0.09);
@@ -485,12 +490,12 @@
     .btn-primary:hover::after { background-position: -200% 0; }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-d) 100%);
+      background: linear-gradient(135deg, var(--c-btn) 0%, var(--c-btn-d) 100%);
       color: #fff;
       box-shadow: var(--sh-primary);
     }
     .btn-primary:hover {
-      background: linear-gradient(135deg, var(--c-primary-h) 0%, var(--c-primary) 100%);
+      background: linear-gradient(135deg, var(--c-btn-h) 0%, var(--c-btn) 100%);
       color: #fff;
       box-shadow: 0 6px 24px rgba(239,131,84,0.52);
       transform: translateY(-1px);
@@ -879,7 +884,7 @@
       box-shadow: 0 2px 8px rgba(45,49,66,0.08);
     }
     .pg-btn.pg-active {
-      background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-d) 100%);
+      background: linear-gradient(135deg, var(--c-btn) 0%, var(--c-btn-d) 100%);
       color: #fff !important;
       border-color: transparent;
       box-shadow: 0 2px 10px var(--c-primary-glow);
@@ -1052,3 +1057,7 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* Request-list search box (2026-10-12) */
+.req-search { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
+.req-search .inp { flex: 1 1 260px; max-width: 420px; }

@@ -1,4 +1,4 @@
-{% from '_macros.html' import render_pagination, col_filter %}
+{% from '_macros.html' import render_pagination, col_filter, request_search %}
 {% extends "base.html" %}
 {% block title %}Dashboard — RDC Associates Hiring{% endblock %}
 
@@ -190,13 +190,15 @@
   {% set desig_opts = [] %}{% for d in col_options.designation %}{% set _ = desig_opts.append((d, d)) %}{% endfor %}
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
     <h2 style="font-size:15px;font-weight:700;color:var(--c-text-1);margin:0;">All Requests</h2>
-    {% if selected_status or selected_company or selected_designation %}
+    {% if selected_status or selected_company or selected_designation or search_q %}
     <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-ghost" style="padding:3px 9px;">
       <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
       Clear all filters
     </a>
     {% endif %}
   </div>
+
+  {{ request_search(search_q, request.args) }}
 
   <!-- All Requests table -->
   <div class="card" style="overflow:hidden;">
@@ -237,7 +239,7 @@
       <div style="width:48px;height:48px;background:var(--c-bg);border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;border:1px solid var(--c-border);">
         <svg width="22" height="22" fill="none" stroke="var(--c-text-5)" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
       </div>
-      {% if selected_status or selected_company or selected_designation %}
+      {% if selected_status or selected_company or selected_designation or search_q %}
       <p style="font-size:14px;font-weight:500;margin:0 0 12px;color:var(--c-text-2);">No requests match these filters.</p>
       <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary btn-sm">Clear filter</a>
       {% else %}

@@ -1,0 +1,94 @@
+{% from '_macros.html' import render_list_search %}
+{% extends "base.html" %}
+{% block title %}Department Mapping — RDC Associates Hiring Admin{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">Dashboard</a>
+  <span class="bc-sep">/</span>
+  <span class="bc-item bc-current">Department Mapping</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:1000px;">
+  <div style="margin-bottom:22px;">
+    <h1 class="page-title">Department Mapping</h1>
+    <p class="page-sub">Decides which staffing role an <strong>existing</strong> employee counts toward, from the Department written against them in ZingHR / Truein. Capitals and extra spaces don't matter. Changes apply from the next sync (Sync Now on the Staffing Status page does it straight away).</p>
+  </div>
+
+  <div class="card" style="padding:20px 24px;margin-bottom:22px;">
+    <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0 0 12px;">Add a department</h2>
+    <form method="POST" action="{{ url_for('admin.add_department_mapping') }}" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div style="flex:2;min-width:220px;">
+        <label for="dm-dept" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Department, as written in ZingHR / Truein</label>
+        <input class="inp" id="dm-dept" name="department" maxlength="200" required value="{{ prefill }}" autocomplete="off"/>
+      </div>
+      <div style="flex:1;min-width:200px;">
+        <label for="dm-cat" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Counts as</label>
+        <select class="inp" id="dm-cat" name="category_id" required>
+          {% for c in cats %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+    <p style="font-size:12px;color:var(--c-text-4);margin:12px 0 0;line-height:1.6;">
+      Built-in rules that stay as they are: <strong>Trainee Civil</strong> counts as Technical only after 90 days of service, and a <em>trainee</em> in any department that counts as Technical doesn't count until then either.
+    </p>
+  </div>
+
+  <div class="card" style="overflow:hidden;margin-bottom:22px;">
+    {{ render_list_search('dept-map-search', '#dept-map-tbody tr', 'Search departments…') }}
+    <table class="tbl" style="width:100%;">
+      <thead><tr><th>Department</th><th>Counts as</th><th>In use</th><th></th></tr></thead>
+      <tbody id="dept-map-tbody">
+      {% for r in rows %}
+        <tr {% if not r.is_active %}style="opacity:.6;"{% endif %}>
+          <td style="font-weight:600;color:var(--c-text-1);">{{ r.department }}</td>
+          <td>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" form="dm-f{{ r.id }}"/>
+            <select class="inp" name="category_id" form="dm-f{{ r.id }}" style="min-width:200px;" aria-label="Counts as">
+              {% for c in cats %}<option value="{{ c.id }}" {% if c.id == r.norm_role_category_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+              {% if r.norm_role_category_id not in cats|map(attribute='id') %}<option value="{{ r.norm_role_category_id }}" selected>{{ r.norm_role_category.name }} (off)</option>{% endif %}
+            </select>
+          </td>
+          <td><input type="checkbox" name="is_active" value="1" form="dm-f{{ r.id }}" {% if r.is_active %}checked{% endif %} style="width:17px;height:17px;" aria-label="In use"/></td>
+          <td style="text-align:right;white-space:nowrap;">
+            <button type="submit" form="dm-f{{ r.id }}" class="btn btn-secondary btn-sm">Save</button>
+            <form method="POST" action="{{ url_for('admin.delete_department_mapping', row_id=r.id) }}" style="display:inline;" class="js-confirm-form"
+                  data-confirm-title="Remove this department?" data-confirm-body="“{{ r.department }}” will no longer be counted toward any role from the next sync."
+                  data-confirm-label="Remove">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--c-danger);">Remove</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" style="text-align:center;padding:30px;color:var(--c-text-4);">No departments yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {# The row's Save button and fields belong to these (form="dm-f<id>"); kept out of the table so the markup stays valid. #}
+    {% for r in rows %}<form method="POST" action="{{ url_for('admin.update_department_mapping', row_id=r.id) }}" id="dm-f{{ r.id }}"></form>{% endfor %}
+  </div>
+
+  {% if unmapped %}
+  <div class="card" style="overflow:hidden;">
+    <div style="padding:16px 22px;border-bottom:1px solid var(--c-border);">
+      <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0;">Departments not counted anywhere</h2>
+      <div style="font-size:12px;color:var(--c-text-4);margin-top:2px;">People in the latest sync whose department isn't in the list above — add the ones that should count.</div>
+    </div>
+    <table class="tbl" style="width:100%;">
+      <thead><tr><th>Department</th><th>People</th><th></th></tr></thead>
+      <tbody>
+      {% for dept, n in unmapped %}
+        <tr><td>{{ dept }}</td><td>{{ n }}</td>
+            <td style="text-align:right;"><a class="btn btn-secondary btn-sm" href="{{ url_for('admin.department_mapping', dept=dept) }}#dm-dept">Add</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

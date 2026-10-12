@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% set unit = 'plants' if scope.value == 'CLUSTER' else 'm³ a month' %}
+{% block title %}{{ 'Edit bracket' if tier else 'Add bracket' }} — RDC Associates Hiring Admin{% endblock %}
+
+{% macro val(name, default) %}{{ request.form.get(name, default) if request.method == 'POST' else default }}{% endmacro %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('main.dashboard') }}" class="bc-item">Dashboard</a>
+  <span class="bc-sep">/</span>
+  <a href="{{ url_for('admin.staffing_norms') }}" class="bc-item">Staffing Norms</a>
+  <span class="bc-sep">/</span>
+  <span class="bc-item bc-current">{{ tier.tier_label if tier else 'New bracket' }}</span>
+</nav>
+{% endblock %}
+
+{% macro req_row(prefix, r, nodel) %}
+  {% set t = request.form.get(prefix ~ '_type', r.requirement_type.value if r else '') if request.method == 'POST' else (r.requirement_type.value if r else '') %}
+  <div class="req-row" style="display:grid;grid-template-columns:minmax(150px,1.2fr) 90px 90px 110px minmax(120px,1.5fr) auto;gap:8px;align-items:center;margin-bottom:6px;">
+    <select class="inp req-type" name="{{ prefix }}_type" style="min-width:0;">
+      {% if not r %}<option value="">— add a limit —</option>{% endif %}
+      <option value="FIXED" {% if t == 'FIXED' %}selected{% endif %}>Fixed number</option>
+      <option value="RATE_PER_VOLUME" {% if t == 'RATE_PER_VOLUME' %}selected{% endif %}>Per {{ 'plants' if scope.value == 'CLUSTER' else 'volume' }}</option>
+      <option value="NONE" {% if t == 'NONE' %}selected{% endif %}>None allowed</option>
+      {% if r and r.requirement_type.value == 'PER_BUSINESS_HEAD' %}<option value="PER_BUSINESS_HEAD" {% if t == 'PER_BUSINESS_HEAD' %}selected{% endif %}>Per business head (not yet used)</option>{% endif %}
+    </select>
+    <input class="inp req-fixed" type="number" min="0" step="1" name="{{ prefix }}_fixed" placeholder="count" aria-label="Fixed count"
+           value="{{ val(prefix ~ '_fixed', fmt(r.fixed_count) if r else '') }}"/>
+    <input class="inp req-rate" type="number" min="0" step="any" name="{{ prefix }}_rate" placeholder="people" aria-label="People"
+           value="{{ val(prefix ~ '_rate', fmt(r.rate_per_unit) if r else '') }}"/>
+    <input class="inp req-unit" type="number" min="0" step="any" name="{{ prefix }}_unit" placeholder="per … m³" aria-label="Per volume"
+           value="{{ val(prefix ~ '_unit', fmt(r.unit_volume) if r else '') }}"/>
+    <input class="inp" type="text" maxlength="300" name="{{ prefix }}_notes" placeholder="note (optional)" aria-label="Note"
+           value="{{ val(prefix ~ '_notes', (r.notes or '') if r else '') }}"/>
+    {% if r %}
+    <label style="font-size:12px;color:var(--c-danger);white-space:nowrap;cursor:pointer;"><input type="checkbox" name="{{ prefix }}_del" value="1" {% if request.form.get(prefix ~ '_del') %}checked{% endif %}/> Remove</label>
+    {% else %}<span></span>{% endif %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div style="max-width:980px;">
+  <h1 class="page-title">{{ 'Edit bracket' if tier else 'Add bracket' }}</h1>
+  <p class="page-sub">{{ 'Plants' if scope.value == 'PLANT' else 'Regions' }} · {{ 'Sheet 1' if sheet.value == 'SHEET1' else 'Sheet 2' }}.
+    A bracket is a range of {{ 'monthly production (m³)' if scope.value == 'PLANT' else 'plant counts' }}; it applies when the value is at least “from” and below “up to”. Two active brackets can't overlap.</p>
+
+  <form method="POST" class="card" style="padding:26px 28px;display:flex;flex-direction:column;gap:22px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <input type="hidden" name="sheet" value="{{ sheet.value }}"/><input type="hidden" name="scope" value="{{ scope.value }}"/>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:16px;">
+      <div style="grid-column:span 2;min-width:0;">
+        <label for="tier_label" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Name <span style="color:var(--c-danger);">*</span></label>
+        <input class="inp" id="tier_label" name="tier_label" maxlength="100" required value="{{ val('tier_label', tier.tier_label if tier else '') }}" placeholder="e.g. 3000-5000 m³"/>
+      </div>
+      <div>
+        <label for="min_value" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">From ({{ unit }})</label>
+        <input class="inp" id="min_value" type="number" step="any" min="0" name="min_value" value="{{ val('min_value', fmt(tier.min_value) if tier else '') }}" placeholder="no lower limit"/>
+      </div>
+      <div>
+        <label for="max_value" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Up to, not including ({{ unit }})</label>
+        <input class="inp" id="max_value" type="number" step="any" min="0" name="max_value" value="{{ val('max_value', fmt(tier.max_value) if tier else '') }}" placeholder="no upper limit"/>
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:600;color:var(--c-text-1);cursor:pointer;">
+      <input type="checkbox" name="is_active" value="1" style="width:17px;height:17px;"
+             {% if ((request.form.get('is_active') == '1') if request.method == 'POST' else (tier.is_active if tier else True)) %}checked{% endif %}/>
+      Bracket is in use
+    </label>
+
+    <div>
+      <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0 0 4px;">Limits in this bracket</h2>
+      <p style="font-size:12px;color:var(--c-text-4);margin:0 0 14px;line-height:1.6;">
+        A role can have more than one line — they are added together (Technical works this way).
+        <strong>Fixed number</strong>: always that many. <strong>Per volume</strong>: “people” for every “per” {{ 'm³' }} of production (e.g. 1 person per 900 m³), rounded to the nearest whole person.
+        A role with no line here is not limited in this bracket.
+      </p>
+      <div style="display:grid;grid-template-columns:minmax(150px,1.2fr) 90px 90px 110px minmax(120px,1.5fr) auto;gap:8px;font-size:11px;font-weight:600;color:var(--c-text-4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;" class="req-head">
+        <span>Type</span><span>Count</span><span>People</span><span>Per ({{ 'plants' if scope.value == 'CLUSTER' else 'm³' }})</span><span>Note</span><span></span>
+      </div>
+      {% for c in cats %}
+      <fieldset style="border:1px solid var(--c-border);border-radius:10px;padding:12px 14px;margin:0 0 12px;{% if not c.is_active %}opacity:.6;{% endif %}">
+        <legend style="font-size:13px;font-weight:700;color:var(--c-text-1);padding:0 6px;">{{ c.name }}{% if not c.is_capacity_gated %} <span style="font-weight:500;color:var(--c-text-4);">(shown only, never blocks hiring)</span>{% endif %}</legend>
+        {% for r in existing.get(c.id, []) %}{{ req_row('r' ~ r.id, r) }}{% endfor %}
+        {{ req_row('n' ~ c.id, none) }}
+      </fieldset>
+      {% else %}
+      <p style="color:var(--c-text-4);font-size:13px;">No roles exist for this group yet — add one from the Staffing Norms page first.</p>
+      {% endfor %}
+    </div>
+
+    <div style="display:flex;gap:10px;">
+      <button type="submit" class="btn btn-primary">Save bracket</button>
+      <a href="{{ url_for('admin.staffing_norms') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function () {
+  // Only the boxes that matter for the chosen type stay editable (disabled boxes are not sent).
+  function sync(row) {
+    var t = row.querySelector('.req-type').value;
+    row.querySelector('.req-fixed').disabled = t !== 'FIXED';
+    row.querySelector('.req-rate').disabled = t !== 'RATE_PER_VOLUME';
+    row.querySelector('.req-unit').disabled = t !== 'RATE_PER_VOLUME';
+  }
+  document.querySelectorAll('.req-row').forEach(function (row) {
+    sync(row);
+    row.querySelector('.req-type').addEventListener('change', function () { sync(row); });
+  });
+})();
+</script>
+{% endblock %}

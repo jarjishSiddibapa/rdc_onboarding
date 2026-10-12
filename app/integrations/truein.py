@@ -385,10 +385,12 @@ def build_payload(req) -> dict:
     # department — see _CATEGORY_TO_DEPARTMENT above. Only ever a fallback:
     # the form has no "department" field today, so the FIELD_MAP walk never
     # populates this, but this keeps the ordering correct if one is added later.
-    if "department" not in payload and desig_obj and desig_obj.norm_category_id:
+    from ..services.staffing_norms import resolve_norm_category_id as _resolve_cat
+    _cat_id = _resolve_cat(desig_obj, fd) if desig_obj else None
+    if "department" not in payload and _cat_id:
         from ..extensions import db as _db
         from ..models import NormRoleCategory as _NormRoleCategory
-        cat = _db.session.get(_NormRoleCategory, desig_obj.norm_category_id)
+        cat = _db.session.get(_NormRoleCategory, _cat_id)
         if cat:
             dept = _CATEGORY_TO_DEPARTMENT.get(cat.name)
             if dept:

@@ -293,19 +293,23 @@ def _staffing_company_scope(user):
 
 def _special_case_counts_by_category(plant_name: str) -> dict:
     """Count of ACTIVE, is_special_case requests at this plant, by norm_category_id."""
+    from ..services.staffing_norms import resolve_norm_category_id
     rows = (
-        db.session.query(Designation.norm_category_id, db.func.count(OnboardingRequest.id))
+        db.session.query(OnboardingRequest, Designation)
         .join(Designation, db.and_(Designation.name == OnboardingRequest.designation,
                                    Designation.company == "RDC"))
         .filter(OnboardingRequest.plant_location == plant_name,
                 OnboardingRequest.status == RequestStatus.ACTIVE,
                 OnboardingRequest.is_special_case == True,  # noqa: E712
-                OnboardingRequest.is_deleted == False,      # noqa: E712
-                Designation.norm_category_id.isnot(None))
-        .group_by(Designation.norm_category_id)
+                OnboardingRequest.is_deleted == False)      # noqa: E712
         .all()
     )
-    return dict(rows)
+    counts = {}
+    for req, desig in rows:   # per request, not grouped in SQL: a designation's bucket can depend on the qualification
+        cat_id = resolve_norm_category_id(desig, req.form_data)
+        if cat_id:
+            counts[cat_id] = counts.get(cat_id, 0) + 1
+    return counts
 
 
 # ── Lookup helper ─────────────────────────────────────────────────────────────
@@ -768,6 +772,13 @@ def new_request():
         if req.status not in (RequestStatus.DRAFT,) and req.status not in REJECTED_STATUSES:
             abort(400)
     else:
+        # Opening the form used to leave a new empty draft behind every time (6 of 23 live requests were
+        # blank). Hand back the user's existing blank draft instead and clear any extra blank ones.
+        from ..utils import clear_blank_drafts
+        req, _removed = clear_blank_drafts(current_user.id, keep_newest=True)
+        if req is not None:
+            db.session.commit()
+            return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
         req = OnboardingRequest(initiated_by=current_user.id, status=RequestStatus.DRAFT)
         db.session.add(req)
         db.session.flush()

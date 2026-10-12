@@ -50,6 +50,22 @@
         <p style="font-size:12px;color:var(--c-text-4);margin-top:6px;">
           Which RDC staffing-norm role bucket this designation counts toward. Used to gate RDC hiring against plant/cluster headcount norms — leave as "None" for designations not covered by the norms table.
         </p>
+        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin:16px 0 7px;">Exception by qualification <span style="font-weight:400;color:var(--c-text-4);">(optional)</span></label>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <span style="font-size:12.5px;color:var(--c-text-3);">If the qualification contains</span>
+          <input class="inp" type="text" name="qualification_keyword" maxlength="50" style="width:150px;" placeholder="e.g. Civil"
+                 value="{{ designation.qualification_keyword if designation and designation.qualification_keyword else '' }}"/>
+          <span style="font-size:12.5px;color:var(--c-text-3);">count as</span>
+          <select class="inp" name="qualification_norm_category_id" style="min-width:200px;">
+            <option value="">— no exception —</option>
+            {% for cat in norm_categories %}
+            <option value="{{ cat.id }}" {% if designation and designation.qualification_norm_category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <p style="font-size:12px;color:var(--c-text-4);margin-top:6px;">
+          For a designation whose bucket depends on the candidate — e.g. a Technician Apprentice with a Civil diploma/degree counts as Technical, anyone else as the category chosen above.
+        </p>
       </div>
 
       {# ── Truein Settings ── #}

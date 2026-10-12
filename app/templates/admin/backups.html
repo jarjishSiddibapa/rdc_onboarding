@@ -108,6 +108,37 @@
     </form>
   </div>
 
+  <!-- Staffing history kept in the database -->
+  <div class="card" id="history" style="padding:22px 28px;margin-bottom:24px;">
+    <h2 style="font-size:14px;font-weight:700;color:var(--c-text-1);margin:0 0 6px;">Staffing history</h2>
+    <p style="font-size:12.5px;color:var(--c-text-3);margin:0 0 16px;line-height:1.6;">
+      Every nightly sync stores a full copy of the headcount data. Only the newest copy is ever shown or used for hiring checks,
+      so older ones just make the database and every backup bigger. The newest few syncs are kept; the rest are removed after each nightly sync.
+    </p>
+    <div style="display:flex;gap:28px;flex-wrap:wrap;font-size:12.5px;color:var(--c-text-3);margin-bottom:16px;">
+      <span><strong style="color:var(--c-text-1);font-size:15px;">{{ history.runs }}</strong> syncs stored</span>
+      <span><strong style="color:var(--c-text-1);font-size:15px;">{{ '{:,}'.format(history.staffing_rows + history.employee_rows) }}</strong> rows</span>
+      {% if history.oldest %}<span>oldest from <strong style="color:var(--c-text-1);">{{ history.oldest|ist }}</strong></span>{% endif %}
+    </div>
+    <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+      <form method="POST" action="{{ url_for('admin.snapshot_history_settings') }}" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div>
+          <label for="keep-runs" style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:7px;">Keep the last (syncs, 5 or more)</label>
+          <input class="inp" type="number" id="keep-runs" name="keep_runs" min="5" max="365" value="{{ history.keep_runs }}" style="width:150px;"/>
+        </div>
+        <button type="submit" class="btn btn-secondary">Save</button>
+      </form>
+      <form method="POST" action="{{ url_for('admin.snapshot_history_cleanup') }}" class="js-confirm-form"
+            data-confirm-title="Remove old staffing history?"
+            data-confirm-body="Syncs older than the newest {{ history.keep_runs }} will be permanently deleted. The current headcount is not affected."
+            data-confirm-label="Remove">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-ghost" {% if history.runs <= history.keep_runs %}disabled{% endif %}>Clean up now</button>
+      </form>
+    </div>
+  </div>
+
   <!-- History -->
   <div class="card" style="padding:0;overflow:hidden;">
     <div style="padding:18px 22px;border-bottom:1px solid var(--c-border);">

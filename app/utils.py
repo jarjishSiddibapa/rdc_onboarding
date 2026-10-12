@@ -347,14 +347,16 @@ def notify_users(db, request_obj, recipients, subject, body, category="HIRING", 
     stays plain text. Every email that is about a request also gets an
     "Open request" link when the public base URL is known.
     """
+    # Approval requests also tell the approver how many people the role has at the plant (same for every recipient).
+    manpower = manpower_for_email(request_obj) if actions else None
     for user in recipients:
         create_in_app_notification(db, request_obj, user, subject, body)
         if user.email_mode == "HIRING_ONLY" and category == "ADMIN":
             continue
         links = build_email_links(request_obj, user, with_actions=actions)
         if links:
-            _dispatch_email(subject, [user.email], render_email_text(body, links),
-                            html=render_email_html(subject, body, request_obj, links))
+            _dispatch_email(subject, [user.email], render_email_text(body, links, manpower),
+                            html=render_email_html(subject, body, request_obj, links, manpower))
         else:
             _dispatch_email(subject, [user.email], body)
 
@@ -460,8 +462,57 @@ def build_email_links(req, user, with_actions=False):
         return None
 
 
-def render_email_text(body, links):
-    lines = [body, ""]
+def manpower_for_email(req):
+    """Manpower block for an approval e-mail (RDC only - the other companies have no staffing norms). Never raises:
+    a problem working it out must not stop the approval request being sent."""
+    if getattr(req, "company_code", None) != "RDC":
+        return None
+    try:
+        from .services.staffing_norms import manpower_summary
+        return manpower_summary(req.form_data)
+    except Exception:
+        return None
+
+
+def _manpower_text(mp):
+    if not mp:
+        return []
+    if "note" in mp:
+        return ["Manpower: " + mp["note"], ""]
+    status = f"over the maximum by {mp['after'] - mp['allowed']}" if mp["over"] else "within the maximum"
+    lines = [f"Manpower - {mp['role']} at {mp['location']}",
+             f"  Current: {mp['current']}   Maximum allowed: {mp['allowed']}   After this hire: {mp['after']} ({status})"]
+    if mp.get("volume") is not None:
+        lines.append(f"  Plant production: {mp['volume']:,.0f} m3 a month (3-month average)"
+                     + (f", bracket {mp['tier']}" if mp.get("tier") else ""))
+    return lines + [""]
+
+
+def _manpower_html(mp):
+    from html import escape
+    if not mp:
+        return ""
+    if "note" in mp:
+        return (f'<p style="font-size:12.5px;color:#667085;margin:0 0 18px;">Manpower: {escape(mp["note"])}</p>')
+    colour, text = ("#B42318", f"Over the maximum by {mp['after'] - mp['allowed']}") if mp["over"] else ("#067647", "Within the maximum")
+    th = 'style="padding:6px 12px;text-align:left;font-size:11px;color:#667085;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #EAECF0;"'
+    td = 'style="padding:8px 12px;font-size:14px;color:#101828;font-weight:700;"'
+    cap = ""
+    if mp.get("volume") is not None:
+        cap = (f'<div style="font-size:12px;color:#667085;margin-top:6px;">Plant production {mp["volume"]:,.0f} m&sup3; a month (3-month average)'
+               + (f', bracket {escape(str(mp["tier"]))}' if mp.get("tier") else "") + '</div>')
+    return (
+        '<div style="margin:0 0 20px;">'
+        f'<div style="font-size:13px;font-weight:700;color:#344054;margin-bottom:6px;">Manpower &mdash; {escape(str(mp["role"]))} at {escape(str(mp["location"]))}</div>'
+        '<table style="border-collapse:collapse;border:1px solid #EAECF0;border-radius:8px;">'
+        f'<tr><th {th}>Role</th><th {th}>Current</th><th {th}>Maximum</th><th {th}>After this hire</th></tr>'
+        f'<tr><td {td}>{escape(str(mp["role"]))}</td><td {td}>{mp["current"]}</td><td {td}>{mp["allowed"]}</td>'
+        f'<td {td}>{mp["after"]} <span style="font-size:12px;font-weight:600;color:{colour};">&middot; {text}</span></td></tr>'
+        f'</table>{cap}</div>')
+
+
+def render_email_text(body, links, manpower=None):
+    lines = [body, ""] + _manpower_text(manpower)
     if "approve" in links:
         lines += ["Approve: " + links["approve"], "Reject:  " + links["reject"], "",
                   "No sign-in needed: each link opens a confirmation page, and nothing is recorded until "
@@ -470,7 +521,7 @@ def render_email_text(body, links):
     return "\n".join(lines)
 
 
-def render_email_html(subject, body, req, links):
+def render_email_html(subject, body, req, links, manpower=None):
     from html import escape
     def _btn(label, url, bg):
         return (f'<a href="{escape(url)}" style="display:inline-block;padding:12px 26px;margin:0 8px 8px 0;'
@@ -498,6 +549,7 @@ def render_email_html(subject, body, req, links):
         f'<h2 style="font-size:18px;color:#101828;margin:8px 0 12px;">{escape(subject)}</h2>'
         f'<p style="font-size:14px;color:#344054;line-height:1.55;margin:0 0 16px;">{escape(body).replace(chr(10), "<br>")}</p>'
         f'<table style="border-collapse:collapse;margin:0 0 20px;">{detail}</table>'
+        f'{_manpower_html(manpower)}'
         f'{actions}{open_line}'
         '<p style="font-size:11.5px;color:#98A2B3;margin:22px 0 0;border-top:1px solid #EAECF0;padding-top:12px;">'
         'This is an automated message from RDC Associates Hiring.</p>'
@@ -654,3 +706,51 @@ def fmt_date(value):
         except ValueError:
             continue
     return txt
+
+
+# ── Blank drafts (2026-10-12) ─────────────────────────────────────────────────
+
+def _is_blank_draft(req) -> bool:
+    """A DRAFT nobody typed anything into: no values in any field, no uploads."""
+    if req.documents:
+        return False
+    return not any(str(v or "").strip() for v in req.form_data.values())
+
+
+def clear_blank_drafts(user_id, keep_newest=False, older_than=None):
+    """Soft-delete this user's blank DRAFTs (opening "New Hiring Request" used to leave one behind every
+    time). keep_newest=True spares the most recently touched one so the caller can hand it back for reuse;
+    older_than (a timedelta) spares anything touched more recently, so a form open in another tab is safe.
+    Returns (kept_or_None, number_removed). Caller commits."""
+    from datetime import datetime
+    from .models import OnboardingRequest, RequestStatus
+    q = OnboardingRequest.query.filter_by(initiated_by=user_id, status=RequestStatus.DRAFT, is_deleted=False)
+    if older_than is not None:
+        q = q.filter(OnboardingRequest.updated_at < datetime.utcnow() - older_than)
+    blanks = [r for r in q.order_by(OnboardingRequest.updated_at.desc()).all() if _is_blank_draft(r)]
+    kept = blanks.pop(0) if (keep_newest and blanks) else None
+    for r in blanks:
+        r.is_deleted = True
+    if blanks:
+        log_audit("REQUEST", "REQUEST_BLANK_DRAFTS_CLEARED", resource_type="OnboardingRequest",
+                  resource_label=f"{len(blanks)} blank draft(s)",
+                  detail={"request_ids": [r.id for r in blanks], "user_id": user_id})
+    return kept, len(blanks)
+
+
+def apply_request_search(query, term):
+    """Free-text search used by every request list: candidate name, designation, plant, or a request number
+    ("42" / "#42"). LIKE wildcards in what the person typed are escaped, so "50%" means a literal 50%."""
+    from .models import OnboardingRequest
+    from .extensions import db
+    term = (term or "").strip()[:100]
+    if not term:
+        return query
+    like = "%" + term.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_") + "%"
+    conds = [OnboardingRequest.candidate_name.ilike(like, escape="\\"),
+             OnboardingRequest.designation.ilike(like, escape="\\"),
+             OnboardingRequest.plant_location.ilike(like, escape="\\")]
+    num = term.lstrip("#")
+    if num.isdigit() and len(num) < 10:
+        conds.append(OnboardingRequest.id == int(num))
+    return query.filter(db.or_(*conds))

@@ -174,12 +174,19 @@ class Designation(db.Model):
     # Which RDC staffing-norm role bucket this designation counts toward (nullable —
     # designations not covered by the norms table, e.g. corporate/HR roles, stay None).
     norm_category_id = db.Column(db.Integer, db.ForeignKey("norm_role_categories.id"), nullable=True)
+    # Optional qualification rule (2026-10-12), e.g. Technician Apprentice: counts as Batching by default but as
+    # Technical when the candidate's Qualification contains "Civil". When the request's qualification contains
+    # `qualification_keyword` (case-insensitive) this designation counts toward `qualification_norm_category_id`
+    # instead of `norm_category_id` - see staffing_norms.resolve_norm_category_id().
+    qualification_keyword = db.Column(db.String(50), nullable=True)
+    qualification_norm_category_id = db.Column(db.Integer, db.ForeignKey("norm_role_categories.id"), nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     sort_order = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    norm_category = db.relationship("NormRoleCategory")
+    norm_category = db.relationship("NormRoleCategory", foreign_keys=[norm_category_id])
+    qualification_norm_category = db.relationship("NormRoleCategory", foreign_keys=[qualification_norm_category_id])
 
 
 # ── Dynamic form schema ────────────────────────────────────────────────────────
@@ -248,6 +255,9 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(60), unique=True, nullable=True)
     employee_code = db.Column(db.String(50), nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
+    # Bumped on sign-out and whenever the password changes; every login cookie (session and remember-me)
+    # carries the value it was issued under and stops working the moment it no longer matches.
+    session_version = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     role = db.Column(db.Enum(UserRole), nullable=False, default=UserRole.INITIATOR)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     profile_pic = db.Column(db.String(500), nullable=True)
@@ -287,7 +297,12 @@ class User(UserMixin, db.Model):
     )
 
     def get_id(self):
-        return str(self.id)
+        # "<id>.<session_version>" - see session_version above and load_user() below.
+        return f"{self.id}.{self.session_version or 0}"
+
+    def end_all_sessions(self):
+        """Invalidate every login cookie issued for this account (all devices). Caller commits."""
+        self.session_version = (self.session_version or 0) + 1
 
     @property
     def role_label(self):
@@ -296,9 +311,18 @@ class User(UserMixin, db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    # A deactivated account must lose its live session / remember-me cookie at once.
-    u = db.session.get(User, int(user_id))
-    return u if u is not None and u.is_active else None
+    # A deactivated account must lose its live session / remember-me cookie at once, and so must a cookie
+    # issued before the last sign-out / password change (its version no longer matches). A bare "<id>" is a
+    # cookie from before versions existed: accepted only while the account's version is still 0.
+    uid, _, ver = str(user_id).partition(".")
+    try:
+        u = db.session.get(User, int(uid))
+        ver = int(ver or 0)
+    except (TypeError, ValueError):
+        return None
+    if u is None or not u.is_active or ver != (u.session_version or 0):
+        return None
+    return u
 
 
 # ── Onboarding Request ─────────────────────────────────────────────────────────
@@ -685,6 +709,27 @@ class NormRequirement(db.Model):
 
     tier = db.relationship("NormTier", backref=db.backref("requirements"))
     norm_role_category = db.relationship("NormRoleCategory", backref=db.backref("requirements"))
+
+
+class DepartmentCategoryMap(db.Model):
+    """
+    Admin-editable "ZingHR/Truein Department -> staffing-norm category" map (Admin -> Department Mapping).
+    This is how an EXISTING employee is bucketed for headcount (a new hire is bucketed by their designation
+    instead). It used to be a hardcoded dict in app/services/headcount.py; that dict is now only the starting
+    set and the fallback while this table is empty. `department_norm` is the lower-cased, whitespace- and
+    slash-normalised text (headcount._normalize_department) - what employee records are compared against.
+    """
+    __tablename__ = "department_category_map"
+
+    id = db.Column(db.Integer, primary_key=True)
+    department = db.Column(db.String(200), nullable=False)               # as typed, for display
+    department_norm = db.Column(db.String(200), unique=True, nullable=False)
+    norm_role_category_id = db.Column(db.Integer, db.ForeignKey("norm_role_categories.id"), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    norm_role_category = db.relationship("NormRoleCategory")
 
 
 # ── Cross-system name reconciliation ────────────────────────────────────────────

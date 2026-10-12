@@ -133,10 +133,14 @@ def my_profile():
                         flash(e, "danger")
                 else:
                     current_user.password_hash = bcrypt.generate_password_hash(new_pwd).decode("utf-8")
+                    current_user.end_all_sessions()   # signs out every other device / old cookie
                     log_audit("PROFILE", "PASSWORD_CHANGED_BY_SELF",
                               resource_type="User", resource_id=current_user.id,
                               resource_label=current_user.name)
                     db.session.commit()
+                    # ...but keep THIS browser signed in under the new version.
+                    from flask_login import login_user
+                    login_user(current_user._get_current_object(), remember=bool(request.cookies.get("remember_token")))
                     flash("Password changed successfully.", "success")
 
         elif action == "update_notification_prefs":

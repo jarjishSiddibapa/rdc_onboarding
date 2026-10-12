@@ -208,4 +208,4 @@ def login(client, email, password="Test1234"):
 
 
 def logout(client):
-    return client.get("/auth/logout", follow_redirects=True)
+    return client.post("/auth/logout", follow_redirects=True)

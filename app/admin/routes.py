@@ -25,7 +25,7 @@ from ..models import (
     PlantDvtMapping, ClusterNameMapping, BusinessHeadRegion, InitiatorRegion,
     MatchConfidence, COMPANY_CHOICES, UserCompanyScope,
 )
-from ..utils import role_required, validate_password, log_audit
+from ..utils import role_required, validate_password, log_audit, apply_request_search
 from . import admin_bp
 
 
@@ -179,6 +179,7 @@ def admin_change_password(user_id):
             flash(e, "danger")
     else:
         user.password_hash = bcrypt.generate_password_hash(new_pwd).decode("utf-8")
+        user.end_all_sessions()
         log_audit("USER_MGMT", "USER_PASSWORD_CHANGED_BY_ADMIN",
                   resource_type="User", resource_id=user.id,
                   resource_label=user.name,
@@ -645,6 +646,7 @@ def requests_list():
     status_filter  = request.args.get("status")
     company_filter = request.args.get("company")
     show_deleted   = request.args.get("show_deleted") == "1"
+    search_q       = request.args.get("q", "").strip()[:100]
 
     # Company-scope gating (added 2026-09-23 — same gap class as Staffing
     # Status: this page predates the company-scope tick-mark feature and
@@ -677,6 +679,7 @@ def requests_list():
             pass
         if company_filter:
             query = query.filter_by(company_code=company_filter)
+        query = apply_request_search(query, search_q)
         page = request.args.get("page", 1, type=int)
         pagination = query.order_by(OnboardingRequest.updated_at.desc()).paginate(
             page=page, per_page=_per_page(25), error_out=False
@@ -692,6 +695,7 @@ def requests_list():
             companies=companies,
             selected_status=status_filter,
             selected_company=company_filter,
+            search_q=search_q,
             show_deleted=show_deleted,
         )
 
@@ -703,6 +707,7 @@ def requests_list():
         base = base.filter(OnboardingRequest.company_code.in_(my_companies))
     if company_filter:
         base = base.filter_by(company_code=company_filter)
+    base = apply_request_search(base, search_q)
 
     # Ongoing pane — independent pagination (?page_o=N)
     page_o = request.args.get("page_o", 1, type=int)
@@ -745,6 +750,7 @@ def requests_list():
         companies=companies,
         selected_status=status_filter,
         selected_company=company_filter,
+        search_q=search_q,
         show_deleted=show_deleted,
         # keep these so existing template references don't break
         requests=[],
@@ -972,6 +978,16 @@ def designations_list():
                            companies=COMPANY_CHOICES, selected_company=company)
 
 
+def _qualification_rule(company):
+    """(keyword, category id) from the designation form's optional qualification rule; (None, None) unless both are
+    given. RDC only, like the norm category itself."""
+    kw = (request.form.get("qualification_keyword", "") or "").strip()[:50]
+    cat = request.form.get("qualification_norm_category_id", type=int) or None
+    if company != "RDC" or not kw or not cat:
+        return None, None
+    return kw, cat
+
+
 @admin_bp.route("/designations/new", methods=["GET", "POST"])
 @login_required
 @role_required(UserRole.SUPER_ADMIN)
@@ -988,6 +1004,7 @@ def new_designation():
         truein_app_att = bool(request.form.get("truein_app_attendance"))
         # Staffing norms are RDC-only; never attach a norm bucket to another company's row.
         norm_category_id = (request.form.get("norm_category_id", type=int) or None) if company == "RDC" else None
+        q_kw, q_cat = _qualification_rule(company)
         if not name:
             flash("Designation name is required.", "danger")
         else:
@@ -999,6 +1016,7 @@ def new_designation():
             desig = Designation(name=name, company=company, notice_period_days=notice_days,
                                 truein_app_attendance=truein_app_att,
                                 norm_category_id=norm_category_id,
+                                qualification_keyword=q_kw, qualification_norm_category_id=q_cat,
                                 sort_order=max_order + 1)
             db.session.add(desig)
             db.session.flush()
@@ -1007,7 +1025,8 @@ def new_designation():
                       resource_label=f"Designation: {name}",
                       detail={"name": name, "company": company, "notice_period_days": notice_days,
                               "truein_app_attendance": truein_app_att,
-                              "norm_category_id": norm_category_id})
+                              "norm_category_id": norm_category_id,
+                              "qualification_keyword": q_kw, "qualification_norm_category_id": q_cat})
             try:
                 db.session.commit()
             except SQLAlchemyError:
@@ -1038,6 +1057,7 @@ def edit_designation(desig_id):
         _old_days   = desig.notice_period_days
         _old_att    = desig.truein_app_attendance
         _old_norm_cat = desig.norm_category_id
+        _old_qual = (desig.qualification_keyword, desig.qualification_norm_category_id)
         desig.name  = request.form.get("name", desig.name).strip()
         try:
             desig.notice_period_days = int(request.form.get("notice_period_days", desig.notice_period_days) or 30)
@@ -1048,7 +1068,12 @@ def edit_designation(desig_id):
         _new_company = request.form.get("company", desig.company)
         desig.company = _new_company if _new_company in COMPANY_CHOICES else desig.company
         desig.norm_category_id = (request.form.get("norm_category_id", type=int) or None) if desig.company == "RDC" else None
+        desig.qualification_keyword, desig.qualification_norm_category_id = _qualification_rule(desig.company)
         _changes = {}
+        if _old_qual != (desig.qualification_keyword, desig.qualification_norm_category_id):
+            _changes["qualification_rule"] = {
+                "from": {"keyword": _old_qual[0], "category_id": _old_qual[1]},
+                "to": {"keyword": desig.qualification_keyword, "category_id": desig.qualification_norm_category_id}}
         if _old_company != desig.company:
             _changes["company"] = {"from": _old_company, "to": desig.company}
         if _old_name != desig.name:
@@ -1775,7 +1800,7 @@ def new_cluster_mapping():
 def _backup_overview():
     import shutil
     from ..models import BackupRun
-    from ..services import db_backup
+    from ..services import db_backup, snapshot_retention
     settings = db_backup.get_settings()
     directory = db_backup.backup_dir(settings)
     free = None
@@ -1794,6 +1819,7 @@ def _backup_overview():
         "next_run": db_backup.next_run_ist(settings),
         "default_dir": db_backup.default_backup_dir(),
         "email_ready": bool(db_backup_mail_ready()),
+        "history": snapshot_retention.stats(),
     }
 
 
@@ -1932,3 +1958,45 @@ def backup_delete(run_id):
     else:
         flash("The file could not be removed.", "danger")
     return redirect(url_for("admin.backups"))
+
+
+# ── Staffing snapshot history (2026-10-12) ─────────────────────────────────────
+
+@admin_bp.route("/backups/history-settings", methods=["POST"])
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+def snapshot_history_settings():
+    from ..services import snapshot_retention as sr
+    raw = request.form.get("keep_runs", "").strip()
+    if not raw.isdigit() or not (sr.MIN_KEEP_RUNS <= int(raw) <= sr.MAX_KEEP_RUNS):
+        flash(f"Enter a whole number from {sr.MIN_KEEP_RUNS} to {sr.MAX_KEEP_RUNS}.", "danger")
+        return redirect(url_for("admin.backups") + "#history")
+    old = sr.get_keep_runs()
+    new = sr.set_keep_runs(int(raw))
+    log_audit("USER_MGMT", "SNAPSHOT_HISTORY_SETTING_UPDATED", resource_type="SystemConfig",
+              resource_label="Staffing history kept (syncs)", detail={"from": old, "to": new})
+    db.session.commit()
+    flash(f"Keeping the last {new} syncs of staffing history. Older ones are removed after the next nightly sync.",
+          "success")
+    return redirect(url_for("admin.backups") + "#history")
+
+
+@admin_bp.route("/backups/history-cleanup", methods=["POST"])
+@login_required
+@role_required(UserRole.SUPER_ADMIN)
+@limiter.limit("6 per hour")
+def snapshot_history_cleanup():
+    from ..services import snapshot_retention as sr
+    try:
+        result = sr.prune()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        flash(f"Cleanup failed: {exc}", "danger")
+        return redirect(url_for("admin.backups") + "#history")
+    log_audit("USER_MGMT", "SNAPSHOT_HISTORY_CLEANED", resource_type="SystemConfig",
+              resource_label="Staffing history cleanup", detail=result)
+    db.session.commit()
+    n = result["deleted_staffing"] + result["deleted_employees"]
+    flash(f"Removed {n:,} old history rows." if n else "Nothing to remove - the history is already within the limit.",
+          "success")
+    return redirect(url_for("admin.backups") + "#history")

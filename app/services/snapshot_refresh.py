@@ -86,6 +86,14 @@ def _refresh_loop(app):
                     result = headcount.compute_and_store_snapshot()
                     app.logger.info(f"[StaffingSnapshot] refreshed: {result}")
                     next_run = _next_sync_utc(datetime.utcnow())
+                    # Old runs are never read again - drop everything past the admin-set "keep" count.
+                    try:
+                        from . import snapshot_retention
+                        app.logger.info(f"[StaffingSnapshot] history cleanup: "
+                                        f"{snapshot_retention.prune(require_recent_backup=True)}")
+                    except Exception as exc:
+                        db.session.rollback()
+                        app.logger.error(f"[StaffingSnapshot] history cleanup failed: {exc}")
             except Exception as exc:
                 app.logger.error(f"[StaffingSnapshot] refresh failed: {exc}")
                 # Don't hammer a failing source: retry in 30 minutes, not every poll tick.

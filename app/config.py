@@ -39,8 +39,13 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=10)
     SESSION_COOKIE_HTTPONLY = True        # JS cannot read the session cookie
     SESSION_COOKIE_SAMESITE = "Lax"      # CSRF mitigation for cross-site requests
-    SESSION_COOKIE_SECURE = False         # Set True when served over HTTPS
+    # "Secure" cookies are only sent over HTTPS, so forcing this on while the app is served over plain
+    # HTTP (the LAN setup) would stop every login from sticking. It switches on by itself when the app
+    # is configured for HTTPS: set APP_BASE_URL=https://... or SESSION_COOKIE_SECURE=1 in .env.
+    SESSION_COOKIE_SECURE = (os.environ.get("SESSION_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes")
+                             or os.environ.get("APP_BASE_URL", "").strip().lower().startswith("https://"))
     SESSION_COOKIE_NAME = "rdc_session"  # Non-default name (obscures framework)
+    REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
     REMEMBER_COOKIE_DURATION = timedelta(days=7)

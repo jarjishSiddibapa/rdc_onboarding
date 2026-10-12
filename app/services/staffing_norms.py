@@ -13,8 +13,9 @@ This is what app/requests_bp/routes.py::submit_request()/resubmit_request()
 call when form_data['company_code'] == 'RDC', right before the
 DRAFT -> PENDING_BH transition.
 """
+from ..extensions import db
 from ..models import (
-    NormTier, NormRequirement, NormScope, NormSheet, NormRequirementType,
+    NormRoleCategory, NormTier, NormRequirement, NormScope, NormSheet, NormRequirementType,
     PlantDvtMapping, Designation, GateResult,
 )
 from ..integrations import dvt
@@ -87,6 +88,18 @@ def _find_tier(scope: NormScope, sheet: NormSheet, value: float):
     return None
 
 
+def resolve_norm_category_id(designation, form_data) -> int | None:
+    """The staffing-norm role bucket a NEW hire counts toward: the designation's own, unless it has a
+    qualification rule and the candidate's Qualification matches (e.g. Technician Apprentice with a Civil
+    diploma/degree counts as Technical, anyone else as Batching)."""
+    if designation is None:
+        return None
+    kw = (designation.qualification_keyword or "").strip().lower()
+    if kw and designation.qualification_norm_category_id and kw in str((form_data or {}).get("qualification") or "").lower():
+        return designation.qualification_norm_category_id
+    return designation.norm_category_id
+
+
 def get_tier_for_plant(plant_name: str, sheet: NormSheet = NormSheet.SHEET1):
     """Resolve plant_name's trailing 3-month average DVT volume and find the matching NormTier. None if unresolvable."""
     mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant_name, is_deleted=False).first()
@@ -155,6 +168,34 @@ def _result(allowed: bool, reason: str, details: dict) -> dict:
     return {"allowed": allowed, "reason": reason, "details": details}
 
 
+def manpower_summary(form_data: dict) -> dict | None:
+    """What an approver should see about the role being hired for, for the approval e-mail: how many people that
+    role has at the plant now and the most it may have. Same numbers as the hiring check (it IS the hiring check),
+    recomputed at send time so a later approval stage sees today's figures. Works for both ordinary and
+    over-norm (special approval) requests - the over-norm case simply shows "after this hire" above the maximum.
+
+    Returns None when there is nothing to say (designation not covered by the norms, or a role the norms don't
+    limit); {"note": ...} when it is covered but the figures can't be worked out right now (plant not mapped,
+    no snapshot yet...); otherwise {role, location, scope, current, allowed, after, over, volume, tier}."""
+    res = check_rdc_staffing_gate(form_data or {})
+    d, reason = res["details"], res["reason"]
+    if reason in ("not_covered", "not_capacity_gated"):
+        return None
+    if d.get("current_headcount") is None or d.get("allowed_headcount") is None:
+        return {"note": d.get("message") or "Manpower figures are not available for this plant yet."}
+    scope = d.get("scope")
+    return {
+        "role": d.get("norm_role_category_name"),
+        "scope": scope,
+        "location": d.get("plant_name") if scope == "PLANT" else d.get("cluster_name"),
+        "current": d["current_headcount"], "allowed": d["allowed_headcount"],
+        "after": d["current_headcount"] + 1,
+        "over": d["current_headcount"] + 1 > d["allowed_headcount"],
+        "volume": d.get("volume_used") if scope == "PLANT" else None,
+        "tier": d.get("tier_label"),
+    }
+
+
 def check_rdc_staffing_gate(form_data: dict) -> dict:
     """
     Evaluate the RDC staffing gate against a plain form_data dict (designation,
@@ -175,13 +216,14 @@ def check_rdc_staffing_gate(form_data: dict) -> dict:
         plant_name = (fd.get("plant_location") or "").strip()
 
         designation = Designation.query.filter_by(name=designation_name, company="RDC", is_deleted=False).first()
-        if not designation or not designation.norm_category_id:
+        norm_category_id = resolve_norm_category_id(designation, fd)
+        if not designation or not norm_category_id:
             return _result(True, "not_covered", {
                 "message": "Designation is not covered by RDC staffing norms.",
                 "designation": designation_name,
             })
 
-        norm_category = designation.norm_category
+        norm_category = db.session.get(NormRoleCategory, norm_category_id)
 
         if not norm_category.is_capacity_gated:
             return _result(True, "not_capacity_gated", {

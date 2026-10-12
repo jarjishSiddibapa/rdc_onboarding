@@ -1,3 +1,4 @@
+from datetime import timedelta
 from urllib.parse import urlencode
 from flask import render_template, redirect, url_for, jsonify, request, abort, flash
 
@@ -31,7 +32,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from ..extensions import db
 from ..models import OnboardingRequest, RequestStatus, UserRole, Notification, User
-from ..utils import ROLE_QUEUES, REJECTED_STATUSES, PENDING_STATUSES, log_audit
+from ..utils import ROLE_QUEUES, REJECTED_STATUSES, PENDING_STATUSES, log_audit, apply_request_search
 from . import main_bp
 
 
@@ -53,6 +54,16 @@ def dashboard():
     status_filter = request.args.get("status", "").strip()
     company_filter = request.args.get("company", "").strip()
     designation_filter = request.args.get("designation", "").strip()
+    search_q = request.args.get("q", "").strip()[:100]
+
+    # Blank drafts older than a day are leftovers from opening "New Hiring Request" - tidy them away.
+    if role in (UserRole.INITIATOR, UserRole.HR_MANAGER):
+        try:
+            from ..utils import clear_blank_drafts
+            if clear_blank_drafts(current_user.id, older_than=timedelta(days=1))[1]:
+                db.session.commit()
+        except Exception:   # housekeeping must never break the dashboard
+            db.session.rollback()
 
     # HR Manager can also initiate requests (2026-09-29 — see
     # OnboardingRequest.hr_manager_initiated). Their own DRAFT requests are
@@ -103,7 +114,7 @@ def dashboard():
             "company": _distinct_options(base_q, OnboardingRequest.company_code),
             "designation": _distinct_options(base_q, OnboardingRequest.designation),
         }
-        filtered_q = _apply_col_filters(filtered_q, company_filter, designation_filter)
+        filtered_q = apply_request_search(_apply_col_filters(filtered_q, company_filter, designation_filter), search_q)
         pagination = filtered_q.order_by(
             OnboardingRequest.updated_at.desc()
         ).paginate(page=page, per_page=_per_page(25), error_out=False)
@@ -118,12 +129,14 @@ def dashboard():
             selected_status=status_filter,
             selected_company=company_filter,
             selected_designation=designation_filter,
+            search_q=search_q,
             col_options=col_options,
         )
 
     # ── Approver roles ─────────────────────────────────────────────────────────
     pending_status = ROLE_QUEUES.get(role)
     queue = []
+    pending_total = 0
     all_requests = []
 
     if pending_status:
@@ -221,8 +234,10 @@ def dashboard():
                 base_q = base_q.filter(OnboardingRequest.company_code.in_(my_companies))
                 all_q = all_q.filter(OnboardingRequest.company_code.in_(my_companies))
 
-        queue = base_q.filter_by(status=pending_status).order_by(
+        queue = apply_request_search(base_q.filter_by(status=pending_status), search_q).order_by(
             OnboardingRequest.updated_at.asc()).all()
+        # The "Pending" card counts the whole waiting queue, even while a search narrows the table.
+        pending_total = (base_q.filter_by(status=pending_status).count() if search_q else len(queue))
 
         # Snapshot the scoped (company/region-filtered) query, before any
         # ?status= narrows all_q below, so the summary cards can be counted
@@ -241,7 +256,7 @@ def dashboard():
                 all_q = all_q.filter_by(status=RequestStatus(status_filter))
             except ValueError:
                 pass
-        all_q = _apply_col_filters(all_q, company_filter, designation_filter)
+        all_q = apply_request_search(_apply_col_filters(all_q, company_filter, designation_filter), search_q)
         page = request.args.get("page", 1, type=int)
         all_pagination = all_q.order_by(
             OnboardingRequest.updated_at.desc()
@@ -262,7 +277,7 @@ def dashboard():
     # both from _scoped_q (unscoped for HEAD_HR/DR_BHOON, exactly as
     # intended for those two roles) fixes it without changing their view.
     counts = {
-        "pending": len(queue),
+        "pending": pending_total,
         "total":   _scoped_q.count() if _scoped_q is not None else 0,
         "active":  _scoped_q.filter_by(status=RequestStatus.ACTIVE).count() if _scoped_q is not None else 0,
     }
@@ -281,6 +296,7 @@ def dashboard():
         selected_status=status_filter,
         selected_company=company_filter,
         selected_designation=designation_filter,
+        search_q=search_q,
         col_options=col_options,
     )
 

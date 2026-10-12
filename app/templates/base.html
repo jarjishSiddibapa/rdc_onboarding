@@ -74,6 +74,14 @@
         <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
         Cluster Mappings
       </a>
+      <a href="{{ url_for('admin.staffing_norms') }}" class="nav-link {% if request.endpoint in ('admin.staffing_norms', 'admin.new_norm_tier', 'admin.edit_norm_tier', 'admin.new_norm_category', 'admin.edit_norm_category') %}active{% endif %}">
+        <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Staffing Norms
+      </a>
+      <a href="{{ url_for('admin.department_mapping') }}" class="nav-link {% if request.endpoint == 'admin.department_mapping' %}active{% endif %}">
+        <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+        Department Mapping
+      </a>
       <a href="{{ url_for('admin.email_settings') }}" class="nav-link {% if request.endpoint == 'admin.email_settings' %}active{% endif %}">
         <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
         Email Settings
@@ -157,10 +165,14 @@
     </a>
 
     <!-- Sign out -->
-    <a href="{{ url_for('auth.logout') }}" class="nav-link" style="color:var(--sb-text);margin:0;">
-      <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-      Sign Out
-    </a>
+    {# Sign-out is a POST (a plain link can be fired by any web page); the same form is submitted by the idle timer below. #}
+    <form id="logout-form" method="POST" action="{{ url_for('auth.logout') }}" style="margin:0;" data-no-busy>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="nav-link" style="color:var(--sb-text);margin:0;width:100%;background:none;border:0;font:inherit;text-align:left;cursor:pointer;">
+        <svg class="nv-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        Sign Out
+      </button>
+    </form>
   </div>
 </aside>
 {% endif %}
@@ -279,7 +291,10 @@
       var sb = document.getElementById('stay-btn');
       if (sb) sb.addEventListener('click', function(e) { e.preventDefault(); reset(); });
     }, WARN);
-    lT = setTimeout(function() { window.location.href = "{{ url_for('auth.logout') }}"; }, IDLE);
+    lT = setTimeout(function() {
+      var f = document.getElementById('logout-form');
+      if (f) f.submit(); else window.location.href = "{{ url_for('auth.login') }}";
+    }, IDLE);
   }
   ['mousemove','keydown','mousedown','touchstart','scroll','click'].forEach(function(ev) {
     document.addEventListener(ev, reset, { passive: true });

@@ -100,7 +100,7 @@
     {% for c in companies %}
     <a href="{{ url_for('admin.designations_list', company=c) }}"
        style="padding:7px 16px;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;
-              {% if c == selected_company %}background:var(--c-primary);color:#fff;
+              {% if c == selected_company %}background:var(--c-btn);color:#fff;
               {% else %}background:var(--c-bg-2);color:var(--c-text-3);border:1px solid var(--c-border);{% endif %}">
       {{ c }}
     </a>

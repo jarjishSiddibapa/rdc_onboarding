@@ -293,6 +293,8 @@ def create_app():
     csrf.init_app(app)
     limiter.init_app(app)
 
+    from .utils import ADMIN_CONTACT_EMAIL
+    app.jinja_env.globals["admin_email"] = ADMIN_CONTACT_EMAIL
     app.jinja_env.filters["ist"] = _format_ist
     app.jinja_env.filters["plant_name"] = _plant_display_name
     from .models import ROLE_LABELS, STATUS_LABELS

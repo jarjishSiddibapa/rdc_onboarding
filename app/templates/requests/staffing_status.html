@@ -33,7 +33,7 @@
         style="padding:12px 20px;font-size:13.5px;font-weight:600;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--c-text-3);">ROBO</button>
       {% endif %}
       {% if not visible_companies %}
-      <p style="padding:12px 20px;font-size:13px;color:var(--c-text-4);">No company is assigned to your account — contact your administrator.</p>
+      <p style="padding:12px 20px;font-size:13px;color:var(--c-text-4);">No company is assigned to your account — contact your administrator ({{ admin_email }}).</p>
       {% endif %}
     </div>
   </div>
@@ -128,7 +128,7 @@
   </div>
   <div class="card" style="overflow:hidden;margin-bottom:16px;">
     {% if not summary %}
-    <div style="padding:32px;text-align:center;color:var(--c-text-4);">No {{ company }} plants set up yet.{% if current_user.role.value == 'SUPER_ADMIN' %} Add one at <a href="{{ url_for('admin.plants_list', company=company) }}">Admin → Plant Locations</a>.{% else %} Ask your administrator to add them.{% endif %}</div>
+    <div style="padding:32px;text-align:center;color:var(--c-text-4);">No {{ company }} plants set up yet.{% if current_user.role.value == 'SUPER_ADMIN' %} Add one at <a href="{{ url_for('admin.plants_list', company=company) }}">Admin → Plant Locations</a>.{% else %} Ask your administrator ({{ admin_email }}) to add them.{% endif %}</div>
     {% else %}
     <table class="tbl">
       <thead><tr><th>Plant</th><th>Headcount</th></tr></thead>

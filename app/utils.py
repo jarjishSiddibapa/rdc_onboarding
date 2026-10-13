@@ -70,6 +70,10 @@ TRANSITIONS = {
 }
 
 # Which status each role can act on
+# Who people are told to write to when something needs an administrator (shown in "contact your
+# administrator" messages; templates get it as the Jinja global `admin_email`).
+ADMIN_CONTACT_EMAIL = "ithelpdesk@rdc.in"
+
 ROLE_QUEUES = {
     UserRole.BUSINESS_HEAD: RequestStatus.PENDING_BH,
     UserRole.DR_BHOON: RequestStatus.PENDING_DR_BHOON,

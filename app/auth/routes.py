@@ -96,7 +96,7 @@ def login():
                       resource_label=user.name, actor_id=user.id,
                       detail={"login_id": login_id, "reason": "account_deactivated"})
             db.session.commit()
-            flash("Your account has been deactivated. Contact an administrator.", "danger")
+            flash("Your account has been deactivated. Contact an administrator (ithelpdesk@rdc.in).", "danger")
         elif user:
             # No lockout, no attempt limit — failed logins are logged only,
             # never counted toward locking the account or resetting the password.

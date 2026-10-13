@@ -22,6 +22,7 @@ from ..models import (
 )
 from ..extensions import limiter, csrf
 from ..utils import (
+    ADMIN_CONTACT_EMAIL,
     role_required, get_new_status, can_act_on,
     notify_users, allowed_file, validate_mime, REJECTED_STATUSES, log_audit,
     get_db_mail_config, fmt_date,
@@ -187,7 +188,7 @@ def _validate_approver_availability(req):
     company = req.form_data.get("company_code", "")
     if not bh_ids_for_initiator(initiator, company):
         return (f"No Business / Functional Head is currently configured for {company}. "
-                f"Contact your administrator before submitting this request.")
+                f"Contact your administrator ({ADMIN_CONTACT_EMAIL}) before submitting this request.")
     # An HR-Manager-initiated request never visits PENDING_HR_MANAGER at all
     # (see get_new_status()) — checked here via the initiator's live role
     # since _finalize_submission() hasn't snapshotted hr_manager_initiated
@@ -195,7 +196,7 @@ def _validate_approver_availability(req):
     visits_hr_manager = ((company != "RDC") or not req.is_special_case) and initiator.role != UserRole.HR_MANAGER
     if visits_hr_manager and not hr_manager_ids_for_company(company):
         return (f"No HR Manager is currently configured for {company}. "
-                f"Contact your administrator before submitting this request.")
+                f"Contact your administrator ({ADMIN_CONTACT_EMAIL}) before submitting this request.")
     return None
 
 
@@ -222,7 +223,7 @@ def _validate_plant_region(req):
     plant_name = req.form_data.get("plant_location", "")
     mapping = PlantDvtMapping.query.filter_by(plant_location_name=plant_name, is_deleted=False).first()
     if not mapping or mapping.cluster_id not in cluster_ids:
-        return "This plant is outside your assigned region(s). Contact your administrator if this is incorrect."
+        return f"This plant is outside your assigned region(s). Contact your administrator ({ADMIN_CONTACT_EMAIL}) if this is incorrect."
     return None
 
 
@@ -946,7 +947,7 @@ def _check_submittable(req, full=True):
     # POST could still name an unticked company — reject it explicitly.
     from ..utils import company_scope_ids
     if req.form_data.get("company_code", "") not in company_scope_ids(current_user.id):
-        flash("You are not authorized to submit requests for this company. Contact your administrator.", "danger")
+        flash(f"You are not authorized to submit requests for this company. Contact your administrator ({ADMIN_CONTACT_EMAIL}).", "danger")
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
     if full:
@@ -2221,7 +2222,7 @@ def _email_action_context(signed, action):
     user = db.session.get(User, data.get("u"))
     req = OnboardingRequest.query.filter_by(id=data.get("r"), is_deleted=False).first()
     if not user or not user.is_active:
-        return None, (403, "This account can not act on the request", "Please contact your administrator.")
+        return None, (403, "This account can not act on the request", f"Please contact your administrator ({ADMIN_CONTACT_EMAIL}).")
     if not req:
         return None, (404, "Request not found", "This request no longer exists.")
     if req.status.value != data.get("s"):
@@ -2232,7 +2233,7 @@ def _email_action_context(signed, action):
                       "The request was sent back and resubmitted since this email was sent. Please use the newest email about it.")
     if not can_act_on(req, user):
         return None, (403, "You can no longer act on this request",
-                      "Your access to it has changed. Please contact your administrator.")
+                      f"Your access to it has changed. Please contact your administrator ({ADMIN_CONTACT_EMAIL}).")
     return {"req": req, "user": user, "action": action}, None
 
 

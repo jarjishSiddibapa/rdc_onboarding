@@ -301,6 +301,12 @@ def dashboard():
     )
 
 
+@main_bp.route("/about")
+@login_required
+def about():
+    return render_template("dashboard/about.html")
+
+
 @main_bp.route("/notifications")
 @login_required
 def notifications():

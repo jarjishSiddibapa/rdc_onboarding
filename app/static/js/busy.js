@@ -13,7 +13,7 @@
                                  there is no completion event for a plain <a> download)
 ════════════════════════════════════════════════════ */
 (function () {
-  var MSG = 'One sec... pretending this is very complicated 😎';
+  var MSG = 'Loading...';
   var FETCH_DELAY = 250;   // don't flash the pill for instant requests
   var NAV_DELAY = 300;
   var NAV_CAP = 30000;     // a "navigation" that returns a file never unloads the page

@@ -334,7 +334,7 @@
             </select>
             {% if field.field_key == 'company_code' and not initiator_companies %}
             <p style="font-size:11.5px;color:var(--c-danger);margin-top:6px;">
-              No company is assigned to your account yet — contact your administrator.
+              No company is assigned to your account yet — contact your administrator ({{ admin_email }}).
             </p>
             {% endif %}
 

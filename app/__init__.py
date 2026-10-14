@@ -297,6 +297,9 @@ def create_app():
     app.jinja_env.globals["admin_email"] = ADMIN_CONTACT_EMAIL
     app.jinja_env.filters["ist"] = _format_ist
     app.jinja_env.filters["plant_name"] = _plant_display_name
+    from .utils import format_duration, EVENT_LABELS
+    app.jinja_env.filters["duration"] = format_duration      # seconds -> "3 h 20 min"
+    app.jinja_env.filters["event_label"] = lambda t: EVENT_LABELS.get(t, str(t).replace("_", " ").capitalize())
     from .models import ROLE_LABELS, STATUS_LABELS
     # Accept an enum member or its raw string value.
     app.jinja_env.filters["role_name"] = lambda r: ROLE_LABELS.get(getattr(r, "value", r), str(getattr(r, "value", r)))

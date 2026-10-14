@@ -522,3 +522,138 @@ def download_excel():
     resp.headers["Pragma"]               = "no-cache"
     resp.headers["Expires"]              = "0"
     return resp
+
+
+# ── Action times: every recorded step with its time, for response-time analysis ─
+# (2026-10-14) One row per RequestEvent - submitted / approved / rejected / resubmitted / Truein push ... -
+# with the exact time, who did it, and how long the request had waited for it. Second sheet: average
+# response time per role (the number the stakeholders asked for). Same audience as the other export.
+
+_IST = timedelta(hours=5, minutes=30)
+
+
+def _ist_text(dt):
+    return (dt + _IST).strftime("%d/%m/%Y %H:%M:%S") if dt else ""
+
+
+def _parse_iso_day(value):
+    try:
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _minutes(seconds):
+    return round(seconds / 60.0, 2) if seconds is not None else None
+
+
+@exports_bp.route("/action-times/download")
+@login_required
+@role_required(*_ALLOWED_ROLES)
+def download_action_times():
+    from statistics import median
+    from ..models import RequestEvent, ROLE_LABELS, STATUS_LABELS
+    from ..utils import EVENT_LABELS, format_duration
+
+    d_from = _parse_iso_day(request.args.get("from"))
+    d_to = _parse_iso_day(request.args.get("to"))
+    company = (request.args.get("company") or "").strip()
+
+    q = (db.session.query(RequestEvent, OnboardingRequest)
+         .join(OnboardingRequest, OnboardingRequest.id == RequestEvent.request_id))
+    if d_from:                                    # the chosen days are IST days; events are stored in UTC
+        q = q.filter(RequestEvent.occurred_at >= d_from - _IST)
+    if d_to:
+        q = q.filter(RequestEvent.occurred_at < d_to + timedelta(days=1) - _IST)
+    if current_user.role == UserRole.HR_MANAGER:
+        from ..utils import company_scope_ids
+        q = q.filter(OnboardingRequest.company_code.in_(company_scope_ids(current_user.id) or [""]))
+    if company:
+        q = q.filter(OnboardingRequest.company_code == company)
+    rows = q.order_by(RequestEvent.request_id, RequestEvent.occurred_at, RequestEvent.id).all()
+
+    def stage(v):
+        return STATUS_LABELS.get(v, v or "")
+
+    wb = Workbook()
+    hdr_fill = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
+    hdr_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    dat_font = Font(name="Calibri", size=10)
+    thin = Side(style="thin", color="CCCCCC")
+    bdr = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def write_sheet(ws, title, columns, data):
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(columns))
+        c = ws.cell(row=1, column=1, value=f"{title}  |  Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        c.font = Font(name="Calibri", size=13, bold=True, color="1F3864")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 28
+        for ci, (label, width) in enumerate(columns, 1):
+            h = ws.cell(row=2, column=ci, value=label)
+            h.font, h.fill, h.alignment, h.border = hdr_font, hdr_fill, hdr_align, bdr
+            ws.column_dimensions[get_column_letter(ci)].width = width
+        ws.row_dimensions[2].height = 32
+        ws.freeze_panes = "A3"
+        for ri, vals in enumerate(data, 3):
+            for ci, v in enumerate(vals, 1):
+                cell = ws.cell(row=ri, column=ci, value=v)
+                if isinstance(v, str) and v[:1] in ("=", "+", "-", "@"):
+                    cell.data_type = "s"          # user text is never evaluated as a formula
+                cell.font, cell.border = dat_font, bdr
+
+    # Sheet 1: every event
+    ws = wb.active
+    ws.title = "Action log"
+    cols = [("Request ID", 11), ("Candidate", 24), ("Company", 11), ("Plant", 22), ("Designation", 22),
+            ("Attempt", 9), ("Action", 30), ("Done by", 22), ("Role", 24), ("From stage", 30), ("To stage", 30),
+            ("Date & time (IST)", 20), ("Request had been waiting since (IST)", 22), ("Time taken", 14),
+            ("Time taken (minutes)", 14), ("Total approval time so far (minutes)", 18), ("How", 12), ("Remark", 50)]
+    data = []
+    for ev, rq in rows:
+        data.append([
+            rq.id, rq.candidate_name or "", rq.company_code or "", rq.plant_location or "", rq.designation or "",
+            ev.attempt_no, EVENT_LABELS.get(ev.event_type, ev.event_type), ev.actor_name or "System",
+            ROLE_LABELS.get(ev.actor_role, ev.actor_role or ""), stage(ev.from_status), stage(ev.to_status),
+            _ist_text(ev.occurred_at), _ist_text(ev.waiting_since),
+            format_duration(ev.duration_seconds) if ev.duration_seconds is not None else "",
+            _minutes(ev.duration_seconds), _minutes(ev.cycle_seconds),
+            {"email_link": "E-mail link", "system": "Automatic", "manual": "Manual"}.get(ev.via, "App"),
+            ev.remark or ""])
+    write_sheet(ws, "Request action log - every step with its time", cols, data)
+
+    # Sheet 2: response time by role (decisions only: approved / rejected)
+    groups = {}
+    for ev, rq in rows:
+        if ev.event_type in ("APPROVED", "REJECTED") and ev.duration_seconds is not None:
+            for co in (rq.company_code or "", "All companies"):
+                groups.setdefault((ev.actor_role or "", co), []).append((ev.event_type, ev.duration_seconds))
+    stat_rows = []
+    for (role, co), items in sorted(groups.items(), key=lambda kv: (kv[0][1] != "All companies", kv[0][1], kv[0][0])):
+        secs = [s for _, s in items]
+        stat_rows.append([ROLE_LABELS.get(role, role), co, len(items),
+                          sum(1 for t, _ in items if t == "APPROVED"), sum(1 for t, _ in items if t == "REJECTED"),
+                          format_duration(sum(secs) / len(secs)), _minutes(sum(secs) / len(secs)),
+                          format_duration(median(secs)), _minutes(median(secs)),
+                          format_duration(min(secs)), format_duration(max(secs))])
+    ws2 = wb.create_sheet("Response time by role")
+    write_sheet(ws2, "How long each role takes to respond (from the request reaching them to their decision)",
+                [("Role", 26), ("Company", 14), ("Decisions", 11), ("Approved", 10), ("Rejected", 10),
+                 ("Average", 16), ("Average (minutes)", 14), ("Median", 16), ("Median (minutes)", 14),
+                 ("Fastest", 16), ("Slowest", 16)], stat_rows)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    data_bytes = buf.getvalue()
+    filename = f"action_times_{datetime.now().strftime('%d%m%Y_%H%M')}.xlsx"
+    log_audit("EXPORT", "EXPORT_DOWNLOADED",
+              detail={"report_title": "Action times", "record_count": len(rows), "filename": filename,
+                      "filters": {"from": request.args.get("from"), "to": request.args.get("to"), "company": company}})
+    db.session.commit()
+
+    resp = make_response(data_bytes)
+    resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    resp.headers["Content-Length"] = len(data_bytes)
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp

@@ -502,6 +502,67 @@ class ApprovalAction(db.Model):
     actor = db.relationship("User", back_populates="actions")
 
 
+class RequestEvent(db.Model):
+    """
+    Append-only ledger of every step in a hiring request's life (2026-10-14):
+    draft created, submitted, each approval/rejection, resubmission, the
+    special-case acknowledgement, every Truein push attempt, draft removed.
+    One row per event, never updated or deleted, written via
+    utils.record_request_event() and committed atomically with the action.
+
+    It exists so response times can be analysed later without reconstructing
+    them from other tables: every row carries the exact moment it happened
+    (occurred_at, naive UTC like every timestamp here), when the request had
+    been waiting for it (waiting_since) and how long that was
+    (duration_seconds) — for an approval that is "how long the approver took
+    to respond". actor_name/actor_role are snapshots (a later rename or role
+    change never rewrites history); company_code/is_special_case are the
+    values at that moment.
+    """
+    __tablename__ = "request_events"
+    __table_args__ = (
+        db.Index("idx_revent_request",  "request_id", "occurred_at"),
+        db.Index("idx_revent_type",     "event_type", "occurred_at"),
+        db.Index("idx_revent_role",     "actor_role", "event_type"),
+        db.Index("idx_revent_occurred", "occurred_at"),
+    )
+
+    id          = db.Column(db.Integer, primary_key=True)
+    request_id  = db.Column(db.Integer, db.ForeignKey("onboarding_requests.id"), nullable=False)
+    # DRAFT_CREATED, SPECIAL_CASE_ACKNOWLEDGED, SUBMITTED, RESUBMITTED, APPROVED,
+    # REJECTED, TRUEIN_PUSHED, TRUEIN_PUSH_FAILED, DRAFT_DELETED
+    event_type  = db.Column(db.String(40), nullable=False)
+    occurred_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    actor_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)   # NULL = the system
+    actor_name  = db.Column(db.String(200), nullable=True)
+    actor_role  = db.Column(db.String(30),  nullable=True)                          # UserRole value at the time
+
+    from_status = db.Column(db.String(30), nullable=True)
+    to_status   = db.Column(db.String(30), nullable=True)
+    attempt_no  = db.Column(db.Integer, nullable=True)       # 1 = first submission, 2 = first resubmission, ...
+
+    # For SUBMITTED/RESUBMITTED/APPROVED/REJECTED: when the request reached the
+    # stage this event ends (previous hand-off) and the seconds spent there.
+    # For other events: the previous event of any kind.
+    waiting_since    = db.Column(db.DateTime, nullable=True)
+    duration_seconds = db.Column(db.Integer,  nullable=True)
+    # APPROVED/REJECTED: seconds since this attempt was submitted/resubmitted
+    # (on the final approval = the whole approval time of that attempt).
+    cycle_seconds    = db.Column(db.Integer,  nullable=True)
+
+    approval_action_id = db.Column(db.Integer, db.ForeignKey("approval_actions.id"), nullable=True)
+    remark       = db.Column(db.Text, nullable=True)
+    via          = db.Column(db.String(20), nullable=True)    # web | email_link | system | manual
+    company_code = db.Column(db.String(50), nullable=True)
+    is_special_case = db.Column(db.Boolean, nullable=True)
+    detail       = db.Column(db.Text, nullable=True)          # JSON
+    ip_address   = db.Column(db.String(45), nullable=True)
+
+    request = db.relationship("OnboardingRequest", backref=db.backref("events", order_by="RequestEvent.occurred_at, RequestEvent.id"))
+    actor = db.relationship("User", foreign_keys=[actor_id])
+
+
 class Notification(db.Model):
     __tablename__ = "notifications"
 

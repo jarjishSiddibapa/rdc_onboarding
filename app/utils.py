@@ -694,6 +694,117 @@ def log_audit(category, action_type, *,
             pass
 
 
+# ── Request event ledger (2026-10-14) ──────────────────────────────────────────
+# Every step in a request's life is written to request_events with the exact time,
+# who did it, and how long the request had been waiting for it - the raw data for
+# response-time analysis (per role, per stage, per company). See models.RequestEvent.
+
+_HANDOFF_EVENTS = ("SUBMITTED", "RESUBMITTED", "APPROVED", "REJECTED")
+_STAGE_MARKERS = ("DRAFT_CREATED",) + _HANDOFF_EVENTS
+
+EVENT_LABELS = {
+    "DRAFT_CREATED":             "Draft created",
+    "SPECIAL_CASE_ACKNOWLEDGED": "Proceeding outside staffing norms acknowledged",
+    "SUBMITTED":                 "Submitted for approval",
+    "RESUBMITTED":               "Resubmitted for approval",
+    "APPROVED":                  "Approved",
+    "REJECTED":                  "Rejected",
+    "TRUEIN_PUSHED":             "Pushed to Truein",
+    "TRUEIN_PUSH_FAILED":        "Truein push failed",
+    "DRAFT_DELETED":             "Draft removed",
+}
+
+
+def format_duration(value):
+    """Seconds (or a timedelta) -> '45 sec', '12 min', '3 h 20 min', '2 d 4 h'. None -> an em dash."""
+    if value is None:
+        return "—"
+    if hasattr(value, "total_seconds"):
+        value = value.total_seconds()
+    s = int(max(value, 0))
+    if s < 60:
+        return f"{s} sec"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m} min {s} sec" if (m < 5 and s) else f"{m} min"
+    h, m = divmod(m, 60)
+    if h < 24:
+        return f"{h} h {m} min" if m else f"{h} h"
+    d, h = divmod(h, 24)
+    return f"{d} d {h} h" if h else f"{d} d"
+
+
+def record_request_event(req, event_type, *, actor=None, from_status=None, to_status=None, remark=None,
+                         approval_action=None, at=None, via=None, detail=None):
+    """
+    Append one RequestEvent to the current session (like log_audit, NOT committed here - the caller's
+    commit stores it atomically with the action it describes). Never raises: a failure to write the
+    ledger row must not break the approval itself. Returns the event, or None if it could not be built.
+
+    actor defaults to the signed-in user; pass actor=None with via="system" for background work.
+    via defaults to "email_link" when the action came from an approval e-mail, else "web".
+    """
+    from datetime import datetime
+    from .extensions import db
+    from .models import RequestEvent
+    from flask import request as _freq
+
+    try:
+        at = at or datetime.utcnow()
+        if actor is None and via != "system":
+            try:
+                if current_user.is_authenticated:
+                    actor = current_user._get_current_object()
+            except Exception:
+                actor = None
+        if via is None:
+            via = "email_link" if g.get("via_email") else "web"
+
+        q = RequestEvent.query.filter_by(request_id=req.id)
+        order = (RequestEvent.occurred_at.desc(), RequestEvent.id.desc())
+        waiting_since = duration = cycle = None
+        if event_type != "DRAFT_CREATED":
+            prev_q = q.filter(RequestEvent.event_type.in_(_STAGE_MARKERS)) if event_type in _HANDOFF_EVENTS else q
+            prev = prev_q.order_by(*order).first()
+            waiting_since = prev.occurred_at if prev else req.created_at
+            if waiting_since is not None:
+                duration = max(int((at - waiting_since).total_seconds()), 0)
+        if event_type in ("APPROVED", "REJECTED"):
+            sub = q.filter(RequestEvent.event_type.in_(("SUBMITTED", "RESUBMITTED"))).order_by(*order).first()
+            if sub is not None:
+                cycle = max(int((at - sub.occurred_at).total_seconds()), 0)
+
+        ip = None
+        try:
+            ip = _freq.remote_addr
+        except Exception:
+            pass
+
+        ev = RequestEvent(
+            request_id=req.id, event_type=event_type, occurred_at=at,
+            actor_id=actor.id if actor is not None else None,
+            actor_name=actor.name if actor is not None else None,
+            actor_role=(getattr(actor.role, "value", actor.role) if actor is not None else None),
+            from_status=getattr(from_status, "value", from_status),
+            to_status=getattr(to_status, "value", to_status),
+            attempt_no=(req.retry_count or 0) + 1,
+            waiting_since=waiting_since, duration_seconds=duration, cycle_seconds=cycle,
+            approval_action_id=getattr(approval_action, "id", None),
+            remark=remark, via=via,
+            company_code=req.company_code, is_special_case=bool(req.is_special_case),
+            detail=(_json.dumps(detail, default=str) if isinstance(detail, (dict, list)) else detail),
+            ip_address=ip,
+        )
+        db.session.add(ev)
+        return ev
+    except Exception as exc:
+        try:
+            current_app.logger.warning(f"[events] record_request_event({event_type}) failed: {exc}")
+        except Exception:
+            pass
+        return None
+
+
 def fmt_date(value):
     """Any date the app displays is DD/MM/YYYY. Accepts a date/datetime, an ISO string ("2026-10-09",
     optionally with a time) or ZingHR's "18 Aug 2025"; anything else is returned unchanged (never guessed),
@@ -735,6 +846,8 @@ def clear_blank_drafts(user_id, keep_newest=False, older_than=None):
     kept = blanks.pop(0) if (keep_newest and blanks) else None
     for r in blanks:
         r.is_deleted = True
+        record_request_event(r, "DRAFT_DELETED", from_status="DRAFT", to_status="DRAFT", via="system",
+                             actor=None, detail={"reason": "blank draft cleared"})
     if blanks:
         log_audit("REQUEST", "REQUEST_BLANK_DRAFTS_CLEARED", resource_type="OnboardingRequest",
                   resource_label=f"{len(blanks)} blank draft(s)",

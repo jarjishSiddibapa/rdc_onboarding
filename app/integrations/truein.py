@@ -419,6 +419,23 @@ def _write_push_log(db, req, result: dict, triggered_by: str) -> None:
     )
     db.session.add(entry)
 
+    # Same moment, same transaction: the request's event ledger (who triggered it, how long after approval).
+    try:
+        from flask_login import current_user
+        from ..utils import record_request_event
+        ok = bool(result.get("success", False))
+        by_user = triggered_by == "manual" and current_user.is_authenticated
+        record_request_event(
+            req, "TRUEIN_PUSHED" if ok else "TRUEIN_PUSH_FAILED",
+            via="manual" if triggered_by == "manual" else "system",
+            actor=(current_user._get_current_object() if by_user else None),
+            remark=None if ok else result.get("message"),
+            detail={"attempt": attempt_number, "triggered_by": triggered_by, "empId": result.get("empId"),
+                    "http_status": result.get("http_status"),
+                    "dropped_fields": result.get("dropped_fields", [])})
+    except Exception:
+        pass
+
 
 # Human-readable labels for fields we may drop, used in notifications + UI.
 _DROPPED_FIELD_LABELS = {

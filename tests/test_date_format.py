@@ -38,7 +38,7 @@ def test_date_filters_use_the_ddmm_box_not_a_native_date_input(client, db):
     _make_user("Fmt Admin", "fmtadmin@t.com", UserRole.SUPER_ADMIN, db)
     db.session.commit()
     login(client, "fmtadmin@t.com")
-    for url, n in (("/admin/audit-log?date_from=2026-06-01", 2), ("/exports/active-employees", 4)):
+    for url, n in (("/admin/audit-log?date_from=2026-06-01", 2), ("/exports/active-employees", 6)):
         page = client.get(url).get_data(as_text=True)
         assert page.count("ddmm-date") == n and 'type="date"' not in page, url
     assert 'value="2026-06-01"' in client.get("/admin/audit-log?date_from=2026-06-01").get_data(as_text=True)

@@ -27,6 +27,7 @@ from ..utils import (
     notify_users, allowed_file, validate_mime, REJECTED_STATUSES, log_audit,
     get_db_mail_config, fmt_date,
     begin_deferred_emails, flush_deferred_emails, discard_deferred_emails,
+    record_request_event,
 )
 from . import requests_bp
 
@@ -141,6 +142,8 @@ def _finalize_submission(req):
                       "company": req.company_code,
                       "plant": req.plant_location,
                       "is_special_case": req.is_special_case})
+    record_request_event(req, "SUBMITTED", from_status=RequestStatus.DRAFT, to_status=RequestStatus.PENDING_BH,
+                         detail={"designation": req.designation, "plant": req.plant_location})
     try:
         db.session.commit()
         bh_users = _get_bh_recipients(db.session.get(User, req.initiated_by), req.company_code)
@@ -738,7 +741,10 @@ def acknowledge_special_case(token):
         abort(403)
     if req.status != RequestStatus.DRAFT or req.company_code != "RDC":
         abort(400)
-    req.is_special_case = True
+    if not req.is_special_case:
+        req.is_special_case = True
+        record_request_event(req, "SPECIAL_CASE_ACKNOWLEDGED", from_status=RequestStatus.DRAFT, to_status=RequestStatus.DRAFT,
+                             detail={"plant": req.plant_location, "designation": req.designation})
     db.session.commit()
     return "", 204
 
@@ -787,6 +793,7 @@ def new_request():
                   resource_type="OnboardingRequest", resource_id=req.id,
                   resource_label=f"Request #{req.id} (new draft)",
                   detail={"initiated_by": current_user.name})
+        record_request_event(req, "DRAFT_CREATED", to_status=RequestStatus.DRAFT, at=req.created_at)
         db.session.commit()
         return redirect(url_for("requests_bp.new_request", step=1, token=req.public_token))
 
@@ -1129,6 +1136,8 @@ def resubmit_request(token):
               detail={"candidate_name": req.candidate_name,
                       "retry_number": req.retry_count,
                       "previous_rejection_status": _prev_status})
+    record_request_event(req, "RESUBMITTED", from_status=_prev_status, to_status=RequestStatus.PENDING_BH,
+                         detail={"retry_number": req.retry_count})
     try:
         db.session.commit()
         initiator = db.session.get(User, req.initiated_by)
@@ -1957,6 +1966,15 @@ def view_request(token):
             current_round_acts = []
     rounds_raw.append(current_round_acts)   # final / currently active round
 
+    # Event ledger (2026-10-14): the real time of each step and how long it took. Older requests were
+    # filled in by backfill_request_events.py, so every action has an event.
+    events = list(req.events)
+    ev_by_action = {e.approval_action_id: e for e in events if e.approval_action_id}
+    submit_events = [e for e in events if e.event_type in ("SUBMITTED", "RESUBMITTED")]
+    last_handoff = next((e for e in reversed(events)
+                         if e.event_type in ("SUBMITTED", "RESUBMITTED", "APPROVED", "REJECTED")), None)
+    _utc_now = datetime.utcnow()
+
     cur_progress = _PROGRESS.get(sv, 0)
     cur_progress_over_norm = _PROGRESS_OVER_NORM.get(sv, 0)
     cur_progress_other_company = _PROGRESS_OTHER_COMPANY.get(sv, 0)
@@ -2069,6 +2087,8 @@ def view_request(token):
         for status_val, label in _stage_defs:
             act = round_action_at.get(status_val)
 
+            ev = ev_by_action.get(act.id) if act is not None else None
+
             if status_val == "ACTIVE":
                 if is_last_round and sv == "ACTIVE":
                     state = "done"
@@ -2099,6 +2119,19 @@ def view_request(token):
                 "acted_at":        act.acted_at if act else None,
                 "remark":          act.remark if act else None,
                 "action_type":     act.action.value if act else None,
+                # how long the request waited at this stage before this person acted
+                "took_seconds":    ev.duration_seconds if ev else None,
+                "took_label":      "Responded in",
+                "via":             ev.via if ev else None,
+                # the stage the request is waiting at right now: since when, and how long so far
+                "since":           (last_handoff.occurred_at if (state == "current" and last_handoff) else None),
+                "waiting_seconds": (int((_utc_now - last_handoff.occurred_at).total_seconds())
+                                    if (state == "current" and last_handoff) else None),
+                # final node: when it was completed and the whole approval time of this attempt
+                "completed_at":    (last_handoff.occurred_at
+                                    if (status_val == "ACTIVE" and state == "done" and last_handoff) else None),
+                "total_seconds":   (last_handoff.cycle_seconds
+                                    if (status_val == "ACTIVE" and state == "done" and last_handoff) else None),
             })
         return stages
 
@@ -2109,6 +2142,7 @@ def view_request(token):
         is_rejected_round = not is_last   # completed rounds always ended in rejection
 
         stages = _build_round_stages(round_acts, is_last)
+        sub_ev = submit_events[i] if i < len(submit_events) else None
 
         # "Submitted / Resubmitted" marker at the top of each round
         if i == 0:
@@ -2117,9 +2151,11 @@ def view_request(token):
                 "state":           "done",
                 "actor_name":      req.initiator.name,
                 "actor_role_label":"Reporting Manager",
-                "acted_at":        req.created_at,
+                "acted_at":        sub_ev.occurred_at if sub_ev else req.created_at,
                 "remark":          None,
                 "action_type":     None,
+                "took_seconds":    sub_ev.duration_seconds if sub_ev else None,
+                "took_label":      "Draft took",
             }
         else:
             # Timestamp: just before the first action in this round (if any)
@@ -2129,9 +2165,11 @@ def view_request(token):
                 "state":           "done",
                 "actor_name":      req.initiator.name,
                 "actor_role_label":"Reporting Manager",
-                "acted_at":        first_act.acted_at if first_act else None,
+                "acted_at":        sub_ev.occurred_at if sub_ev else (first_act.acted_at if first_act else None),
                 "remark":          None,
                 "action_type":     None,
+                "took_seconds":    sub_ev.duration_seconds if sub_ev else None,
+                "took_label":      "Corrected in",
             }
 
         workflow_rounds.append({
@@ -2155,6 +2193,7 @@ def view_request(token):
         FieldType=FieldType,
         workflow_rounds=workflow_rounds,
         next_role=next_role,
+        activity_log=events,
     )
 
 
@@ -2304,6 +2343,7 @@ def approve_request(token):
     except ValueError:
         abort(400)
     _from_status = req.status
+    _now = datetime.utcnow()   # one instant for the status change, the approval row and the event ledger
 
     # Atomic conditional transition (2026-09-26) — _get_req_by_token() loads
     # the request with a plain SELECT and nothing locks it, so two eligible
@@ -2322,7 +2362,7 @@ def approve_request(token):
         OnboardingRequest.id == req.id,
         OnboardingRequest.status == _from_status,
     ).update(
-        {OnboardingRequest.status: new_status, OnboardingRequest.updated_at: datetime.utcnow()},
+        {OnboardingRequest.status: new_status, OnboardingRequest.updated_at: _now},
         synchronize_session=False,
     )
     if not _updated:
@@ -2331,10 +2371,13 @@ def approve_request(token):
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
     action = ApprovalAction(request_id=req.id, actor_id=current_user.id,
-                            action=ApprovalActionType.APPROVED, remark=remark)
+                            action=ApprovalActionType.APPROVED, remark=remark, acted_at=_now)
     db.session.add(action)
+    db.session.flush()   # gives the action its id for the event row
     req.status = new_status
-    req.updated_at = datetime.utcnow()
+    req.updated_at = _now
+    record_request_event(req, "APPROVED", from_status=_from_status, to_status=new_status, remark=remark,
+                         approval_action=action, at=_now)
     begin_deferred_emails()   # approver mail goes out only after the commit below succeeds
     _send_approval_notifications(db, req, new_status)
     # Log approve action
@@ -2481,6 +2524,7 @@ def reject_request(token):
     except ValueError:
         abort(400)
     _from_status_r = req.status
+    _now_r = datetime.utcnow()
 
     # Atomic conditional transition — see the matching comment in
     # approve_request(). Guards the same double-action race for rejection.
@@ -2488,7 +2532,7 @@ def reject_request(token):
         OnboardingRequest.id == req.id,
         OnboardingRequest.status == _from_status_r,
     ).update(
-        {OnboardingRequest.status: new_status, OnboardingRequest.updated_at: datetime.utcnow()},
+        {OnboardingRequest.status: new_status, OnboardingRequest.updated_at: _now_r},
         synchronize_session=False,
     )
     if not _updated_r:
@@ -2497,10 +2541,13 @@ def reject_request(token):
         return redirect(url_for("requests_bp.view_request", token=req.public_token))
 
     action = ApprovalAction(request_id=req.id, actor_id=current_user.id,
-                            action=ApprovalActionType.REJECTED, remark=remark)
+                            action=ApprovalActionType.REJECTED, remark=remark, acted_at=_now_r)
     db.session.add(action)
+    db.session.flush()
     req.status = new_status
-    req.updated_at = datetime.utcnow()
+    req.updated_at = _now_r
+    record_request_event(req, "REJECTED", from_status=_from_status_r, to_status=new_status, remark=remark,
+                         approval_action=action, at=_now_r)
     initiator = db.session.get(User, req.initiated_by)
     begin_deferred_emails()
     notify_users(db, req, [initiator],
@@ -2547,6 +2594,8 @@ def delete_request(token):
               detail={"candidate_name": _cname,
                       "designation": req.designation,
                       "company": req.company_code})
+    record_request_event(req, "DRAFT_DELETED", from_status=RequestStatus.DRAFT, to_status=RequestStatus.DRAFT,
+                         detail={"candidate_name": _cname})
     try:
         db.session.commit()
     except SQLAlchemyError:

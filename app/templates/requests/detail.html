@@ -228,6 +228,10 @@
 
             {% if s == 'current' %}
             <div style="font-size:11px;color:var(--c-primary);font-weight:600;margin-top:1px;">Awaiting action</div>
+            {% if stage.since %}
+            <div style="font-size:10.5px;color:var(--c-text-5);margin-top:1px;">Waiting since {{ stage.since | ist('%d/%m/%Y, %H:%M:%S') }}</div>
+            <div style="font-size:10.5px;color:var(--c-text-4);margin-top:1px;">Waiting for <span style="font-weight:600;color:var(--c-text-2);">{{ stage.waiting_seconds | duration }}</span> so far</div>
+            {% endif %}
             {% endif %}
 
             {% if stage.actor_name and s not in ('upcoming', 'current') %}
@@ -236,7 +240,17 @@
               <span style="font-size:10.5px;color:var(--c-text-4);"> · {{ stage.actor_role_label }}</span>
             </div>
             {% if stage.acted_at %}
-            <div style="font-size:10.5px;color:var(--c-text-5);margin-top:1px;">{{ stage.acted_at | ist }}</div>
+            <div style="font-size:10.5px;color:var(--c-text-5);margin-top:1px;">{{ stage.acted_at | ist('%d/%m/%Y, %H:%M:%S') }}</div>
+            {% endif %}
+            {% if stage.took_seconds is not none %}
+            <div style="font-size:10.5px;color:var(--c-text-4);margin-top:1px;">{{ stage.took_label }} <span style="font-weight:600;color:var(--c-text-2);">{{ stage.took_seconds | duration }}</span>{% if stage.via == 'email_link' %} · via e-mail link{% endif %}</div>
+            {% endif %}
+            {% endif %}
+
+            {% if stage.completed_at %}
+            <div style="font-size:10.5px;color:var(--c-text-5);margin-top:1px;">{{ stage.completed_at | ist('%d/%m/%Y, %H:%M:%S') }}</div>
+            {% if stage.total_seconds is not none %}
+            <div style="font-size:10.5px;color:var(--c-text-4);margin-top:1px;">Approval took <span style="font-weight:600;color:var(--c-text-2);">{{ stage.total_seconds | duration }}</span> in total</div>
             {% endif %}
             {% endif %}
 
@@ -342,12 +356,32 @@
 
           <!-- Meta info -->
           <div style="margin-top:12px;display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--c-text-4);">
-            <div>Created: <span style="color:var(--c-text-2);font-weight:500;">{{ req.created_at | ist }}</span></div>
+            <div>Created: <span style="color:var(--c-text-2);font-weight:500;">{{ req.created_at | ist('%d/%m/%Y, %H:%M:%S') }}</span></div>
             <div>By: <span style="color:var(--c-text-2);font-weight:500;">{{ req.initiator.name }}</span></div>
             {% if req.company_code %}<div>Company: <span style="color:var(--c-text-2);font-weight:500;">{{ req.company_code }}</span></div>{% endif %}
             {% if req.plant_location %}<div>Plant: <span style="color:var(--c-text-2);font-weight:500;">{{ req.plant_location | plant_name }}</span></div>{% endif %}
             {% if req.retry_count > 0 %}<div>Resubmissions: <span style="color:#C96B1D;font-weight:600;">{{ req.retry_count }}</span></div>{% endif %}
           </div>
+
+          {# Every recorded step, in order, with the exact time and how long each took #}
+          {% if activity_log %}
+          <details style="margin-top:14px;border-top:1px solid var(--c-bg-2);padding-top:10px;">
+            <summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--c-text-4);text-transform:uppercase;letter-spacing:0.08em;">Activity log ({{ activity_log | length }})</summary>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:9px;">
+              {% for ev in activity_log %}
+              <div style="font-size:11px;line-height:1.45;">
+                <div style="font-weight:700;color:var(--c-text-2);">{{ ev.event_type | event_label }}</div>
+                <div style="color:var(--c-text-5);">{{ ev.occurred_at | ist('%d/%m/%Y, %H:%M:%S') }}</div>
+                <div style="color:var(--c-text-4);">
+                  {% if ev.actor_name %}{{ ev.actor_name }}{% if ev.actor_role %} · {{ ev.actor_role | role_name }}{% endif %}{% else %}System{% endif %}
+                  {% if ev.duration_seconds is not none and ev.event_type != 'DRAFT_CREATED' %} · after {{ ev.duration_seconds | duration }}{% endif %}
+                  {% if ev.via == 'email_link' %} · via e-mail link{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
         </div>
 
       </div>

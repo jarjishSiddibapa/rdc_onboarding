@@ -19,6 +19,7 @@ Started once from create_app().
 import threading
 import time
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 
 _CHECK_INTERVAL_S = 60 * 60       # check hourly...
 _DIGEST_INTERVAL = timedelta(hours=24)  # ...but only actually send once per user per 24h
@@ -39,7 +40,7 @@ def send_due_digests(app) -> dict:
     from ..utils import send_email
 
     sent = skipped_empty = 0
-    now = datetime.utcnow()
+    now = now_ist()
     cutoff = now - _DIGEST_INTERVAL
 
     users = User.query.filter_by(is_active=True, daily_digest_enabled=True).all()

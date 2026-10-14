@@ -1,4 +1,5 @@
 import json as _json
+from app.timeutil import now_ist
 import threading
 from functools import wraps
 from flask import abort, current_app, g
@@ -750,7 +751,7 @@ def record_request_event(req, event_type, *, actor=None, from_status=None, to_st
     from flask import request as _freq
 
     try:
-        at = at or datetime.utcnow()
+        at = at or now_ist()
         if actor is None and via != "system":
             try:
                 if current_user.is_authenticated:
@@ -841,7 +842,7 @@ def clear_blank_drafts(user_id, keep_newest=False, older_than=None):
     from .models import OnboardingRequest, RequestStatus
     q = OnboardingRequest.query.filter_by(initiated_by=user_id, status=RequestStatus.DRAFT, is_deleted=False)
     if older_than is not None:
-        q = q.filter(OnboardingRequest.updated_at < datetime.utcnow() - older_than)
+        q = q.filter(OnboardingRequest.updated_at < now_ist() - older_than)
     blanks = [r for r in q.order_by(OnboardingRequest.updated_at.desc()).all() if _is_blank_draft(r)]
     kept = blanks.pop(0) if (keep_newest and blanks) else None
     for r in blanks:

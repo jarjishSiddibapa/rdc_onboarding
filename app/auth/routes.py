@@ -1,4 +1,6 @@
+import time
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 from flask import render_template, redirect, url_for, flash, request, current_app, session
 from flask_login import login_user, logout_user, login_required, current_user
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -81,7 +83,7 @@ def login():
                       detail={"login_id": login_id, "remember_me": remember})
             db.session.commit()
             login_user(user, remember=remember)
-            session["_last_active"] = datetime.utcnow().timestamp()
+            session["_last_active"] = time.time()
             next_page = request.args.get("next")
             # Guard against open-redirect: only allow relative paths
             if next_page and (not next_page.startswith("/") or next_page.startswith("//")

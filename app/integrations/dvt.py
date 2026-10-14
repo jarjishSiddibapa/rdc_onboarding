@@ -8,6 +8,7 @@ norm tiers) from the separate Daily Volume Tracker app's public API.
 import os
 import time
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 
 import requests
 
@@ -112,7 +113,7 @@ def fetch_monthly_volumes(month: str) -> dict:
 
 def _previous_month_str() -> str:
     """Return the previous calendar month as YYYY-MM, based on today's date."""
-    first_of_this_month = datetime.utcnow().replace(day=1)
+    first_of_this_month = now_ist().replace(day=1)
     last_of_previous_month = first_of_this_month - timedelta(days=1)
     return last_of_previous_month.strftime("%Y-%m")
 
@@ -169,7 +170,7 @@ _AVG_WINDOW_MONTHS = 3
 def _trailing_month_strs(months: int) -> list[str]:
     """Last `months` completed calendar months as YYYY-MM, most recent first."""
     result = []
-    cursor = datetime.utcnow().replace(day=1)
+    cursor = now_ist().replace(day=1)
     for _ in range(months):
         last_of_previous_month = cursor - timedelta(days=1)
         result.append(last_of_previous_month.strftime("%Y-%m"))

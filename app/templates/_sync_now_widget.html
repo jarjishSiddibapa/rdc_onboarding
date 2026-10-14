@@ -29,7 +29,8 @@
 
   function fmtAgo(iso) {
     if (!iso) return 'never synced yet';
-    var d = new Date(iso.indexOf('Z') === -1 ? iso + 'Z' : iso);
+    // stored times are Indian time (IST, +05:30), whatever time zone the browser is in
+    var d = new Date(/[Z+]\d{0,2}:?\d{0,2}$/.test(iso) ? iso : iso + '+05:30');
     var diffMin = Math.round((Date.now() - d.getTime()) / 60000);
     if (diffMin < 1) return 'just now';
     if (diffMin < 60) return diffMin + ' min ago';

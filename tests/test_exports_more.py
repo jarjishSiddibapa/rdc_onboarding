@@ -2,6 +2,7 @@
 Export report: filters (including the joining-date one that used to match nothing), the Excel
 workbook's real contents, and company scoping for HR Managers.
 """
+from app.timeutil import now_ist
 import io
 import re
 import uuid
@@ -104,14 +105,14 @@ class TestExportFilters:
         _req(db, ini, "F1", plant="Plant X", desig="Welder", company="RDC", retry=0)
         _req(db, ini, "F2", plant="Plant Y", desig="Fitter", company="ROBO", retry=3)
         _req(db, ini, "F3", plant="Plant Y", desig="Fitter", company="ROBO", retry=1,
-             created=datetime.utcnow() - timedelta(days=40))
+             created=now_ist() - timedelta(days=40))
         db.session.commit()
         login(client, "expadmin@t.com")
         assert _cands(_preview(client, "?plant=Plant X")) == ["F1"]
         assert _cands(_preview(client, "?designation=Fitter")) == ["F2", "F3"]
         assert _cands(_preview(client, "?company=ROBO&retry_min=2")) == ["F2"]
         assert _cands(_preview(client, "?retry_max=0")) == ["F1"]
-        recent = (datetime.utcnow() - timedelta(days=5)).strftime("%Y-%m-%d")
+        recent = (now_ist() - timedelta(days=5)).strftime("%Y-%m-%d")
         assert _cands(_preview(client, f"?date_from={recent}")) == ["F1", "F2"]
         assert _cands(_preview(client, f"?date_to={recent}")) == ["F3"]
         assert _preview(client, f"?initiator_id={ini}")["total"] == 3

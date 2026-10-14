@@ -3,6 +3,7 @@ Request event ledger (2026-10-14): every step in a request's life is stored in r
 exact time, the actor, and how long the request had been waiting - the data for later response-time
 analysis - and the request page's timeline shows the same times and durations.
 """
+from app.timeutil import now_ist
 import uuid
 from datetime import datetime, timedelta
 
@@ -96,7 +97,7 @@ class TestRoutesWriteEvents:
         init = _make_user("RtInit", "rtinit@t.com", UserRole.INITIATOR, db, companies=["ROBO"])
         bh = _make_user("RtBh", "rtbh@t.com", UserRole.BUSINESS_HEAD, db, companies=["ROBO"])
         hrm = _make_user("RtHrm", "rthrm@t.com", UserRole.HR_MANAGER, db, companies=["ROBO"])
-        req = _req(db, init, created_at=datetime.utcnow() - timedelta(minutes=30))
+        req = _req(db, init, created_at=now_ist() - timedelta(minutes=30))
         db.session.commit()
         return init.email, bh.email, hrm.email, req.public_token, req.id
 
@@ -181,7 +182,7 @@ class TestDraftAndPushEvents:
         with app.app_context():
             init = _make_user("EvPush", "evpush@t.com", UserRole.INITIATOR, db, companies=["ROBO"])
             req = _req(db, init, status=RequestStatus.ACTIVE)
-            record_request_event(req, "APPROVED", actor=init, at=datetime.utcnow() - timedelta(seconds=30))
+            record_request_event(req, "APPROVED", actor=init, at=now_ist() - timedelta(seconds=30))
             req.truein_retry_count = 1
             _write_push_log(_db, req, {"success": False, "message": "Govt ID already exist", "empId": "X1"}, triggered_by="auto")
             req.truein_retry_count = 2
@@ -220,7 +221,7 @@ class TestActionTimesExport:
         assert wb.sheetnames == ["Action log", "Response time by role"]
         log = [r for r in wb["Action log"].iter_rows(min_row=3, values_only=True)]
         assert [r[6] for r in log] == ["Submitted for approval", "Approved", "Approved"]
-        assert log[1][11] == "14/10/2026 10:32:00"          # 05:02 UTC, shown in IST
+        assert log[1][11] == "14/10/2026 05:02:00"          # stored and shown as Indian time
         stats = [r for r in wb["Response time by role"].iter_rows(min_row=3, values_only=True)]
         all_co = [r for r in stats if r[1] == "All companies"][0]
         assert all_co[0] == "Business / Functional Head" and all_co[2] == 2

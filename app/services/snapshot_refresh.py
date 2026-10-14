@@ -18,10 +18,10 @@ import os
 import threading
 import time
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 
 # Local clock hour (IST) of the nightly run. Override with SNAPSHOT_SYNC_HOUR_IST.
 _SYNC_HOUR_IST = int(os.environ.get("SNAPSHOT_SYNC_HOUR_IST", "2"))
-_IST_OFFSET = timedelta(hours=5, minutes=30)
 _POLL_S = 60                   # how often the loop re-checks the clock
 _MAX_AGE = timedelta(hours=24)  # a snapshot older than this is overdue (missed night / fresh DB)
 
@@ -29,13 +29,12 @@ _started = False
 _lock = threading.Lock()
 
 
-def _next_sync_utc(now_utc: datetime) -> datetime:
-    """Next occurrence of the nightly slot (IST wall clock), as naive UTC."""
-    now_ist = now_utc + _IST_OFFSET
-    slot = now_ist.replace(hour=_SYNC_HOUR_IST, minute=0, second=0, microsecond=0)
-    if slot <= now_ist:
+def _next_sync(now: datetime) -> datetime:
+    """Next occurrence of the nightly slot (Indian wall clock)."""
+    slot = now.replace(hour=_SYNC_HOUR_IST, minute=0, second=0, microsecond=0)
+    if slot <= now:
         slot += timedelta(days=1)
-    return slot - _IST_OFFSET
+    return slot
 
 
 def _is_overdue() -> bool:
@@ -43,7 +42,7 @@ def _is_overdue() -> bool:
     from ..extensions import db
     from ..models import StaffingSnapshot
     last = db.session.query(db.func.max(StaffingSnapshot.computed_at)).scalar()
-    return last is None or (datetime.utcnow() - last) > _MAX_AGE
+    return last is None or (now_ist() - last) > _MAX_AGE
 
 
 def _warm_caches(app):
@@ -73,7 +72,7 @@ def _refresh_loop(app):
         next_run = None
         while True:
             try:
-                now = datetime.utcnow()
+                now = now_ist()
                 if next_run is None:
                     # Boot: catch up only if we actually missed a night (server was off at the
                     # slot, or brand-new DB) — a plain restart mid-day does NOT trigger a pull.
@@ -81,11 +80,11 @@ def _refresh_loop(app):
                         next_run = now
                     else:
                         _warm_caches(app)
-                        next_run = _next_sync_utc(datetime.utcnow())
+                        next_run = _next_sync(now_ist())
                 if now >= next_run:
                     result = headcount.compute_and_store_snapshot()
                     app.logger.info(f"[StaffingSnapshot] refreshed: {result}")
-                    next_run = _next_sync_utc(datetime.utcnow())
+                    next_run = _next_sync(now_ist())
                     # Old runs are never read again - drop everything past the admin-set "keep" count.
                     try:
                         from . import snapshot_retention
@@ -97,7 +96,7 @@ def _refresh_loop(app):
             except Exception as exc:
                 app.logger.error(f"[StaffingSnapshot] refresh failed: {exc}")
                 # Don't hammer a failing source: retry in 30 minutes, not every poll tick.
-                next_run = datetime.utcnow() + timedelta(minutes=30)
+                next_run = now_ist() + timedelta(minutes=30)
             finally:
                 # This thread holds ONE app context for the process lifetime. Without releasing the session
                 # each tick, an idle read transaction outlives MySQL's wait_timeout (8h) and every later

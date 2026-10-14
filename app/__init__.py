@@ -1,6 +1,8 @@
+import time
 import os
 import uuid
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 from flask import Flask, session, redirect, url_for, request
 from flask_login import current_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -57,6 +59,27 @@ _REQUIRED_COLUMNS = [
     ("onboarding_requests", "candidate_mobile",          "VARCHAR(15) NULL"),
     ("onboarding_requests", "hr_manager_initiated",      "TINYINT(1) NOT NULL DEFAULT 0"),
 ]
+
+
+def _check_time_storage(engine):
+    """Every stored time is Indian time (see app/timeutil.py). A database that still holds the old UTC times
+    carries no `time_storage = IST` marker (migrate_to_ist.py writes it); running the app on it would mix two
+    time zones in the same table, so refuse to start. A brand-new empty database just gets the marker."""
+    if engine.dialect.name != "mysql":
+        return
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        marker = conn.execute(text("SELECT value FROM system_config WHERE `key` = 'time_storage'")).scalar()
+        if marker == "IST":
+            return
+        has_data = conn.execute(text("SELECT COUNT(*) FROM audit_logs")).scalar() \
+            or conn.execute(text("SELECT COUNT(*) FROM onboarding_requests")).scalar()
+        if has_data:
+            raise RuntimeError(
+                "This database still stores times in UTC. Stop the app and run  venv\\Scripts\\python migrate_to_ist.py  "
+                "once (it takes a backup first), then start the app again.")
+        conn.execute(text("INSERT INTO system_config (`key`, `value`, updated_at) VALUES ('time_storage', 'IST', :n)"),
+                     {"n": now_ist()})
 
 
 def _auto_migrate(engine):
@@ -215,17 +238,14 @@ def _auto_migrate(engine):
             conn.commit()
 
 
-# All datetimes are stored naive-UTC (datetime.utcnow()) throughout this
-# app. This app is India-only, so every timestamp shown to a user should
-# display in IST — converted at render time only, never at storage time.
-_IST_OFFSET = timedelta(hours=5, minutes=30)
-
-
+# Every stored datetime is already Indian time (IST, see app/timeutil.py), so
+# displaying one needs formatting only - no conversion. The filter keeps its
+# old name `ist` so the templates did not need to change.
 def _format_ist(dt, fmt="%d/%m/%Y, %H:%M"):
-    """Jinja filter: naive-UTC datetime -> IST-formatted string. None-safe."""
+    """Jinja filter: stored (IST) datetime -> formatted string. None-safe."""
     if dt is None:
         return "—"
-    return (dt + _IST_OFFSET).strftime(fmt)
+    return dt.strftime(fmt)
 
 
 def _plant_display_name(plant_location_name):
@@ -318,7 +338,7 @@ def create_app():
         if request.endpoint in ("auth.logout", "auth.login"):
             return
         last_active = session.get("_last_active")
-        now = datetime.utcnow().timestamp()
+        now = time.time()
         lifetime = app.config["PERMANENT_SESSION_LIFETIME"].total_seconds()
         if last_active and (now - last_active) > lifetime:
             logout_user()
@@ -439,6 +459,7 @@ def create_app():
     with app.app_context():
         db.create_all()          # create any brand-new tables
         _auto_migrate(db.engine) # add missing columns to existing tables
+        _check_time_storage(db.engine)
 
     # ── Resume Truein retry threads for any ACTIVE requests not yet pushed ────
     from .integrations.truein import resume_pending_retries

@@ -23,10 +23,10 @@ import threading
 import time
 import smtplib
 import datetime as _dt
+from app.timeutil import now_ist
 from decimal import Decimal
 from datetime import datetime, timedelta
 
-_IST_OFFSET = timedelta(hours=5, minutes=30)
 _POLL_S = 30
 _ROWS_PER_PAGE = 2000            # rows fetched per query (keeps memory flat on million-row tables)
 _INSERT_LINE_BYTES = 1_000_000   # target size of one multi-row INSERT statement
@@ -113,13 +113,13 @@ def parse_recipients(raw):
     return ok, bad
 
 
-def next_run_ist(settings, now_utc=None):
-    """The next scheduled run as an IST datetime, or None when automatic backups are off."""
+def next_run_ist(settings, now=None):
+    """The next scheduled run (Indian time), or None when automatic backups are off."""
     if not settings.enabled:
         return None
-    now_ist = (now_utc or datetime.utcnow()) + _IST_OFFSET
-    slot = now_ist.replace(hour=settings.hour, minute=settings.minute, second=0, microsecond=0)
-    return slot if slot > now_ist else slot + timedelta(days=1)
+    now = now or now_ist()
+    slot = now.replace(hour=settings.hour, minute=settings.minute, second=0, microsecond=0)
+    return slot if slot > now else slot + timedelta(days=1)
 
 
 # ── SQL dump writer ────────────────────────────────────────────────────────────
@@ -246,10 +246,10 @@ def _iter_rows(conn, name):
                 yield tuple(r)
 
 
-def write_dump(engine, out, now_utc=None):
+def write_dump(engine, out, now=None):
     """Write a complete dump of `engine`'s database to the text file object `out`.
     Returns {"database", "tables", "rows"}. Raises on any error (the caller discards the partial file)."""
-    now_utc = now_utc or datetime.utcnow()
+    now = now or now_ist()
     is_mysql = engine.dialect.name == "mysql"
     # MySQL: a private connection (own snapshot transaction). Other databases only occur in tests, where the
     # session's single shared connection must be reused - closing a second handle on it would roll the test back.
@@ -268,7 +268,7 @@ def write_dump(engine, out, now_utc=None):
         out.write(f"-- RDC Associates Hiring - full database backup\n"
                   f"-- (mysqldump-compatible layout: restore with  mysql -u <user> -p < this-file.sql)\n--\n"
                   f"-- Database: {dbname}\n-- Server version\t{version}\n"
-                  f"-- Created (UTC): {now_utc.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                  f"-- Created (IST): {now.strftime('%Y-%m-%d %H:%M:%S')}\n"
                   f"-- ------------------------------------------------------\n\n")
         out.write(_PRELUDE + "\n")
         if is_mysql:
@@ -309,7 +309,7 @@ def write_dump(engine, out, now_utc=None):
 
         out.write(f"--\n-- Dumping routines for database {_q(dbname)}\n--\n")
         out.write(_POSTLUDE + "\n")
-        out.write(f"{COMPLETE_MARKER}{now_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC\n")
+        out.write(f"{COMPLETE_MARKER}{now.strftime('%Y-%m-%d %H:%M:%S')} IST\n")
         return {"database": dbname, "tables": len(tables), "rows": total_rows}
     finally:
         if is_mysql:
@@ -321,8 +321,8 @@ def write_dump(engine, out, now_utc=None):
 
 # ── Running a backup ───────────────────────────────────────────────────────────
 
-def _ist_stamp(now_utc):
-    return (now_utc + _IST_OFFSET).strftime("%Y%m%d-%H%M%S")
+def _ist_stamp(now):
+    return now.strftime("%Y%m%d-%H%M%S")
 
 
 def _db_name(engine):
@@ -367,7 +367,7 @@ def apply_retention(settings=None):
     days = int(s.retention_days or 0)
     if days <= 0:
         return 0
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = now_ist() - timedelta(days=days)
     good = (BackupRun.query.filter_by(status="success", is_deleted=False)
             .order_by(BackupRun.started_at.desc()).all())
     removed = 0
@@ -412,7 +412,7 @@ def run_backup(app, triggered_by="schedule", user_id=None):
                     return None
             settings = get_settings()
             directory = backup_dir(settings)
-            now = datetime.utcnow()
+            now = now_ist()
             filename = f"{_db_name(engine)}-{_ist_stamp(now)}.sql"
             run = BackupRun(filename=filename, file_path=os.path.join(directory, filename), status="running",
                             triggered_by=triggered_by, triggered_by_user=user_id, started_at=now)
@@ -445,7 +445,7 @@ def run_backup(app, triggered_by="schedule", user_id=None):
                     except OSError:
                         pass
                 app.logger.error(f"[Backup] failed: {exc}")
-            run.finished_at = datetime.utcnow()
+            run.finished_at = now_ist()
             db.session.commit()
 
             if run.status == "success":
@@ -483,7 +483,7 @@ def trigger_manual_backup(app, user_id=None):
 
 def is_backup_running():
     from ..models import BackupRun
-    fresh = datetime.utcnow() - timedelta(hours=3)
+    fresh = now_ist() - timedelta(hours=3)
     return BackupRun.query.filter(BackupRun.status == "running", BackupRun.started_at >= fresh).first() is not None
 
 
@@ -498,7 +498,7 @@ def _fail_interrupted(app):
                     return
         n = 0
         for run in BackupRun.query.filter_by(status="running").all():
-            run.status, run.message, run.finished_at = "failed", "Interrupted (the server stopped during the backup).", datetime.utcnow()
+            run.status, run.message, run.finished_at = "failed", "Interrupted (the server stopped during the backup).", now_ist()
             n += 1
         if n:
             db.session.commit()
@@ -506,27 +506,25 @@ def _fail_interrupted(app):
 
 # ── Scheduler ──────────────────────────────────────────────────────────────────
 
-def due_now(settings, now_utc=None):
+def due_now(settings, now=None):
     """Should a scheduled backup start now? True once today's slot (IST) has passed and no scheduled run has
     started since it - which also catches up after the server was off at the slot. A failed run is retried after
     30 minutes, at most 3 times a day."""
     from ..models import BackupRun
     if not settings.enabled:
         return False
-    now_utc = now_utc or datetime.utcnow()
-    now_ist = now_utc + _IST_OFFSET
-    slot_ist = now_ist.replace(hour=settings.hour, minute=settings.minute, second=0, microsecond=0)
-    if now_ist < slot_ist:
+    now = now or now_ist()
+    slot = now.replace(hour=settings.hour, minute=settings.minute, second=0, microsecond=0)
+    if now < slot:
         return False
-    slot_utc = slot_ist - _IST_OFFSET
-    since = (BackupRun.query.filter(BackupRun.triggered_by == "schedule", BackupRun.started_at >= slot_utc)
+    since = (BackupRun.query.filter(BackupRun.triggered_by == "schedule", BackupRun.started_at >= slot)
              .order_by(BackupRun.started_at.desc()).all())
     if any(r.status in ("success", "running") for r in since):
         return False
     if since:   # only failures so far today
         if len(since) >= _MAX_FAILED_PER_DAY:
             return False
-        if now_utc - since[0].started_at < _RETRY_AFTER:
+        if now - since[0].started_at < _RETRY_AFTER:
             return False
     return True
 

@@ -4,6 +4,7 @@ Tests for app/services/headcount.py's multi-company support (added
 independent headcount path for Ultrafine/ROBO that deliberately never
 touches the RDC-specific reconciliation pipeline (_compute_and_store_snapshot()).
 """
+from app.timeutil import now_ist
 from datetime import datetime as _dt
 from unittest.mock import patch
 from app.extensions import db as _db
@@ -230,7 +231,7 @@ class TestSharedTimestampAndCompanyIsolation:
 
     def test_rdc_employees_still_findable_after_other_company_snapshot_in_same_cycle(self, db, app):
         with app.app_context():
-            shared_now = _dt.utcnow()
+            shared_now = now_ist()
             # Simulates an RDC row written by _compute_and_store_snapshot()
             # (company left unset) at the shared timestamp.
             db.session.add(EmployeeLocationSnapshot(
@@ -255,7 +256,7 @@ class TestSharedTimestampAndCompanyIsolation:
 
     def test_all_employees_directory_excludes_other_companies(self, db, app):
         with app.app_context():
-            shared_now = _dt.utcnow()
+            shared_now = now_ist()
             db.session.add(EmployeeLocationSnapshot(
                 computed_at=shared_now, source=headcount.ExternalDesignationSource.ZINGHR,
                 employee_code="RDC2", employee_name="Another RDC Employee",

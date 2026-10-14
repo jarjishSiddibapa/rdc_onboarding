@@ -11,6 +11,7 @@ import time
 import threading
 import requests
 from datetime import datetime, timezone
+from app.timeutil import now_ist
 
 # ── Truein API endpoints ────────────────────────────────────────────────────────
 TRUEIN_TOKEN_URL       = "https://api.truein.com/connect/token"
@@ -339,7 +340,7 @@ def build_payload(req) -> dict:
     # 4. empId fallback — NEWJOINEE + DDMMYYYY + 4-digit daily sequence (resets from 0001 each day)
     if "empId" not in payload:
         from datetime import datetime as _dt
-        created = req.created_at if req.created_at else _dt.utcnow()
+        created = req.created_at if req.created_at else now_ist()
         day_start = _dt(created.year, created.month, created.day, 0, 0, 0)
         day_end   = _dt(created.year, created.month, created.day, 23, 59, 59)
         try:
@@ -847,7 +848,7 @@ def _retry_loop(app, req_id: int) -> None:
                           "empId": None, "http_status": None, "raw_response": {}}
 
             from ..utils import log_audit
-            now = datetime.utcnow()
+            now = now_ist()
 
             if result["success"]:
                 req.truein_pushed_at       = now
@@ -1202,7 +1203,7 @@ def dry_run_to_file(req, output_dir: str) -> tuple:
 
     result = {
         "dry_run":        True,
-        "generated_at":   datetime.now(timezone.utc).isoformat(),
+        "generated_at":   now_ist().isoformat(),
         "request_id":     req.id,
         "candidate_name": req.candidate_name,
         "request_status": req.status.value,
@@ -1229,7 +1230,7 @@ def dry_run_to_file(req, output_dir: str) -> tuple:
     }
 
     os.makedirs(output_dir, exist_ok=True)
-    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts       = now_ist().strftime("%Y%m%d_%H%M%S")
     filename = f"truein_dryrun_req{req.id}_{ts}.json"
     filepath = os.path.join(output_dir, filename)
 

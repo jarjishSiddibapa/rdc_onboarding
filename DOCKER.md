@@ -118,7 +118,7 @@ Notes:
 - **Client IPs.** On Docker Desktop (Windows / Mac) every visitor can appear to come from the Docker gateway
   address, which makes the per-IP rate limit shared and the audit-log IP less useful. A Linux server keeps real
   addresses (and with a proxy, `TRUSTED_PROXIES` restores them).
-- **Time.** Containers run in UTC; the app converts to IST itself, so the 02:00 sync and 04:00 backup are unaffected.
+- **Time.** The app works out Indian time itself (`app/timeutil.py`) and stores IST in the database, so the container's own clock zone does not matter and the 02:00 sync and 04:00 backup are unaffected. A database restored from a backup taken before 2026-10-14 holds UTC - run `python migrate_to_ist.py` once after restoring it.
 - **Database port.** MySQL is not published on a host port. To inspect it:
   `docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" rdc_onboarding'`.
 - **Using an existing MySQL server instead of the bundled one:** point `DATABASE_URL` at it, then delete the

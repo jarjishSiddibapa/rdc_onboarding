@@ -1,4 +1,5 @@
 """Automatic full-database backup (2026-10-10): dump format, settings page, scheduler rules, retention."""
+from app.timeutil import now_ist
 import os
 from datetime import datetime, timedelta
 from unittest import mock
@@ -73,8 +74,8 @@ class TestRunBackup:
 
 
 def _ist(h, m):
-    """A UTC instant whose IST wall clock is today h:m."""
-    return datetime(2026, 10, 10, h, m) - db_backup._IST_OFFSET
+    """Indian wall-clock time today at h:m (what is stored)."""
+    return datetime(2026, 10, 10, h, m)
 
 
 class TestSchedule:
@@ -122,7 +123,7 @@ class TestRetention:
     def test_old_files_removed_newest_three_kept(self, app, db, backup_dir):
         s = db_backup.get_settings()
         s.retention_days = 7
-        old = datetime.utcnow() - timedelta(days=30)
+        old = now_ist() - timedelta(days=30)
         paths = []
         for i in range(5):
             name = f"old{i}.sql"

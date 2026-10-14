@@ -25,6 +25,7 @@ flagged here rather than silently assumed):
 import json
 import re
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 
 from ..extensions import db
 from ..models import (
@@ -139,7 +140,7 @@ def _classify_by_department(department: str, designation: str, date_of_joining_r
     norm = _normalize_department(department)
     if norm == _TRAINEE_CIVIL_DEPARTMENT:
         joined = _parse_join_date(date_of_joining_raw)
-        if joined and (datetime.utcnow() - joined).days > _TRAINEE_CIVIL_MIN_TENURE_DAYS:
+        if joined and (now_ist() - joined).days > _TRAINEE_CIVIL_MIN_TENURE_DAYS:
             return cat_id_by_name.get("Technical")
         return None
     table = _DEPARTMENT_TO_CATEGORY if dept_map is None else dept_map
@@ -308,7 +309,7 @@ def compute_and_store_snapshot() -> dict:
         # _compute_and_store_other_company_snapshot()'s `now` docstring for
         # why this must match, not just be "close enough") — same lock,
         # same refresh cycle, but never touches the RDC computation itself.
-        run_started = datetime.utcnow()
+        run_started = now_ist()
         result = _compute_and_store_snapshot()
         shared_now = datetime.fromisoformat(result["computed_at"])
         other = _compute_and_store_other_company_snapshot(now=shared_now)
@@ -671,7 +672,7 @@ def _compute_and_store_snapshot() -> dict:
     # collide and get treated as a single "latest run" by the *_latest_*
     # read functions, doubling every row. Guarantee strictly-increasing
     # timestamps regardless of storage precision.
-    now = datetime.utcnow()
+    now = now_ist()
     _existing_latest = db.session.query(db.func.max(StaffingSnapshot.computed_at)).scalar()
     if _existing_latest and now <= _existing_latest:
         now = _existing_latest + timedelta(seconds=1)
@@ -853,7 +854,7 @@ def _compute_and_store_other_company_snapshot(now=None) -> dict:
               .all()):
         plants_by_company.setdefault(p.company, {})[_normalize_name(p.name)] = p.name
 
-    now = now or datetime.utcnow()
+    now = now or now_ist()
     written_by_company = {code: 0 for code in _ZINGHR_COMPANY_TO_CODE.values()}
     for e in zh_employees_raw:
         code = _ZINGHR_COMPANY_TO_CODE.get((e.get("Company") or "").strip().lower())

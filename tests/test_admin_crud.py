@@ -3,6 +3,7 @@ Admin area, end to end over HTTP: users, plants, designations, form fields, emai
 the all-requests list, the audit log, Truein admin actions and the DVT/cluster mappings.
 Complements tests/test_admin.py (which covers the basic create/delete paths).
 """
+from app.timeutil import now_ist
 import json
 import uuid
 from datetime import datetime, timedelta
@@ -447,8 +448,8 @@ class TestAuditLogFilters:
         assert "Audit Plant" in client.get("/admin/audit-log?action=plant_created").get_data(as_text=True)
         assert "Audit Plant" not in client.get("/admin/audit-log?category=AUTH").get_data(as_text=True)
         assert "Audit Plant" in client.get(f"/admin/audit-log?actor_id={aid}").get_data(as_text=True)
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        yesterday = (datetime.utcnow() - timedelta(days=2)).strftime("%Y-%m-%d")
+        today = now_ist().strftime("%Y-%m-%d")
+        yesterday = (now_ist() - timedelta(days=2)).strftime("%Y-%m-%d")
         assert "Audit Plant" in client.get(f"/admin/audit-log?date_from={yesterday}&date_to={today}").get_data(as_text=True)
         assert "Audit Plant" not in client.get("/admin/audit-log?date_to=2000-01-01").get_data(as_text=True)
         # junk filters never 500

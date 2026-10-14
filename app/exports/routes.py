@@ -1,6 +1,7 @@
 import io
 import re
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 from flask import make_response, render_template, request, jsonify
 from flask_login import login_required, current_user
 from openpyxl import Workbook
@@ -346,7 +347,7 @@ def _build_excel(records, report_title="Employee Onboarding Report"):
     # Title row
     ws.merge_cells(f"A1:{get_column_letter(len(all_cols))}1")
     tc = ws["A1"]
-    tc.value = f"{report_title}  |  Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    tc.value = f"{report_title}  |  Generated: {now_ist().strftime('%d/%m/%Y %H:%M')}"
     tc.font  = Font(name="Calibri", size=13, bold=True, color="1F3864")
     tc.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 28
@@ -502,7 +503,7 @@ def download_excel():
     data = buf.getvalue()
 
     slug     = "_".join(params["statuses_raw"]) if params["statuses_raw"] else "ACTIVE"
-    filename = f"onboarding_{slug}_{datetime.now().strftime('%d%m%Y_%H%M')}.xlsx"
+    filename = f"onboarding_{slug}_{now_ist().strftime('%d%m%Y_%H%M')}.xlsx"
 
     _filters = {k: v for k, v in params.items() if v}
     log_audit("EXPORT", "EXPORT_DOWNLOADED",
@@ -529,11 +530,8 @@ def download_excel():
 # with the exact time, who did it, and how long the request had waited for it. Second sheet: average
 # response time per role (the number the stakeholders asked for). Same audience as the other export.
 
-_IST = timedelta(hours=5, minutes=30)
-
-
 def _ist_text(dt):
-    return (dt + _IST).strftime("%d/%m/%Y %H:%M:%S") if dt else ""
+    return dt.strftime("%d/%m/%Y %H:%M:%S") if dt else ""
 
 
 def _parse_iso_day(value):
@@ -561,10 +559,10 @@ def download_action_times():
 
     q = (db.session.query(RequestEvent, OnboardingRequest)
          .join(OnboardingRequest, OnboardingRequest.id == RequestEvent.request_id))
-    if d_from:                                    # the chosen days are IST days; events are stored in UTC
-        q = q.filter(RequestEvent.occurred_at >= d_from - _IST)
+    if d_from:                                    # the chosen days are Indian days, and so is what is stored
+        q = q.filter(RequestEvent.occurred_at >= d_from)
     if d_to:
-        q = q.filter(RequestEvent.occurred_at < d_to + timedelta(days=1) - _IST)
+        q = q.filter(RequestEvent.occurred_at < d_to + timedelta(days=1))
     if current_user.role == UserRole.HR_MANAGER:
         from ..utils import company_scope_ids
         q = q.filter(OnboardingRequest.company_code.in_(company_scope_ids(current_user.id) or [""]))
@@ -585,7 +583,7 @@ def download_action_times():
 
     def write_sheet(ws, title, columns, data):
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(columns))
-        c = ws.cell(row=1, column=1, value=f"{title}  |  Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        c = ws.cell(row=1, column=1, value=f"{title}  |  Generated: {now_ist().strftime('%d/%m/%Y %H:%M')}")
         c.font = Font(name="Calibri", size=13, bold=True, color="1F3864")
         c.alignment = Alignment(horizontal="center", vertical="center")
         ws.row_dimensions[1].height = 28
@@ -645,7 +643,7 @@ def download_action_times():
     buf = io.BytesIO()
     wb.save(buf)
     data_bytes = buf.getvalue()
-    filename = f"action_times_{datetime.now().strftime('%d%m%Y_%H%M')}.xlsx"
+    filename = f"action_times_{now_ist().strftime('%d%m%Y_%H%M')}.xlsx"
     log_audit("EXPORT", "EXPORT_DOWNLOADED",
               detail={"report_title": "Action times", "record_count": len(rows), "filename": filename,
                       "filters": {"from": request.args.get("from"), "to": request.args.get("to"), "company": company}})

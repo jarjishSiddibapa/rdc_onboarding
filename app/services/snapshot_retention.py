@@ -11,6 +11,7 @@ A "run" is one distinct `computed_at` - a sync stamps both tables with the same 
 between syncs reuse the current run's value, so they age out together with it.
 """
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 
 from ..extensions import db
 from ..models import SystemConfig, StaffingSnapshot, EmployeeLocationSnapshot
@@ -87,7 +88,7 @@ def prune(keep_runs: int | None = None, require_recent_backup: bool = False) -> 
         if db_backup.get_settings().enabled:
             last_ok = (BackupRun.query.filter_by(status="success")
                        .order_by(BackupRun.started_at.desc()).first())
-            if last_ok is None or datetime.utcnow() - last_ok.started_at > _BACKUP_MAX_AGE:
+            if last_ok is None or now_ist() - last_ok.started_at > _BACKUP_MAX_AGE:
                 return {"skipped": "database backup is on but has no good backup in the last 48 hours"}
     cutoff = _cutoff(keep)
     if cutoff is None:

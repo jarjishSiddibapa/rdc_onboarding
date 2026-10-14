@@ -1,4 +1,5 @@
 """Daily digest e-mail: who gets one, when, and what is in it."""
+from app.timeutil import now_ist
 import uuid
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -62,7 +63,7 @@ def test_nothing_new_means_no_email_but_the_clock_still_moves(app, db):
 
 
 def test_not_due_yet_users_are_skipped(app, db):
-    uid = _user(db, "3", last=datetime.utcnow() - timedelta(hours=3))
+    uid = _user(db, "3", last=now_ist() - timedelta(hours=3))
     _notify(db, uid, "Fresh")
     with patch("app.utils.send_email") as send:
         res = digest_email.send_due_digests(app)
@@ -71,9 +72,9 @@ def test_not_due_yet_users_are_skipped(app, db):
 
 
 def test_only_updates_since_the_last_digest_are_included(app, db):
-    uid = _user(db, "4", last=datetime.utcnow() - timedelta(hours=30))
-    _notify(db, uid, "Old news", when=datetime.utcnow() - timedelta(hours=40))
-    _notify(db, uid, "New news", when=datetime.utcnow() - timedelta(hours=2))
+    uid = _user(db, "4", last=now_ist() - timedelta(hours=30))
+    _notify(db, uid, "Old news", when=now_ist() - timedelta(hours=40))
+    _notify(db, uid, "New news", when=now_ist() - timedelta(hours=2))
     with patch("app.utils.send_email") as send:
         digest_email.send_due_digests(app)
     body = send.call_args.args[2]

@@ -8,6 +8,7 @@ approval chain so the dashboards and request pages have something to show.
 Every name, number and e-mail address below is invented. All demo users share DEMO_PASSWORD.
 Never run this against a production database.
 """
+from app.timeutil import now_ist
 import json
 from datetime import datetime, timedelta
 
@@ -70,7 +71,7 @@ def main():
         db.session.add(BusinessHeadRegion(business_head_id=users["bh@example.com"].id, cluster_id=region.id))
 
         initiator = users["initiator@example.com"]
-        now = datetime.utcnow()
+        now = now_ist()
         for i, (candidate, designation, plant, status, days_ago) in enumerate(REQUESTS, start=1):
             email = f"{candidate.split()[0].lower()}.demo@example.com"
             form = {

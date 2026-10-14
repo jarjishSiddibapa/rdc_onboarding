@@ -19,7 +19,7 @@ def test_fmt_date_accepts_every_stored_shape():
 
 
 def test_timestamps_show_day_month_year_in_ist():
-    assert _format_ist(datetime(2026, 10, 9, 20, 0)) == "10/10/2026, 01:30"       # UTC -> IST rolls the date
+    assert _format_ist(datetime(2026, 10, 9, 20, 0)) == "09/10/2026, 20:00"       # stored times are already IST - shown as is
     assert _format_ist(datetime(2026, 10, 9, 0, 0), "%d/%m/%Y") == "09/10/2026"
 
 

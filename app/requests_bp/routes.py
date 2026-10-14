@@ -9,6 +9,7 @@ import queue
 import threading
 import zipfile
 from datetime import datetime, date as _date
+from app.timeutil import now_ist
 from flask import render_template, redirect, url_for, flash, request, current_app, abort, session, jsonify, send_file, g
 from flask_login import login_required, current_user
 from sqlalchemy.orm import selectinload
@@ -129,7 +130,7 @@ def _finalize_submission(req):
     PENDING_BH, log, commit, notify the Business Head. Returns True on
     success (already flashed); on failure, flashes an error and returns False."""
     req.status = RequestStatus.PENDING_BH
-    req.updated_at = datetime.utcnow()
+    req.updated_at = now_ist()
     # Snapshot at first-submission time (2026-09-29) — see
     # OnboardingRequest.hr_manager_initiated's own docstring for why this
     # isn't re-derived live from the initiator's current role instead.
@@ -1129,7 +1130,7 @@ def resubmit_request(token):
     _prev_status = req.status.value
     req.status = RequestStatus.PENDING_BH
     req.retry_count += 1
-    req.updated_at = datetime.utcnow()
+    req.updated_at = now_ist()
     log_audit("REQUEST", "REQUEST_RESUBMITTED",
               resource_type="OnboardingRequest", resource_id=req.id,
               resource_label=f"Request #{req.id} — {req.candidate_name}",
@@ -1973,7 +1974,7 @@ def view_request(token):
     submit_events = [e for e in events if e.event_type in ("SUBMITTED", "RESUBMITTED")]
     last_handoff = next((e for e in reversed(events)
                          if e.event_type in ("SUBMITTED", "RESUBMITTED", "APPROVED", "REJECTED")), None)
-    _utc_now = datetime.utcnow()
+    _now_ts = now_ist()
 
     cur_progress = _PROGRESS.get(sv, 0)
     cur_progress_over_norm = _PROGRESS_OVER_NORM.get(sv, 0)
@@ -2125,7 +2126,7 @@ def view_request(token):
                 "via":             ev.via if ev else None,
                 # the stage the request is waiting at right now: since when, and how long so far
                 "since":           (last_handoff.occurred_at if (state == "current" and last_handoff) else None),
-                "waiting_seconds": (int((_utc_now - last_handoff.occurred_at).total_seconds())
+                "waiting_seconds": (int((_now_ts - last_handoff.occurred_at).total_seconds())
                                     if (state == "current" and last_handoff) else None),
                 # final node: when it was completed and the whole approval time of this attempt
                 "completed_at":    (last_handoff.occurred_at
@@ -2343,7 +2344,7 @@ def approve_request(token):
     except ValueError:
         abort(400)
     _from_status = req.status
-    _now = datetime.utcnow()   # one instant for the status change, the approval row and the event ledger
+    _now = now_ist()   # one instant for the status change, the approval row and the event ledger
 
     # Atomic conditional transition (2026-09-26) — _get_req_by_token() loads
     # the request with a plain SELECT and nothing locks it, so two eligible
@@ -2441,10 +2442,10 @@ def approve_request(token):
         try:
             push_result = push_employee(req)
             if push_result["success"]:
-                req.truein_pushed_at       = datetime.utcnow()
+                req.truein_pushed_at       = now_ist()
                 req.truein_push_error      = None
                 req.truein_retry_count     = 1
-                req.truein_last_attempt_at = datetime.utcnow()
+                req.truein_last_attempt_at = now_ist()
                 _write_push_log(db, req, push_result, triggered_by="auto")
                 _handle_dropped_fields(db, req, push_result.get("dropped_fields", []), "auto")
                 log_audit("REQUEST", "TRUEIN_PUSH_SUCCESS",
@@ -2464,7 +2465,7 @@ def approve_request(token):
             else:
                 req.truein_push_error      = push_result["message"]
                 req.truein_retry_count     = 1
-                req.truein_last_attempt_at = datetime.utcnow()
+                req.truein_last_attempt_at = now_ist()
                 _retryable = push_result.get("retryable", True)
                 _write_push_log(db, req, push_result, triggered_by="auto")
                 _notify_push_failed(db, req, push_result["message"], triggered_by="auto", will_retry=_retryable)
@@ -2488,7 +2489,7 @@ def approve_request(token):
             }
             req.truein_push_error      = str(exc)
             req.truein_retry_count     = 1
-            req.truein_last_attempt_at = datetime.utcnow()
+            req.truein_last_attempt_at = now_ist()
             _write_push_log(db, req, _exc_result, triggered_by="auto")
             try:
                 _notify_push_failed(db, req, str(exc), triggered_by="auto")
@@ -2524,7 +2525,7 @@ def reject_request(token):
     except ValueError:
         abort(400)
     _from_status_r = req.status
-    _now_r = datetime.utcnow()
+    _now_r = now_ist()
 
     # Atomic conditional transition — see the matching comment in
     # approve_request(). Guards the same double-action race for rejection.

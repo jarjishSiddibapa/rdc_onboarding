@@ -6,6 +6,7 @@ figure, so one anomalous month doesn't misclassify a plant's tier).
 
 All network calls are mocked via fetch_monthly_volumes — no live DVT calls.
 """
+from app.timeutil import now_ist
 from contextlib import contextmanager
 from datetime import datetime
 from unittest.mock import patch
@@ -15,10 +16,9 @@ from app.integrations import dvt
 
 @contextmanager
 def _fixed_now(dt):
-    """Patch dvt.datetime.utcnow() to return a fixed value (a real datetime,
+    """Patch dvt.now_ist() to return a fixed value (a real datetime,
     so downstream .replace()/arithmetic still works normally)."""
-    with patch.object(dvt, "datetime") as mock_datetime:
-        mock_datetime.utcnow.return_value = dt
+    with patch.object(dvt, "now_ist", return_value=dt):
         yield
 
 

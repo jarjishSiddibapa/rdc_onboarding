@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from app.timeutil import now_ist
 from urllib.parse import urlencode
 import os
 from flask import render_template, redirect, url_for, flash, request, abort, jsonify, current_app
@@ -1421,9 +1422,9 @@ def truein_push(token):
     try:
         push_result = push_employee(req)
         if push_result["success"]:
-            req.truein_pushed_at       = datetime.utcnow()
+            req.truein_pushed_at       = now_ist()
             req.truein_push_error      = None
-            req.truein_last_attempt_at = datetime.utcnow()
+            req.truein_last_attempt_at = now_ist()
             req.truein_retry_count     = (req.truein_retry_count or 0) + 1
             _write_push_log(db, req, push_result, triggered_by="manual")
             _handle_dropped_fields(db, req, push_result.get("dropped_fields", []), "manual")
@@ -1445,7 +1446,7 @@ def truein_push(token):
                 flash(f"Pushed to Truein successfully (empId: {push_result['empId']}).", "success")
         else:
             req.truein_push_error      = push_result["message"]
-            req.truein_last_attempt_at = datetime.utcnow()
+            req.truein_last_attempt_at = now_ist()
             req.truein_retry_count     = (req.truein_retry_count or 0) + 1
             _retryable = push_result.get("retryable", True)
             _write_push_log(db, req, push_result, triggered_by="manual")
@@ -1469,7 +1470,7 @@ def truein_push(token):
             "raw_response": {}, "payload_sent": {},
         }
         req.truein_push_error      = str(exc)
-        req.truein_last_attempt_at = datetime.utcnow()
+        req.truein_last_attempt_at = now_ist()
         req.truein_retry_count     = (req.truein_retry_count or 0) + 1
         _write_push_log(db, req, _exc_result, triggered_by="manual")
         try:

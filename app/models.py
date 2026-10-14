@@ -2,6 +2,7 @@ import enum
 import json
 import uuid
 from datetime import datetime
+from app.timeutil import now_ist
 from flask_login import UserMixin
 from .extensions import db, login_manager
 
@@ -156,7 +157,7 @@ class PlantLocation(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
 
 class Designation(db.Model):
@@ -183,7 +184,7 @@ class Designation(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
     norm_category = db.relationship("NormRoleCategory", foreign_keys=[norm_category_id])
     qualification_norm_category = db.relationship("NormRoleCategory", foreign_keys=[qualification_norm_category_id])
@@ -271,7 +272,7 @@ class User(UserMixin, db.Model):
     # Brute-force / lockout tracking
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
     # Email notification preferences (Profile -> Email Notifications).
     # email_mode gates real-time email only — in-app notifications are never
     # silenced. daily_digest_enabled is an independent add-on, not a third
@@ -414,8 +415,8 @@ class OnboardingRequest(db.Model):
     truein_last_attempt_at = db.Column(db.DateTime, nullable=True)  # timestamp of last attempt
     truein_retry_stopped  = db.Column(db.Boolean,  default=False, nullable=False)  # admin manually stopped
     truein_dropped_fields = db.Column(db.Text,     nullable=True)  # CSV of fields dropped to make the push succeed
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
 
     initiator = db.relationship("User", back_populates="requests", foreign_keys=[initiated_by])
     actions = db.relationship("ApprovalAction", back_populates="request",
@@ -496,7 +497,7 @@ class ApprovalAction(db.Model):
     actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     action = db.Column(db.Enum(ApprovalActionType), nullable=False)
     remark = db.Column(db.Text)
-    acted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    acted_at = db.Column(db.DateTime, default=now_ist)
 
     request = db.relationship("OnboardingRequest", back_populates="actions")
     actor = db.relationship("User", back_populates="actions")
@@ -512,7 +513,7 @@ class RequestEvent(db.Model):
 
     It exists so response times can be analysed later without reconstructing
     them from other tables: every row carries the exact moment it happened
-    (occurred_at, naive UTC like every timestamp here), when the request had
+    (occurred_at, Indian time like every timestamp here), when the request had
     been waiting for it (waiting_since) and how long that was
     (duration_seconds) — for an approval that is "how long the approver took
     to respond". actor_name/actor_role are snapshots (a later rename or role
@@ -532,7 +533,7 @@ class RequestEvent(db.Model):
     # DRAFT_CREATED, SPECIAL_CASE_ACKNOWLEDGED, SUBMITTED, RESUBMITTED, APPROVED,
     # REJECTED, TRUEIN_PUSHED, TRUEIN_PUSH_FAILED, DRAFT_DELETED
     event_type  = db.Column(db.String(40), nullable=False)
-    occurred_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    occurred_at = db.Column(db.DateTime, nullable=False, default=now_ist)
 
     actor_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)   # NULL = the system
     actor_name  = db.Column(db.String(200), nullable=True)
@@ -572,7 +573,7 @@ class Notification(db.Model):
     type = db.Column(db.Enum(NotificationType), nullable=False, default=NotificationType.IN_APP)
     subject = db.Column(db.String(500))
     body = db.Column(db.Text)
-    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sent_at = db.Column(db.DateTime, default=now_ist)
     is_read = db.Column(db.Boolean, default=False)
 
     request = db.relationship("OnboardingRequest", back_populates="notifications")
@@ -604,7 +605,7 @@ class TrueinPushLog(db.Model):
     response_received = db.Column(db.Text,    nullable=True)            # full JSON response body
     success          = db.Column(db.Boolean,  nullable=False, default=False)
     error_message    = db.Column(db.Text,     nullable=True)            # human-readable error
-    attempted_at     = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    attempted_at     = db.Column(db.DateTime, default=now_ist, nullable=False)
 
     request = db.relationship("OnboardingRequest", backref=db.backref("truein_logs", order_by="TrueinPushLog.attempted_at"))
 
@@ -618,7 +619,7 @@ class SystemConfig(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     key        = db.Column(db.String(100), unique=True, nullable=False)
     value      = db.Column(db.Text, nullable=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
 
 
 # ── Database backup (2026-10-10) ───────────────────────────────────────────────
@@ -636,7 +637,7 @@ class BackupSettings(db.Model):
     email_enabled    = db.Column(db.Boolean, nullable=False, default=False)
     email_recipients = db.Column(db.String(1000), nullable=True)
     updated_by       = db.Column(db.Integer, nullable=True)
-    updated_at       = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at       = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
 
 
 class BackupRun(db.Model):
@@ -656,7 +657,7 @@ class BackupRun(db.Model):
     triggered_by  = db.Column(db.String(20), nullable=False, default="schedule")  # schedule | manual
     triggered_by_user = db.Column(db.Integer, nullable=True)
     is_deleted    = db.Column(db.Boolean, nullable=False, default=False)          # file removed (retention / admin)
-    started_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    started_at    = db.Column(db.DateTime, nullable=False, default=now_ist, index=True)
     finished_at   = db.Column(db.DateTime, nullable=True)
 
 
@@ -691,7 +692,7 @@ class AuditLog(db.Model):
     # JSON blob with before/after values, remark, filter params, etc.
     detail          = db.Column(db.Text,        nullable=True)
     ip_address      = db.Column(db.String(45),  nullable=True)
-    created_at      = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at      = db.Column(db.DateTime, default=now_ist, nullable=False)
 
     actor = db.relationship("User", foreign_keys=[actor_id], lazy="joined")
 
@@ -727,7 +728,7 @@ class NormRoleCategory(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
 
 class NormTier(db.Model):
@@ -765,8 +766,8 @@ class NormRequirement(db.Model):
     rate_per_unit = db.Column(db.Float, nullable=True)     # e.g. 1  (used when RATE_PER_VOLUME)
     unit_volume = db.Column(db.Float, nullable=True)       # e.g. 900, or 15000 for the cluster Accounts row
     notes = db.Column(db.String(300), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
 
     tier = db.relationship("NormTier", backref=db.backref("requirements"))
     norm_role_category = db.relationship("NormRoleCategory", backref=db.backref("requirements"))
@@ -787,8 +788,8 @@ class DepartmentCategoryMap(db.Model):
     department_norm = db.Column(db.String(200), unique=True, nullable=False)
     norm_role_category_id = db.Column(db.Integer, db.ForeignKey("norm_role_categories.id"), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
 
     norm_role_category = db.relationship("NormRoleCategory")
 
@@ -813,8 +814,8 @@ class ClusterNameMapping(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
 
 
 class BusinessHeadRegion(db.Model):
@@ -825,7 +826,7 @@ class BusinessHeadRegion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     business_head_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     cluster_id = db.Column(db.Integer, db.ForeignKey("cluster_name_mappings.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
     business_head = db.relationship("User", backref=db.backref("region_links", cascade="all, delete-orphan"))
     cluster = db.relationship("ClusterNameMapping", backref=db.backref("bh_links", cascade="all, delete-orphan"))
@@ -846,7 +847,7 @@ class InitiatorRegion(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     initiator_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     cluster_id = db.Column(db.Integer, db.ForeignKey("cluster_name_mappings.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
     initiator = db.relationship("User", backref=db.backref("initiator_region_links", cascade="all, delete-orphan"))
     cluster = db.relationship("ClusterNameMapping", backref=db.backref("initiator_links", cascade="all, delete-orphan"))
@@ -875,7 +876,7 @@ class UserCompanyScope(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     company = db.Column(db.String(20), nullable=False)  # one of COMPANY_CHOICES
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
     user = db.relationship("User", backref=db.backref("company_scope_links", cascade="all, delete-orphan"))
 
@@ -911,8 +912,8 @@ class PlantDvtMapping(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False)
     sort_order = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
     cluster = db.relationship("ClusterNameMapping", backref=db.backref("plants"))
@@ -957,7 +958,7 @@ class PlantNameAlias(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     alias_name = db.Column(db.String(200), nullable=False, unique=True)
     plant_dvt_mapping_id = db.Column(db.Integer, db.ForeignKey("plant_dvt_mappings.id"), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist)
 
     plant = db.relationship("PlantDvtMapping", backref=db.backref("aliases"))
 
@@ -1015,7 +1016,7 @@ class StaffingSnapshot(db.Model):
     # dashboard's "Avg Monthly Production" callouts should read.
     production_volume = db.Column(db.Float, nullable=True)
     can_hire = db.Column(db.Boolean, nullable=True)  # current_headcount < allowed_headcount; NULL if allowed unknown
-    computed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    computed_at = db.Column(db.DateTime, default=now_ist, nullable=False)
     source_warnings = db.Column(db.Text, nullable=True)  # JSON list of strings
 
     norm_role_category = db.relationship("NormRoleCategory")
@@ -1037,7 +1038,7 @@ class StaffingGateCheck(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.Integer, db.ForeignKey("onboarding_requests.id"), nullable=False)
-    checked_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    checked_at = db.Column(db.DateTime, default=now_ist, nullable=False)
     plant_name = db.Column(db.String(200), nullable=True)
     cluster_name = db.Column(db.String(200), nullable=True)
     norm_role_category_id = db.Column(db.Integer, db.ForeignKey("norm_role_categories.id"), nullable=True)
@@ -1096,6 +1097,6 @@ class EmployeeLocationSnapshot(db.Model):
     # in headcount.py) sets it, since that's the only place company scoping
     # is actually needed (RDC's own queries key off plant/cluster as before).
     company = db.Column(db.String(20), nullable=True)
-    computed_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    computed_at = db.Column(db.DateTime, default=now_ist, nullable=False)
 
     norm_role_category = db.relationship("NormRoleCategory")

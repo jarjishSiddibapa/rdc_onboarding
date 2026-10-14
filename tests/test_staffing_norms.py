@@ -7,6 +7,7 @@ calls, matching how check_rdc_staffing_gate() actually behaves at request
 time (it never calls ZingHR/Truein/DVT synchronously except the one DVT
 volume lookup, which we mock here).
 """
+from app.timeutil import now_ist
 from datetime import datetime
 from unittest.mock import patch
 
@@ -315,9 +316,9 @@ class TestStaffingStatusDownload:
         # get_snapshot_rows_for_location() matches on computed_at == MAX(computed_at)
         # across ALL snapshot rows — both rows of a real "run" share one timestamp,
         # so seed them with the same explicit value rather than relying on two
-        # separate datetime.utcnow() defaults (which can differ by microseconds
+        # separate now_ist() defaults (which can differ by microseconds
         # and silently exclude one of the two from "the latest run").
-        run_time = datetime.utcnow()
+        run_time = now_ist()
         db.session.add(StaffingSnapshot(
             scope=NormScope.PLANT, location_key="PlantX", norm_role_category_id=cat.id,
             current_headcount=1, allowed_headcount=2, tier_label=tier.tier_label,
@@ -477,7 +478,7 @@ class TestStaffingStatusRegionEmployeePanel:
             source=ExternalDesignationSource.TRUEIN, employee_code="T001",
             employee_name="Region Panel Test Employee", designation="Operator",
             plant_location_key="PlantX", cluster_location_key="Bangalore",
-            computed_at=datetime.utcnow(),
+            computed_at=now_ist(),
         ))
         db.session.flush()
         return cluster
@@ -532,7 +533,7 @@ class TestStaffingStatusCompanyTabs:
         db.session.add(PlantLocation(name="UF Tab Plant", company="Ultrafine", is_active=True))
         db.session.commit()
         db.session.add(EmployeeLocationSnapshot(
-            computed_at=datetime.utcnow(), source=ExternalDesignationSource.ZINGHR,
+            computed_at=now_ist(), source=ExternalDesignationSource.ZINGHR,
             employee_code="UFTAB1", employee_name="UF Tab Employee",
             plant_location_key="UF Tab Plant", company="Ultrafine",
         ))
@@ -550,7 +551,7 @@ class TestStaffingStatusCompanyTabs:
             PlantLocation(name="UF Other Plant", company="Ultrafine", is_active=True),
         ])
         db.session.commit()
-        shared_now = datetime.utcnow()
+        shared_now = now_ist()
         db.session.add_all([
             EmployeeLocationSnapshot(
                 computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
@@ -603,7 +604,7 @@ class TestStaffingStatusCompanyTabs:
             PlantLocation(name="ROBO Shut Plant", company="ROBO", is_active=False),
         ])
         db.session.commit()
-        shared_now = datetime.utcnow()
+        shared_now = now_ist()
         db.session.add_all([
             EmployeeLocationSnapshot(
                 computed_at=shared_now, source=ExternalDesignationSource.ZINGHR,
@@ -714,7 +715,7 @@ class TestStaffingStatusCompanyScopeGating:
         hrm = _make_user("ScopeHrm3", "scopehrm3@t.com", UserRole.HR_MANAGER, db, companies=["ROBO"])
         db.session.commit()
         db.session.add(EmployeeLocationSnapshot(
-            computed_at=datetime.utcnow(), source=ExternalDesignationSource.ZINGHR,
+            computed_at=now_ist(), source=ExternalDesignationSource.ZINGHR,
             employee_code="GATERDC1", employee_name="Gate RDC Employee",
             plant_location_key="Some RDC Plant",
         ))

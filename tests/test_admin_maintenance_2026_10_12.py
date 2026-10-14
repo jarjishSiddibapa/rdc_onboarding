@@ -1,5 +1,6 @@
 """2026-10-12 batch: snapshot retention, staffing-norms + department-mapping admin pages, no blank drafts,
 request search, accessible button colour, sign-out / session hardening."""
+from app.timeutil import now_ist
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -92,7 +93,7 @@ class TestSnapshotRetention:
         res = snapshot_retention.prune(keep_runs=5, require_recent_backup=True)
         assert "skipped" in res and _db.session.query(StaffingSnapshot).count() == 10
         _db.session.add(BackupRun(filename="a.sql", status="success", triggered_by="schedule",
-                                  started_at=datetime.utcnow() - timedelta(hours=3)))
+                                  started_at=now_ist() - timedelta(hours=3)))
         _db.session.commit()
         assert snapshot_retention.prune(keep_runs=5, require_recent_backup=True)["deleted_staffing"] == 5
 
@@ -209,7 +210,7 @@ class TestDepartmentMapPage:
         self._setup(db)
         admin = _admin(db, "m-admin4@t.com")
         db.session.add(EmployeeLocationSnapshot(source=ExternalDesignationSource.ZINGHR, employee_code="U1",
-                                                department="Quality Lab", computed_at=datetime.utcnow()))
+                                                department="Quality Lab", computed_at=now_ist()))
         db.session.commit()
         login(client, admin.email)
         assert b"Quality Lab" in client.get("/admin/department-mapping").data
@@ -373,7 +374,7 @@ class TestBlankDrafts:
         fresh = OnboardingRequest(initiated_by=initiator.id, status=RequestStatus.DRAFT, public_token=uuid.uuid4().hex)
         db.session.add_all([old, fresh])
         db.session.commit()
-        old.updated_at = datetime.utcnow() - timedelta(days=3)
+        old.updated_at = now_ist() - timedelta(days=3)
         db.session.commit()
         login(client, initiator.email)
         client.get("/dashboard")

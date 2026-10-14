@@ -2,6 +2,7 @@
 Headcount moves the moment a hire is approved (2026-10-08), and the full
 ZingHR/Truein sync is nightly.
 """
+from app.timeutil import now_ist
 import uuid
 from datetime import datetime, timedelta
 
@@ -185,19 +186,19 @@ class TestApprovalRouteCountsTheHire:
 
 class TestNightlySchedule:
     def test_before_the_slot_runs_tonight(self):
-        # 15:30 IST on 8 Oct -> 02:00 IST on 9 Oct == 20:30 UTC on 8 Oct
-        assert snapshot_refresh._next_sync_utc(datetime(2026, 10, 8, 10, 0)) == datetime(2026, 10, 8, 20, 30)
+        # 15:30 IST on 8 Oct -> 02:00 IST on 9 Oct
+        assert snapshot_refresh._next_sync(datetime(2026, 10, 8, 15, 30)) == datetime(2026, 10, 9, 2, 0)
 
     def test_just_before_the_slot_is_same_night(self):
-        assert snapshot_refresh._next_sync_utc(datetime(2026, 10, 8, 20, 0)) == datetime(2026, 10, 8, 20, 30)
+        assert snapshot_refresh._next_sync(datetime(2026, 10, 9, 1, 30)) == datetime(2026, 10, 9, 2, 0)
 
     def test_after_the_slot_waits_for_tomorrow(self):
-        assert snapshot_refresh._next_sync_utc(datetime(2026, 10, 8, 21, 0)) == datetime(2026, 10, 9, 20, 30)
+        assert snapshot_refresh._next_sync(datetime(2026, 10, 9, 2, 30)) == datetime(2026, 10, 10, 2, 0)
 
     def test_old_snapshot_is_overdue_fresh_one_is_not(self, db, app):
         assert snapshot_refresh._is_overdue() is True           # empty DB
         db.session.add(StaffingSnapshot(scope=NormScope.PLANT, location_key="X", norm_role_category_id=_cat(db),
-                                        computed_at=datetime.utcnow()))
+                                        computed_at=now_ist()))
         db.session.commit()
         assert snapshot_refresh._is_overdue() is False
 

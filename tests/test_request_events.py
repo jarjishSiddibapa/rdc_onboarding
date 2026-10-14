@@ -143,9 +143,10 @@ class TestRoutesWriteEvents:
             logout(client)
             login(client, init_e)
             html = client.get(f"/requests/{token}").get_data(as_text=True)
-        assert "Responded in" in html            # how long the Business Head took
-        assert "Draft took" in html              # how long the draft took before it was submitted
-        assert "Waiting since" in html and "so far" in html     # the HR Manager stage is pending right now
+        # the timeline shows when each step happened (date + time with seconds), never how long it took
+        assert "Responded in" not in html and "Draft took" not in html and "so far" not in html
+        assert "Approval took" not in html
+        assert "Waiting since" in html           # the HR Manager stage is pending right now
         assert "Activity log (2)" in html        # submitted, approved (this draft was built directly, not via /new)
         assert "Submitted for approval" in html
         # exact time, including seconds, e.g. 14/10/2026, 09:30:05
